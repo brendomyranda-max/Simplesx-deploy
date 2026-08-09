@@ -201,6 +201,30 @@ export function ImpressorasPage() {
         <Button icon={<Plus className="h-4 w-4" />} onClick={abrir}>Novo</Button>
       </div>
 
+      <Card className="mb-4 border-blue-200 bg-gradient-to-r from-blue-50 to-white p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-600 text-white">
+            <Download className="h-5 w-5" />
+          </div>
+          <div className="mr-auto">
+            <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
+            <p className="text-sm text-slate-500">Instale no computador conectado às impressoras e copie o token exibido.</p>
+          </div>
+          <a
+            className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-win-x64.exe"
+          >
+            Baixar para Windows
+          </a>
+          <a
+            className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-linux-x86_64.AppImage"
+          >
+            Baixar para Linux
+          </a>
+        </div>
+      </Card>
+
       <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card className="p-4">
           <p className="font-bold text-slate-800">Largura da bobina</p>
@@ -292,25 +316,6 @@ export function ImpressorasPage() {
           via CUPS — funciona de qualquer dispositivo conectado, mesmo fora da mesma rede. Cole aqui o token que o
           gestor mostra ao iniciar.
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3">
-          <Download className="h-5 w-5 text-blue-600" />
-          <div className="mr-auto">
-            <p className="text-sm font-bold text-slate-800">Instalar o Gestor de Impressoras</p>
-            <p className="text-xs text-slate-500">Instale no computador conectado às impressoras e copie o token exibido.</p>
-          </div>
-          <a
-            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-win-x64.exe"
-          >
-            Windows
-          </a>
-          <a
-            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-linux-x86_64.AppImage"
-          >
-            Linux
-          </a>
-        </div>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2 flex items-end gap-2">
             <Field label="Token do gestor">
