@@ -167,12 +167,53 @@ async function enqueueGestorJob(env, { conteudo, impressora, larguraMm = 80 }) {
   if (!gestorToken) return { ok: false, error: 'Nenhum gestor configurado' };
   const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND ativo=1').bind(gestorToken).first();
   if (!gestor) return { ok: false, error: 'Gestor configurado não está cadastrado ou está inativo' };
+  // Filas RAW/ESC-POS interpretam texto conforme a pagina de codigos configurada
+  // na impressora e frequentemente descartam caracteres como c-cedilha e acentos.
+  // O gestor ja suporta HTML, que e renderizado em Unicode antes de chegar ao CUPS.
+  const larguraImprimivel = larguraMm === 58 ? 48 : 72;
+  const conteudoCompativel = textoCompativelComEscPos(conteudo);
+  const conteudoHtml = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @page { size: ${larguraImprimivel}mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; width: ${larguraImprimivel}mm; }
+    body { color: #000; background: #fff; font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: 11px; line-height: 1.35; }
+    pre { width: 100%; margin: 0; padding: 2mm; color: #000; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body><pre>${escapePrintHtml(conteudoCompativel)}</pre></body>
+</html>`;
   const r = await env.DB.prepare(
     `INSERT INTO gestor_jobs
       (gestor_token, tipo, conteudo, impressora, largura_mm, copias, cortar, alimentar, status, criado_em)
-     VALUES (?, 'texto', ?, ?, ?, 1, 1, ?, 'pendente', ?)`
-  ).bind(gestorToken, conteudo, impressora, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
+     VALUES (?, 'html', ?, ?, ?, 1, 1, ?, 'pendente', ?)`
+  ).bind(gestorToken, conteudoHtml, impressora, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
   return { ok: true, job_id: r.meta.last_row_id };
+}
+
+function textoCompativelComEscPos(value) {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replaceAll('º', 'o')
+    .replaceAll('ª', 'a')
+    .replace(/[–—]/g, '-')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
+}
+
+function escapePrintHtml(value) {
+  return String(value).normalize('NFC')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function textoPedido({ empresa, cnpj, mesa, com, destino, itens }) {
@@ -321,6 +362,7 @@ export async function imprimirPessoaComandaHandler(c, env) {
     `CONTA INDIVIDUAL  Nº ${com.id}`,
     `PESSOA: ${pessoa.nome || '-'}`,
     `MESA ORIGEM: ${mesaOrigem}`,
+    `GARÇOM: ${com.garcom_nome || '-'}`,
     linha('-'),
     ...itens.results.map(
       (i) => `${num(i.quantidade)}x ${i.nome}  ${fmtBRL(num(i.quantidade) * num(i.preco_unitario))}`

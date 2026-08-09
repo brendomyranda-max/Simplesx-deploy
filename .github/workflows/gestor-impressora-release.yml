@@ -1,0 +1,50 @@
+name: Gestor de Impressoras
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'gestor-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            comando: npm run dist:linux
+          - os: windows-latest
+            comando: npm run dist:windows
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: gestor-impressora
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gestor-impressora/package-lock.json
+      - run: npm ci
+      - run: ${{ matrix.comando }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gestor-${{ runner.os }}
+          path: gestor-impressora/release/SimplesX-Gestor-*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefatos
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artefatos/*

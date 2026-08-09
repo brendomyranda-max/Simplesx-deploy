@@ -1,0 +1,53 @@
+{
+  "name": "simplesx-gestor-impressora",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agente local de impressao do SimplesX",
+  "homepage": "https://simplesx-projeto-beta.pages.dev",
+  "author": {
+    "name": "SimplesX",
+    "email": "suporte@simplesx.app"
+  },
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux AppImage",
+    "dist:windows": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "allowScripts": {
+    "electron": true,
+    "electron-winstaller": true
+  },
+  "build": {
+    "appId": "com.simplesx.gestorimpressora",
+    "productName": "SimplesX Gestor",
+    "artifactName": "SimplesX-Gestor-${os}-${arch}.${ext}",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility",
+      "maintainer": "SimplesX <suporte@simplesx.app>",
+      "synopsis": "Agente local de impressao do SimplesX"
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

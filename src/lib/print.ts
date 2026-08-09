@@ -30,6 +30,7 @@ export async function printDirect(
     printer: getPrinterForWidth(width),
     title: title || document.title,
     html,
+    width,
     cut: true,
     feed: width === '58' ? 3 : 0,
   });

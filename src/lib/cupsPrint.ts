@@ -39,6 +39,39 @@ export function setGestorToken(t: string) {
   else localStorage.removeItem(KEY_GESTOR)
 }
 
+function documentoImpressao(html: string, width: Bobina): string {
+  const largura = width === '58' ? 48 : 72
+  const documento = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @page { size: ${largura}mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; width: ${largura}mm; }
+    body { color: #000; background: #fff; font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: 11px; line-height: 1.35; }
+    .simplesx-recibo { width: 100%; padding: 2mm; overflow-wrap: anywhere; }
+    pre { margin: 0; color: #000; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body><div class="simplesx-recibo">${html.normalize('NFC')}</div></body>
+</html>`
+  return textoCompativelComEscPos(documento)
+}
+
+function textoCompativelComEscPos(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replaceAll('º', 'o')
+    .replaceAll('ª', 'a')
+    .replace(/[–—]/g, '-')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
+}
+
 /**
  * Envia a impressão pela fila do deploy (gestor local conectado via internet).
  * O app gera o conteúdo e o servidor entrega ao gestor, que imprime via CUPS.
@@ -54,7 +87,7 @@ export async function enviarViaDeploy(
     if (!html) return false
     const res = await gestorApi.enviar({
       tipo: 'html',
-      conteudo: html,
+      conteudo: documentoImpressao(html, width),
       impressora: getPrinterForWidth(width) || undefined,
       largura_mm: width === '58' ? 58 : 80,
       cortar: true,
@@ -105,6 +138,7 @@ export interface CupsPrintPayload {
   title?: string
   html?: string
   text?: string
+  width?: Bobina
   copies?: number
   cut?: boolean
   feed?: number
@@ -117,7 +151,11 @@ export async function sendCupsPrint(p: CupsPrintPayload): Promise<{ ok: boolean;
     const res = await fetch(CUPS_SERVER + '/print', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(p),
+      body: JSON.stringify({
+        ...p,
+        html: p.html ? documentoImpressao(p.html, p.width || '80') : undefined,
+        text: p.text ? textoCompativelComEscPos(p.text) : undefined,
+      }),
       signal: ctrl.signal,
     })
     clearTimeout(t)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil } from 'lucide-react';
+import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
 import { impressoraApi, gestorApi, configApi, categoriaApi } from '@/lib/api';
@@ -114,8 +114,8 @@ export function ImpressorasPage() {
     setTestandoGestor(true);
     try {
       const res = await gestorApi.enviar({
-        tipo: 'texto',
-        conteudo: 'TESTE DE IMPRESSÃO\n' + new Date().toLocaleString('pt-BR') + '\n\nConexão com o gestor OK!',
+        tipo: 'html',
+        conteudo: '<meta charset="UTF-8"><pre>TESTE DE IMPRESSÃO\n' + new Date().toLocaleString('pt-BR') + '\n\nAcentuação: ç á é í ó ú ã õ\nConexão com o gestor OK!</pre>',
         gestor_token: gestorToken.trim() || undefined,
       });
       toast('success', 'Impressão enviada — confira a impressora (pode levar alguns segundos)');
@@ -292,6 +292,25 @@ export function ImpressorasPage() {
           via CUPS — funciona de qualquer dispositivo conectado, mesmo fora da mesma rede. Cole aqui o token que o
           gestor mostra ao iniciar.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3">
+          <Download className="h-5 w-5 text-blue-600" />
+          <div className="mr-auto">
+            <p className="text-sm font-bold text-slate-800">Instalar o Gestor de Impressoras</p>
+            <p className="text-xs text-slate-500">Instale no computador conectado às impressoras e copie o token exibido.</p>
+          </div>
+          <a
+            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-win-x64.exe"
+          >
+            Windows
+          </a>
+          <a
+            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-linux-x86_64.AppImage"
+          >
+            Linux
+          </a>
+        </div>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2 flex items-end gap-2">
             <Field label="Token do gestor">

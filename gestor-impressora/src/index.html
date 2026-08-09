@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>SimplesX Gestor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><span class="logo">SX</span></div>
+      <div><h1>Gestor de Impressoras</h1><p>Conecta o SimplesX às impressoras deste computador.</p></div>
+      <span id="estado" class="badge offline">Offline</span>
+    </header>
+
+    <section class="token-card">
+      <label>Token deste gestor</label>
+      <div class="token-row"><code id="token">carregando...</code><button id="copiar">Copiar</button></div>
+      <small>Cole este token em Configurações → Impressoras no SimplesX.</small>
+    </section>
+
+    <section class="grid">
+      <label>Nome do computador<input id="nome" autocomplete="off"></label>
+      <label>Endereço do deploy<input id="deployUrl" type="url" autocomplete="off"></label>
+      <label class="full">Impressora padrão<select id="impressora"><option value="">Padrão do sistema</option></select></label>
+      <label class="check full"><input id="iniciar" type="checkbox"> Iniciar automaticamente com o computador</label>
+    </section>
+
+    <div class="actions">
+      <button id="atualizar" class="secondary">Atualizar impressoras</button>
+      <button id="testar" class="secondary">Imprimir teste</button>
+      <button id="salvar">Salvar e conectar</button>
+    </div>
+
+    <section class="status-card">
+      <h2>Sincronização</h2>
+      <dl>
+        <div><dt>Computador</dt><dd id="hostname">—</dd></div>
+        <div><dt>Último contato</dt><dd id="contato">—</dd></div>
+        <div><dt>Último trabalho</dt><dd id="job">Nenhum</dd></div>
+        <div><dt>Servidor local</dt><dd id="porta">127.0.0.1:8410</dd></div>
+      </dl>
+      <p id="erro" class="erro"></p>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
