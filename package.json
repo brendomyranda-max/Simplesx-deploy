@@ -1,0 +1,47 @@
+{
+  "name": "simplesx-projeto-beta",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "server": "node server/index.js",
+    "preview": "vite preview",
+    "criar-token": "node server/criar-token.js",
+    "deploy": "wrangler d1 migrations apply simplesx-db --remote && npm run build && wrangler pages deploy dist --project-name simplesx-projeto-beta",
+    "db:create": "wrangler d1 create simplesx-db",
+    "db:migrate": "wrangler d1 migrations apply simplesx-db --remote",
+    "db:migrate:local": "node server/migrate-local.js",
+    "kv:create": "wrangler kv namespace create simplesx-kv"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.0",
+    "framer-motion": "^11.18.2",
+    "hono": "^4.7.11",
+    "lucide-react": "^0.469.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "express": "^4.21.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "wrangler": "^4.115.0"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260730.1": true,
+    "better-sqlite3@11.10.0": true
+  }
+}

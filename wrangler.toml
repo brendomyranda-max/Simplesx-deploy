@@ -1,0 +1,13 @@
+name = "simplesx-projeto-beta"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
+
+# Recursos Cloudflare criados no deploy
+[[d1_databases]]
+binding = "DB"
+database_name = "simplesx-db"
+database_id = "e354d6f2-0e2a-4e08-8d56-ffbaeb3f1f0f"
+
+[[kv_namespaces]]
+binding = "AUTH_KV"
+id = "2e57b9dcbeac4455b20feed3d869a248"

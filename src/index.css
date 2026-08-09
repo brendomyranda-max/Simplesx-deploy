@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Viewport de altura dinâmica: evita cortes da barra de navegação no mobile */
+.h-viewport {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Altura mínima dinâmica: permite rolagem natural do documento sem cortes */
+.min-h-viewport {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+html {
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-slate-100 text-slate-800 antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-soft;
+  }
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .th {
+    @apply px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400;
+  }
+  .td {
+    @apply px-3 py-2.5 text-sm text-slate-700;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@media print {
+  @page {
+    size: 72mm auto;
+    margin: 0;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  #root,
+  #root * {
+    display: none !important;
+  }
+
+  body > .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 0 !important;
+    box-sizing: border-box;
+    width: 72mm !important;
+    padding: 3mm;
+    font-family: 'Courier New', Consolas, monospace !important;
+    font-size: 12px !important;
+    line-height: 1.4;
+    color: #000 !important;
+    background: #fff !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  body.print-58 > .print-area {
+    width: 48mm !important;
+    font-size: 10px !important;
+  }
+
+  body > .print-area * {
+    font-family: 'Courier New', Consolas, monospace !important;
+    font-size: inherit !important;
+    line-height: inherit;
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body > .print-area .truncate {
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+  }
+
+  body > .print-area pre,
+  body > .print-area pre * {
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+  }
+}
