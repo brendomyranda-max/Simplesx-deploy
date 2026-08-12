@@ -13,7 +13,9 @@ const KEY_DIRECT = 'simplesx_direct_print'
 
 export function getPrinterForWidth(width: Bobina): string {
   const k = width === '58' ? KEY_58 : KEY_80
-  return localStorage.getItem(k) || (width === '58' ? 'HaoYin58' : 'Diebold80')
+  // O nome da fila e local ao computador. Nao invente uma fila de uma marca
+  // especifica: vazio faz o gestor escolher a configurada/padrao do sistema.
+  return localStorage.getItem(k) || ''
 }
 
 export function setPrinterForWidth(width: Bobina, name: string) {

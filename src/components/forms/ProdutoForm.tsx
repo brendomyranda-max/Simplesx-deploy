@@ -430,7 +430,7 @@ export function ProdutoForm({
                     className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${on ? 'text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                     style={on ? { backgroundColor: c.cor } : undefined}
                   >
-                    {c.nome}
+                    {c.categoria_pai_id ? `↳ ${c.categoria_pai_nome} / ${c.nome}` : c.nome}
                   </button>
                 );
               })}

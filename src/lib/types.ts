@@ -3,6 +3,12 @@ export interface Categoria {
   nome: string;
   cor: string;
   ativo: number;
+  categoria_pai_id?: number | null;
+  categoria_pai_nome?: string | null;
+  impressora_agente_id?: number | null;
+  impressora_nome?: string | null;
+  impressora_herdada_id?: number | null;
+  impressora_herdada_nome?: string | null;
 }
 
 export interface Fornecedor {

@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, Plus, Printer, Search, ScanBarcode, CheckCircle2, Trash2 } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
-import { validadeApi, produtoApi, impressoraApi } from '@/lib/api';
-import type { ValidadeControle, Produto } from '@/lib/types';
+import { validadeApi, produtoApi, impressoraApi, categoriaApi } from '@/lib/api';
+import type { ValidadeControle, Produto, Categoria } from '@/lib/types';
 import { fmtData, fmtNum, diasAte, hojeLocal } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
 
 export function ValidadePage() {
   const [tab, setTab] = useState<'ativos' | 'todos'>('ativos');
   const [controles, setControles] = useState<ValidadeControle[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [categoriaId, setCategoriaId] = useState('');
   const [load, setLoad] = useState(true);
   const [abrir, setAbrir] = useState(false);
   const [produto, setProduto] = useState<Produto | null>(null);
@@ -30,7 +32,10 @@ export function ValidadePage() {
   const loadList = async () => {
     setLoad(true);
     try {
-      const rows = await validadeApi.list(tab === 'ativos' ? { status: 'ativo' } : {});
+      const filtros: Record<string, string> = {};
+      if (tab === 'ativos') filtros.status = 'ativo';
+      if (categoriaId) filtros.categoria_id = categoriaId;
+      const rows = await validadeApi.list(filtros);
       setControles(rows);
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar');
@@ -41,7 +46,13 @@ export function ValidadePage() {
 
   useEffect(() => {
     loadList();
-  }, [tab]);
+  }, [tab, categoriaId]);
+
+  useEffect(() => {
+    categoriaApi.list()
+      .then((rows) => setCategorias(rows.filter((categoria) => categoria.ativo)))
+      .catch(() => toast('error', 'Erro ao carregar categorias'));
+  }, []);
 
   const buscar = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -126,6 +137,24 @@ export function ValidadePage() {
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => setAbrir(true)}>Nova validade</Button>
         </div>
       </div>
+
+      <Card className="mb-4 p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Filtrar por categoria">
+            <Select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className="min-w-56">
+              <option value="">Todas as categorias</option>
+              {categorias.map((categoria) => (
+                <option key={categoria.id} value={categoria.id}>
+                  {categoria.categoria_pai_nome ? `${categoria.categoria_pai_nome} › ` : ''}{categoria.nome}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {categoriaId && (
+            <Button variant="secondary" onClick={() => setCategoriaId('')}>Mostrar tudo</Button>
+          )}
+        </div>
+      </Card>
 
       {load ? (
         <Spinner />

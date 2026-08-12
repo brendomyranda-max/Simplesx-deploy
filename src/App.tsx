@@ -20,7 +20,6 @@ import { PerdasPage } from '@/pages/PerdasPage';
 import { FuncionariosPage } from '@/pages/FuncionariosPage';
 import { ImpressorasPage } from '@/pages/ImpressorasPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
-import { TokensPage } from '@/pages/TokensPage';
 import { configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
@@ -134,14 +133,6 @@ function ProtectedApp({
           element={
             <Require mod="gestor">
               <ConfiguracoesPage />
-            </Require>
-          }
-        />
-        <Route
-          path="/tokens"
-          element={
-            <Require mod="gestor">
-              <TokensPage />
             </Require>
           }
         />

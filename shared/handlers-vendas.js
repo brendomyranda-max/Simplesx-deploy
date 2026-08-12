@@ -23,6 +23,7 @@ import { converterQuantidade } from './units.js';
 export async function listValidadeHandler(c, env) {
   const status = c.req.query('status') || '';
   const dias = c.req.query('vencendo_dias') || '';
+  const categoriaId = num(c.req.query('categoria_id'));
   let sql =
     'SELECT v.*, p.nome AS produto_nome, p.unidade FROM validade_controles v LEFT JOIN produtos p ON p.id=v.produto_id';
   const where = [];
@@ -34,6 +35,10 @@ export async function listValidadeHandler(c, env) {
   if (dias) {
     where.push("v.status='ativo' AND v.data_vencimento <= ?");
     params.push(addDays(now(), num(dias)));
+  }
+  if (categoriaId) {
+    where.push('EXISTS (SELECT 1 FROM produto_categorias pc WHERE pc.produto_id=v.produto_id AND pc.categoria_id=?)');
+    params.push(categoriaId);
   }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY v.data_vencimento ASC';
@@ -538,6 +543,23 @@ export async function addItemComandaHandler(c, env) {
     .run();
   const item = await env.DB.prepare('SELECT * FROM comanda_itens WHERE id=?').bind(r.meta.last_row_id).first();
   return c.json(item, 201);
+}
+
+export async function updateItemComandaHandler(c, env) {
+  const b = await c.req.json();
+  const item = await env.DB.prepare(
+    `SELECT i.* FROM comanda_itens i
+     JOIN comandas c ON c.id=i.comanda_id
+     WHERE i.id=? AND i.comanda_id=? AND c.status='aberta'`
+  ).bind(c.params.item_id, c.params.id).first();
+  if (!item) return c.json({ error: 'Item não encontrado ou comanda bloqueada' }, 404);
+  if (item.status !== 'novo') return c.json({ error: 'Somente itens ainda não enviados podem ser alterados' }, 409);
+
+  const observacao = typeof b.observacao === 'string' ? b.observacao.trim() : '';
+  await env.DB.prepare('UPDATE comanda_itens SET observacao=? WHERE id=?')
+    .bind(observacao || null, item.id)
+    .run();
+  return c.json({ ...item, observacao: observacao || null });
 }
 
 export async function updateItemStatusHandler(c, env) {

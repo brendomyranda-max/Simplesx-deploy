@@ -15,7 +15,6 @@ import {
   Users,
   Printer,
   Settings,
-  KeyRound,
   LogOut,
   Menu,
   X,
@@ -130,7 +129,6 @@ export function AppShell({
     {
       items: [
         { to: '/config', label: 'Configurações', icon: <Settings className="h-5 w-5" /> },
-        { to: '/tokens', label: 'Tokens de Acesso', icon: <KeyRound className="h-5 w-5" /> },
       ],
     },
   ];

@@ -85,8 +85,9 @@ export const api = {
 export const authApi = {
   login: (token: string) =>
     request<{ ok: boolean; nome: string; token_id: number }>('POST', '/auth/login', { token }),
-  funcionario: (usuario: string, senha: string) =>
-    request<{ ok: boolean; nome: string; perfil: string; modulos?: string[]; id: number }>('POST', '/funcionarios/login', {
+  funcionario: (estabelecimento_token: string, usuario: string, senha: string) =>
+    request<{ ok: boolean; token: string; nome: string; perfil: string; modulos?: string[]; id: number }>('POST', '/funcionarios/login', {
+      estabelecimento_token,
       usuario,
       senha,
     }),
@@ -103,7 +104,7 @@ export const estadoApi = {
 
 export const categoriaApi = {
   list: () => api.get<Categoria[]>('/categorias'),
-  create: (b: { nome: string; cor?: string }) => api.post<Categoria>('/categorias', b),
+  create: (b: { nome: string; cor?: string; categoria_pai_id?: number | null; impressora_agente_id?: number | null }) => api.post<Categoria>('/categorias', b),
   update: (id: number, b: Partial<Categoria>) => api.put<{ ok: boolean }>(`/categorias/${id}`, b),
 };
 
@@ -203,6 +204,8 @@ export const comandaApi = {
     api.put<{ id: number; nome: string; cor: string }>(`/comandas/${id}/pessoas/${pid}`, { nome }),
   addItem: (id: number, b: { produto_id?: number; codigo?: string; nome?: string; quantidade?: number; preco_unitario?: number; pessoa_id?: number; observacao?: string; responsavel?: string }) =>
     api.post<Comanda['itens'][0]>(`/comandas/${id}/itens`, b),
+  updateItem: (id: number, itemId: number, b: { observacao?: string }) =>
+    api.put<Comanda['itens'][0]>(`/comandas/${id}/itens/${itemId}`, b),
   itemStatus: (id: number, itemId: number, status: string, responsavel?: string) =>
     api.post<{ ok: boolean }>(`/comandas/${id}/itens/${itemId}/status`, { status, responsavel }),
   fechar: (id: number, b: { tipo: 'unica' | 'divisao' | 'individual'; taxa_garcom_pct?: number; forma?: string; pagamentos?: { forma: string; valor: number }[]; responsavel?: string; pessoas_valores?: { pessoa_id: number | null; valor: number }[]; pre_fechar?: boolean }) =>
@@ -274,7 +277,7 @@ export const impressoraApi = {
   etiquetas: () => api.get<any[]>('/impressora-etiquetas'),
   criarEtiqueta: (b: { nome: string; largura_mm?: number; altura_mm?: number }) => api.post<any>('/impressora-etiquetas', b),
   imprimirComanda: (comanda_id: number, b?: { setor?: string; agente?: string; tipo?: 'cozinha' | 'conta' }) =>
-    api.post<{ impressao: string; itens: number; setor: string; tipo?: string; jobs?: any[]; sem_rota?: string[] }>(`/impressao/comanda?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, ...b }),
+    api.post<{ impressao: string; itens: number; setor: string; tipo?: string; jobs?: any[]; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] }>(`/impressao/comanda?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, ...b }),
   imprimirPessoa: (comanda_id: number, pessoa_id: number) =>
     api.post<{ impressao: string; pessoa: ComandaPessoa; total: number }>(`/impressao/pessoa?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, pessoa_id }),
   imprimirEtiqueta: (id: number) => api.get<{ impressao: string; etiqueta: any }>(`/impressao/etiqueta/${id}`),

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Tags, Plus, Pencil, Trash2, Truck, Save } from 'lucide-react';
+import { Tags, Plus, Pencil, Trash2, Truck, Save, Printer, CornerDownRight } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
-import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Spinner, Tabs, useToast } from '@/components/ui';
-import { categoriaApi, fornecedorApi } from '@/lib/api';
+import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
+import { categoriaApi, fornecedorApi, impressoraApi } from '@/lib/api';
 import type { Categoria, Fornecedor } from '@/lib/types';
 
 const CORES = ['#6366f1', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
@@ -12,11 +12,14 @@ export function CategoriasPage() {
   const [tab, setTab] = useState<'categorias' | 'fornecedores'>('categorias');
   const [cats, setCats] = useState<Categoria[]>([]);
   const [forns, setForns] = useState<Fornecedor[]>([]);
+  const [impressoras, setImpressoras] = useState<any[]>([]);
   const [load, setLoad] = useState(true);
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [nome, setNome] = useState('');
   const [cor, setCor] = useState(CORES[0]);
+  const [categoriaPaiId, setCategoriaPaiId] = useState<number | null>(null);
+  const [impressoraId, setImpressoraId] = useState<number | null>(null);
   const [contato, setContato] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
@@ -24,9 +27,10 @@ export function CategoriasPage() {
   const loadAll = async () => {
     setLoad(true);
     try {
-      const [c, f] = await Promise.all([categoriaApi.list(), fornecedorApi.list()]);
+      const [c, f, i] = await Promise.all([categoriaApi.list(), fornecedorApi.list(), impressoraApi.agentes()]);
       setCats(c);
       setForns(f);
+      setImpressoras(i.filter((x: any) => x.ativo !== 0));
     } catch {
       /* noop */
     } finally {
@@ -43,8 +47,9 @@ export function CategoriasPage() {
     if (!nome.trim()) return toast('error', 'Informe o nome');
     try {
       if (tab === 'categorias') {
-        if (editId) await categoriaApi.update(editId, { nome, cor, ativo: 1 });
-        else await categoriaApi.create({ nome, cor });
+        const dados = { nome, cor, ativo: 1, categoria_pai_id: categoriaPaiId, impressora_agente_id: categoriaPaiId ? null : impressoraId };
+        if (editId) await categoriaApi.update(editId, dados);
+        else await categoriaApi.create(dados);
         toast('success', editId ? 'Categoria atualizada' : 'Categoria criada');
       } else {
         if (editId) await fornecedorApi.update(editId, { nome, contato, telefone, email, ativo: 1 });
@@ -64,6 +69,8 @@ export function CategoriasPage() {
     setEditId(categoria?.id ?? fornecedor?.id ?? null);
     setNome(categoria?.nome || fornecedor?.nome || '');
     setCor(categoria?.cor || CORES[0]);
+    setCategoriaPaiId(categoria?.categoria_pai_id || null);
+    setImpressoraId(categoria?.impressora_agente_id || null);
     setContato(fornecedor?.contato || '');
     setTelefone(fornecedor?.telefone || '');
     setEmail(fornecedor?.email || '');
@@ -77,7 +84,7 @@ export function CategoriasPage() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Cadastros</h1>
-          <p className="text-sm text-slate-500">Categorias e fornecedores</p>
+          <p className="text-sm text-slate-500">Categorias, subcategorias, impressoras e fornecedores integrados</p>
         </div>
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => abrir()}>
           Novo
@@ -101,13 +108,15 @@ export function CategoriasPage() {
             <EmptyState icon={<Tags className="h-8 w-8" />} title="Nenhuma categoria" />
           </Card>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {cats.map((c) => (
-              <Card key={c.id} className="flex items-center justify-between p-3">
+          <div className="space-y-3">
+            {cats.filter((c) => !c.categoria_pai_id).map((c) => (
+              <Card key={c.id} className="p-3">
+                <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <span className="h-8 w-8 rounded-lg" style={{ backgroundColor: c.cor }} />
                   <div>
                     <p className="text-sm font-bold text-slate-800">{c.nome}</p>
+                    <p className="flex items-center gap-1 text-xs text-slate-500"><Printer className="h-3 w-3" />{c.impressora_herdada_nome || 'Sem impressora'}</p>
                     {!c.ativo && <Badge color="slate">inativa</Badge>}
                   </div>
                 </div>
@@ -123,6 +132,21 @@ export function CategoriasPage() {
                     }}
                   />
                 </div>
+                </div>
+                {cats.some((sub) => sub.categoria_pai_id === c.id) && (
+                  <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {cats.filter((sub) => sub.categoria_pai_id === c.id).map((sub) => (
+                      <div key={sub.id} className="flex items-center justify-between rounded-xl bg-slate-50 p-2.5">
+                        <div className="flex items-center gap-2">
+                          <CornerDownRight className="h-4 w-4 text-slate-400" />
+                          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: sub.cor }} />
+                          <div><p className="text-sm font-semibold text-slate-700">{sub.nome}</p><p className="text-xs text-slate-500">Herda: {sub.impressora_herdada_nome || 'sem impressora'}</p></div>
+                        </div>
+                        <IconButton label="Editar" icon={<Pencil className="h-4 w-4" />} onClick={() => abrir(sub)} />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </Card>
             ))}
           </div>
@@ -174,6 +198,13 @@ export function CategoriasPage() {
             <Input value={nome} onChange={(e) => setNome(e.target.value)} autoFocus />
           </Field>
           {tab === 'categorias' ? (
+            <>
+            <Field label="Tipo / categoria principal">
+              <Select value={categoriaPaiId || ''} onChange={(e) => { setCategoriaPaiId(e.target.value ? Number(e.target.value) : null); if (e.target.value) setImpressoraId(null); }}>
+                <option value="">Categoria principal</option>
+                {cats.filter((c) => !c.categoria_pai_id && c.id !== editId).map((c) => <option key={c.id} value={c.id}>Subcategoria de {c.nome}</option>)}
+              </Select>
+            </Field>
             <Field label="Cor">
               <div className="flex flex-wrap gap-2">
                 {CORES.map((c) => (
@@ -187,6 +218,17 @@ export function CategoriasPage() {
                 ))}
               </div>
             </Field>
+            {categoriaPaiId ? (
+              <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-700">A subcategoria herdará automaticamente a impressora da categoria principal.</div>
+            ) : (
+              <Field label="Impressora dos pedidos">
+                <Select value={impressoraId || ''} onChange={(e) => setImpressoraId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Sem impressora configurada</option>
+                  {impressoras.map((i) => <option key={i.id} value={i.id}>{i.nome} ({i.largura_mm || 80}mm)</option>)}
+                </Select>
+              </Field>
+            )}
+            </>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <Field label="Contato">

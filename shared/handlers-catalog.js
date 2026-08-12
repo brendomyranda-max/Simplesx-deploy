@@ -1,7 +1,6 @@
 import {
   now,
   num,
-  gerarToken,
   getConfig,
   setConfig,
   getProdutoFull,
@@ -15,6 +14,8 @@ import {
   kvGet,
   kvPut,
   httpError,
+  sha256,
+  estabelecimentoId,
 } from './util.js';
 import { converterQuantidade, arredondar } from './units.js';
 
@@ -30,8 +31,12 @@ export async function loginHandler(c, env) {
   const attempts = num(await kvGet(env, kvKey));
   if (attempts >= 10) return c.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, 429);
 
-  const row = await env.DB.prepare('SELECT id, nome, ativo FROM auth_tokens WHERE token=?')
-    .bind(tokenValue)
+  const row = await env.DB.prepare(
+    `SELECT t.id, t.nome, t.ativo, t.estabelecimento_id, e.nome AS estabelecimento_nome
+     FROM auth_tokens t JOIN estabelecimentos e ON e.id=t.estabelecimento_id
+     WHERE t.token_hash=? AND e.ativo=1`
+  )
+    .bind(await sha256(tokenValue))
     .first();
   if (!row) {
     await kvPut(env, kvKey, String(attempts + 1), { expirationTtl: 900 });
@@ -39,36 +44,7 @@ export async function loginHandler(c, env) {
   }
   if (!row.ativo) return c.json({ error: 'Token desativado' }, 401);
   await kvPut(env, kvKey, '0', { expirationTtl: 900 });
-  return c.json({ ok: true, nome: row.nome, token_id: row.id });
-}
-
-export async function listTokensHandler(c, env) {
-  const rows = await env.DB.prepare('SELECT id, nome, token, ativo, criado_em FROM auth_tokens ORDER BY id DESC').all();
-  return c.json(rows.results);
-}
-
-export async function createTokenHandler(c, env) {
-  const b = await c.req.json();
-  if (!b.nome) return c.json({ error: 'Nome obrigatório' }, 400);
-  const t = gerarToken();
-  const r = await env.DB.prepare('INSERT INTO auth_tokens (token, nome, ativo, criado_em) VALUES (?,?,1,?)')
-    .bind(t, b.nome, now())
-    .run();
-  return c.json({ id: r.meta.last_row_id, token: t, nome: b.nome, ativo: 1 }, 201);
-}
-
-export async function deleteTokenHandler(c, env) {
-  await env.DB.prepare('DELETE FROM auth_tokens WHERE id=?').bind(c.params.id).run();
-  return c.json({ ok: true });
-}
-
-export async function toggleTokenHandler(c, env) {
-  const row = await env.DB.prepare('SELECT ativo FROM auth_tokens WHERE id=?').bind(c.params.id).first();
-  if (!row) return c.json({ error: 'Token não encontrado' }, 404);
-  await env.DB.prepare('UPDATE auth_tokens SET ativo=? WHERE id=?')
-    .bind(row.ativo ? 0 : 1, c.params.id)
-    .run();
-  return c.json({ ok: true, ativo: row.ativo ? 0 : 1 });
+  return c.json({ ok: true, nome: row.estabelecimento_nome || row.nome });
 }
 
 // ============================ CONFIG ============================
@@ -90,6 +66,15 @@ export async function putConfigHandler(c, env) {
   const body = await c.req.json();
   if (body && typeof body === 'object') {
     for (const [k, v] of Object.entries(body)) {
+      if (k === 'gestor_token' && v) {
+        const gestor = await env.rawDB.prepare('SELECT estabelecimento_id FROM gestores WHERE token=? AND ativo=1').bind(String(v)).first();
+        if (!gestor) return c.json({ error: 'Gestor não encontrado ou inativo' }, 400);
+        if (num(gestor.estabelecimento_id) && num(gestor.estabelecimento_id) !== estabelecimentoId(env)) {
+          return c.json({ error: 'Este gestor já pertence a outro estabelecimento' }, 409);
+        }
+        await env.rawDB.prepare('UPDATE gestores SET estabelecimento_id=? WHERE token=?')
+          .bind(estabelecimentoId(env), String(v)).run();
+      }
       await setConfig(env, k, v);
     }
   }
@@ -99,23 +84,52 @@ export async function putConfigHandler(c, env) {
 // ============================ CATEGORIAS ============================
 
 export async function listCategoriasHandler(c, env) {
-  const rows = await env.DB.prepare('SELECT * FROM categorias ORDER BY nome').all();
+  const rows = await env.DB.prepare(
+    `SELECT c.*, pai.nome AS categoria_pai_nome,
+      ia.nome AS impressora_nome,
+      COALESCE(c.impressora_agente_id, pai.impressora_agente_id) AS impressora_herdada_id,
+      COALESCE(ia.nome, ia_pai.nome) AS impressora_herdada_nome
+     FROM categorias c
+     LEFT JOIN categorias pai ON pai.id=c.categoria_pai_id
+     LEFT JOIN impressora_agentes ia ON ia.id=c.impressora_agente_id
+     LEFT JOIN impressora_agentes ia_pai ON ia_pai.id=pai.impressora_agente_id
+     ORDER BY COALESCE(pai.nome, c.nome), c.categoria_pai_id IS NOT NULL, c.nome`
+  ).all();
   return c.json(rows.results);
+}
+
+async function validarCategoriaPai(env, paiId, categoriaId = 0) {
+  if (!paiId) return null;
+  if (num(paiId) === num(categoriaId)) throw httpError(400, 'Uma categoria não pode ser subcategoria dela mesma');
+  const pai = await env.DB.prepare('SELECT id, categoria_pai_id FROM categorias WHERE id=?').bind(paiId).first();
+  if (!pai) throw httpError(400, 'Categoria principal não encontrada');
+  if (pai.categoria_pai_id) throw httpError(400, 'Uma subcategoria não pode conter outras subcategorias');
+  if (categoriaId) {
+    const filhos = await env.DB.prepare('SELECT id FROM categorias WHERE categoria_pai_id=? LIMIT 1').bind(categoriaId).first();
+    if (filhos) throw httpError(400, 'Esta categoria possui subcategorias e não pode virar subcategoria');
+  }
+  return num(paiId);
 }
 
 export async function createCategoriaHandler(c, env) {
   const b = await c.req.json();
   if (!b.nome) return c.json({ error: 'Nome obrigatório' }, 400);
-  const r = await env.DB.prepare('INSERT INTO categorias (nome, cor, ativo, criado_em) VALUES (?,?,1,?)')
-    .bind(b.nome, b.cor || '#6366f1', now())
+  const paiId = await validarCategoriaPai(env, b.categoria_pai_id);
+  const impressoraId = num(b.impressora_agente_id) || null;
+  const r = await env.DB.prepare('INSERT INTO categorias (nome, cor, ativo, categoria_pai_id, impressora_agente_id, criado_em) VALUES (?,?,1,?,?,?)')
+    .bind(String(b.nome).trim(), b.cor || '#6366f1', paiId, impressoraId, now())
     .run();
-  return c.json({ id: r.meta.last_row_id, nome: b.nome, cor: b.cor || '#6366f1', ativo: 1 }, 201);
+  return c.json({ id: r.meta.last_row_id, nome: b.nome, cor: b.cor || '#6366f1', ativo: 1, categoria_pai_id: paiId, impressora_agente_id: impressoraId }, 201);
 }
 
 export async function updateCategoriaHandler(c, env) {
   const b = await c.req.json();
-  await env.DB.prepare('UPDATE categorias SET nome=?, cor=?, ativo=? WHERE id=?')
-    .bind(b.nome, b.cor, b.ativo === false ? 0 : 1, c.params.id)
+  const atual = await env.DB.prepare('SELECT * FROM categorias WHERE id=?').bind(c.params.id).first();
+  if (!atual) return c.json({ error: 'Categoria não encontrada' }, 404);
+  const paiId = await validarCategoriaPai(env, b.categoria_pai_id, c.params.id);
+  const impressoraId = num(b.impressora_agente_id) || null;
+  await env.DB.prepare('UPDATE categorias SET nome=?, cor=?, ativo=?, categoria_pai_id=?, impressora_agente_id=? WHERE id=?')
+    .bind(String(b.nome || atual.nome).trim(), b.cor || atual.cor, b.ativo === false || b.ativo === 0 ? 0 : 1, paiId, impressoraId, c.params.id)
     .run();
   return c.json({ ok: true });
 }
@@ -172,22 +186,20 @@ export async function listProdutosHandler(c, env) {
   const rows = await env.DB.prepare(sql).bind(...params).all();
   const lista = rows.results;
   if (!lista.length) return c.json(lista);
-  const ids = lista.map((p) => p.id);
-  const placeholders = ids.map(() => '?').join(',');
   const [cats, cods, coments, fichas] = await Promise.all([
     env.DB.prepare(
-      `SELECT pc.produto_id, c.id, c.nome, c.cor FROM produto_categorias pc JOIN categorias c ON c.id=pc.categoria_id WHERE pc.produto_id IN (${placeholders})`
-    ).bind(...ids).all(),
+      'SELECT pc.produto_id, c.id, c.nome, c.cor FROM produto_categorias pc JOIN categorias c ON c.id=pc.categoria_id'
+    ).all(),
     env.DB.prepare(
-      `SELECT produto_id, id, codigo, principal FROM produto_codigos_barras WHERE produto_id IN (${placeholders}) ORDER BY principal DESC, id`
-    ).bind(...ids).all(),
+      'SELECT produto_id, id, codigo, principal FROM produto_codigos_barras ORDER BY principal DESC, id'
+    ).all(),
     env.DB.prepare(
-      `SELECT produto_id, texto FROM produto_comentarios WHERE produto_id IN (${placeholders}) ORDER BY ordem, id`
-    ).bind(...ids).all(),
+      'SELECT produto_id, texto FROM produto_comentarios ORDER BY ordem, id'
+    ).all(),
     env.DB.prepare(
       `SELECT f.produto_id, f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade, p.estoque_atual AS insumo_estoque
-       FROM ficha_tecnica f JOIN produtos p ON p.id=f.insumo_id WHERE f.produto_id IN (${placeholders})`
-    ).bind(...ids).all(),
+       FROM ficha_tecnica f JOIN produtos p ON p.id=f.insumo_id`
+    ).all(),
   ]);
   const catsBy = new Map();
   for (const r of cats.results) {
@@ -515,6 +527,26 @@ export async function deleteProdutoHandler(c, env) {
   const p = await env.DB.prepare('SELECT * FROM produtos WHERE id=?').bind(id).first();
   if (!p) return c.json({ error: 'Produto não encontrado' }, 404);
 
+  // Uma venda é um documento financeiro único. Se ela contém o produto,
+  // removemos a venda inteira (e seus efeitos) para não deixar totais,
+  // pagamentos ou lançamentos sem correspondência com os itens.
+  const [vendas, itensComanda, perdasDiretas] = await Promise.all([
+    env.DB.prepare(
+      'SELECT DISTINCT v.id, v.numero FROM vendas v JOIN venda_itens vi ON vi.venda_id=v.id WHERE vi.produto_id=?'
+    ).bind(id).all(),
+    env.DB.prepare('SELECT id FROM comanda_itens WHERE produto_id=?').bind(id).all(),
+    env.DB.prepare('SELECT id FROM perdas WHERE produto_id=?').bind(id).all(),
+  ]);
+  const vendaIds = vendas.results.map((v) => v.id);
+  const itemComandaIds = itensComanda.results.map((i) => i.id);
+
+  let perdasLigadas = perdasDiretas.results.map((pe) => pe.id);
+  if (itemComandaIds.length) {
+    const ph = itemComandaIds.map(() => '?').join(',');
+    const rows = await env.DB.prepare(`SELECT id FROM perdas WHERE item_id IN (${ph})`).bind(...itemComandaIds).all();
+    perdasLigadas = [...new Set([...perdasLigadas, ...rows.results.map((pe) => pe.id)])];
+  }
+
   const stmts = [
     // Registros derivados do produto
     env.DB.prepare('DELETE FROM produto_codigos_barras WHERE produto_id=?').bind(id),
@@ -527,7 +559,39 @@ export async function deleteProdutoHandler(c, env) {
     env.DB.prepare('DELETE FROM estoque_movimentacoes WHERE produto_id=?').bind(id),
     // Controles de validade
     env.DB.prepare('DELETE FROM validade_controles WHERE produto_id=?').bind(id),
+    // Perdas e itens ainda presentes em comandas abertas/fechadas
+    env.DB.prepare('DELETE FROM perdas WHERE produto_id=?').bind(id),
+    env.DB.prepare('DELETE FROM comanda_itens WHERE produto_id=?').bind(id),
   ];
+
+  if (perdasLigadas.length) {
+    const ph = perdasLigadas.map(() => '?').join(',');
+    stmts.push(
+      env.DB.prepare(`DELETE FROM lancamentos WHERE ref_tipo='perda' AND ref_id IN (${ph})`).bind(...perdasLigadas),
+      env.DB.prepare(`DELETE FROM estoque_movimentacoes WHERE origem='perda' AND ref_id IN (${ph})`).bind(...perdasLigadas),
+      env.DB.prepare(`DELETE FROM perdas WHERE id IN (${ph})`).bind(...perdasLigadas)
+    );
+  }
+
+  if (vendaIds.length) {
+    const ph = vendaIds.map(() => '?').join(',');
+    stmts.push(
+      env.DB.prepare(`DELETE FROM lancamentos WHERE ref_tipo='venda' AND ref_id IN (${ph})`).bind(...vendaIds),
+      env.DB.prepare(`DELETE FROM estoque_movimentacoes WHERE origem IN ('venda','estorno') AND ref_id IN (${ph})`).bind(...vendaIds),
+      env.DB.prepare(`DELETE FROM pagamentos WHERE venda_id IN (${ph})`).bind(...vendaIds),
+      env.DB.prepare(`DELETE FROM venda_itens WHERE venda_id IN (${ph})`).bind(...vendaIds),
+      env.DB.prepare(`DELETE FROM vendas WHERE id IN (${ph})`).bind(...vendaIds)
+    );
+    for (const venda of vendas.results) {
+      stmts.push(
+        env.DB.prepare("DELETE FROM caixa WHERE observacao IN (?,?,?)").bind(
+          `Venda ${venda.numero}`,
+          `Cancelamento Venda ${venda.numero}`,
+          `Estorno da venda ${venda.numero}`
+        )
+      );
+    }
+  }
 
   // Se este produto é insumo de fichas técnicas, remove das receitas
   // e recalcula o CMV dos produtos compostos afetados.
@@ -548,10 +612,18 @@ export async function deleteProdutoHandler(c, env) {
       const ing = ficha.map((x) => ({ insumo_id: x.insumo_id, quantidade: x.quantidade, unidade: x.unidade }));
       const cmv = await calcularCmvFicha(env, ing);
       await env.DB.prepare('UPDATE produtos SET custo=?, atualizado_em=? WHERE id=?').bind(cmv, now(), pid).run();
+    } else {
+      await env.DB.prepare('UPDATE produtos SET custo=0, atualizado_em=? WHERE id=?').bind(now(), pid).run();
     }
   }
 
-  return c.json({ ok: true, compostos_afetados: compostosAfetados.length });
+  return c.json({
+    ok: true,
+    vendas_excluidas: vendaIds.length,
+    perdas_excluidas: perdasLigadas.length,
+    itens_comanda_excluidos: itemComandaIds.length,
+    compostos_afetados: compostosAfetados.length,
+  });
 }
 
 // ============================ ESTOQUE ============================

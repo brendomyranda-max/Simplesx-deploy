@@ -18,8 +18,7 @@ import {
 
 export function ImpressorasPage() {
   const toast = useToast();
-  const [tab, setTab] = useState<'setores' | 'agentes' | 'etiquetas'>('setores');
-  const [setores, setSetores] = useState<any[]>([]);
+  const [tab, setTab] = useState<'agentes' | 'etiquetas'>('agentes');
   const [agentes, setAgentes] = useState<any[]>([]);
   const [etiquetas, setEtiquetas] = useState<any[]>([]);
   const [categorias, setCategorias] = useState<any[]>([]);
@@ -70,15 +69,13 @@ export function ImpressorasPage() {
   const loadAll = async () => {
     setLoad(true);
     try {
-      const [s, a, e, cfg, g, cats] = await Promise.all([
-        impressoraApi.setores(),
+      const [a, e, cfg, g, cats] = await Promise.all([
         impressoraApi.agentes(),
         impressoraApi.etiquetas(),
         configApi.get().catch(() => null),
         gestorApi.list().catch(() => []),
         categoriaApi.list(),
       ]);
-      setSetores(s);
       setAgentes(a);
       setEtiquetas(e);
       setGestores(g);
@@ -133,19 +130,19 @@ export function ImpressorasPage() {
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (tab === 'setores') {
-        if (!form.nome) return toast('error', 'Informe o nome do setor');
-        await impressoraApi.criarSetor({ nome: form.nome, padrao_impressora: form.padrao_impressora });
-        toast('success', 'Setor criado');
-      } else if (tab === 'agentes') {
+      if (tab === 'agentes') {
         if (!form.nome) return toast('error', 'Selecione ou informe a fila CUPS');
+        const categoriasSelecionadas = (form.categorias || []).filter((id: number) => {
+          const categoria = categorias.find((cat) => cat.id === id);
+          return !categoria?.categoria_pai_id || !(form.categorias || []).includes(categoria.categoria_pai_id);
+        });
         const payload = {
           nome: form.nome,
           ip: form.ip || '',
           porta: Number(form.porta) || 9100,
           tipo: 'impressora',
           protocolo: form.protocolo || 'cups',
-          categorias: form.categorias || [],
+          categorias: categoriasSelecionadas,
           imprime_pedidos: form.imprime_pedidos !== false,
           imprime_conta: !!form.imprime_conta,
           largura_mm: Number(form.largura_mm) === 58 ? 58 : 80,
@@ -169,7 +166,7 @@ export function ImpressorasPage() {
 
   const abrir = () => {
     setEditandoAgente(null);
-    setForm({ nome: '', padrao_impressora: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, largura_mm: '80', altura_mm: '40' });
+    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, largura_mm: '80', altura_mm: '40' });
     setModal(true);
   };
 
@@ -178,7 +175,7 @@ export function ImpressorasPage() {
     setEditandoAgente(a.id);
     setForm({
       ...a,
-      categorias: Array.isArray(a.categorias) ? a.categorias : [],
+      categorias: categorias.filter((cat) => cat.impressora_herdada_id === a.id).map((cat) => cat.id),
       imprime_pedidos: a.imprime_pedidos !== false,
       imprime_conta: !!a.imprime_conta,
       largura_mm: String(a.largura_mm || 80),
@@ -186,9 +183,14 @@ export function ImpressorasPage() {
     setModal(true);
   };
 
-  const alternarCategoria = (id: number) => {
-    const atuais: number[] = form.categorias || [];
-    setForm({ ...form, categorias: atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id] });
+  const alternarCategoria = (categoria: any) => {
+    const atuais = new Set<number>(form.categorias || []);
+    const ids = categoria.categoria_pai_id
+      ? [categoria.id]
+      : [categoria.id, ...categorias.filter((cat) => cat.categoria_pai_id === categoria.id).map((cat) => cat.id)];
+    const selecionar = !atuais.has(categoria.id);
+    ids.forEach((id) => selecionar ? atuais.add(id) : atuais.delete(id));
+    setForm({ ...form, categorias: [...atuais] });
   };
 
   return (
@@ -196,7 +198,7 @@ export function ImpressorasPage() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Impressoras</h1>
-          <p className="text-sm text-slate-500">Rotas por categoria, filas CUPS e etiquetas</p>
+          <p className="text-sm text-slate-500">Cadastre a impressora e escolha quais categorias e subcategorias serão enviadas para ela</p>
         </div>
         <Button icon={<Plus className="h-4 w-4" />} onClick={abrir}>Novo</Button>
       </div>
@@ -246,11 +248,10 @@ export function ImpressorasPage() {
         </Card>
 
         <Card className="p-4">
-          <p className="font-bold text-slate-800">Sem papel em branco (driver)</p>
+          <p className="font-bold text-slate-800">Papel e driver</p>
           <p className="mt-1 text-sm leading-relaxed text-slate-500">
-            Nesta máquina o papel de bobina já fica configurado no CUPS (largura imprimível {bobina === '80' ? '72mm' : '48mm'}).
-            Em outros PCs (Windows), cadastre papel personalizado {bobina} × 297mm com margens 0 — senão o navegador
-            imprime como A4 e gasta rolo à toa.
+            O gestor reconhece as impressoras instaladas no Windows e no Linux. Para impressoras térmicas, mantenha no
+            driver o papel de {bobina}mm e margens mínimas; impressoras comuns usam o papel configurado no próprio driver.
           </p>
         </Card>
       </div>
@@ -258,7 +259,7 @@ export function ImpressorasPage() {
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <p className="font-bold text-slate-800">Impressão direta (CUPS)</p>
+            <p className="font-bold text-slate-800">Impressão direta (gestor local)</p>
             {cupsOnline === null ? (
               <Badge color="slate">verificando…</Badge>
             ) : cupsOnline ? (
@@ -272,14 +273,14 @@ export function ImpressorasPage() {
           </Button>
         </div>
         <p className="mt-1 text-sm leading-relaxed text-slate-500">
-          Ao tocar em "Imprimir", o app envia o recibo direto para o CUPS (sem diálogo do navegador),
-          usando o "Gestor de Impressoras CUPS" rodando em <code className="rounded bg-slate-100 px-1">http://127.0.0.1:8410</code>.
+          Ao tocar em "Imprimir", o app envia o recibo direto para o gestor (sem diálogo do navegador),
+          usando o serviço rodando em <code className="rounded bg-slate-100 px-1">http://127.0.0.1:8410</code>.
           Se o servidor estiver offline, a impressão cai automaticamente para o diálogo do navegador.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="flex items-center gap-3">
-            <Toggle checked={direct} onChange={mudarDirect} label="Impressão direta via CUPS" />
-            <span className="text-sm text-slate-600">{direct ? 'Direto via CUPS (sem diálogo)' : 'Diálogo do navegador'}</span>
+            <Toggle checked={direct} onChange={mudarDirect} label="Impressão direta via gestor" />
+            <span className="text-sm text-slate-600">{direct ? 'Direto via gestor (sem diálogo)' : 'Diálogo do navegador'}</span>
           </div>
           <Field label="Impressora da bobina 80mm">
             <Select value={printer80} onChange={(e) => mudarPrinter('80', e.target.value)}>
@@ -367,8 +368,7 @@ export function ImpressorasPage() {
         value={tab}
         onChange={(v) => setTab(v as any)}
         tabs={[
-          { value: 'setores', label: 'Setores' },
-          { value: 'agentes', label: 'Impressoras e categorias' },
+          { value: 'agentes', label: 'Impressoras' },
           { value: 'etiquetas', label: 'Modelos de etiqueta' },
         ]}
       />
@@ -377,27 +377,9 @@ export function ImpressorasPage() {
         <Spinner />
       ) : (
         <div className="mt-4">
-          {tab === 'setores' && (
-            setores.length === 0 ? (
-              <Card><EmptyState icon={<Printer className="h-8 w-8" />} title="Nenhum setor cadastrado" subtitle="ex.: Cozinha, Bar, Confeitaria" /></Card>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {setores.map((s) => (
-                  <Card key={s.id} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="font-bold text-slate-800">{s.nome}</p>
-                      <Badge color="green">ativo</Badge>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-500">Impressora padrão: <span className="font-semibold text-slate-700">{s.padrao_impressora || '—'}</span></p>
-                  </Card>
-                ))}
-              </div>
-            )
-          )}
-
           {tab === 'agentes' && (
             agentes.length === 0 ? (
-              <Card><EmptyState icon={<Network className="h-8 w-8" />} title="Nenhuma rota de impressão" subtitle="Vincule uma fila CUPS às categorias do cardápio" /></Card>
+              <Card><EmptyState icon={<Network className="h-8 w-8" />} title="Nenhuma impressora" subtitle="Cadastre uma fila CUPS e depois selecione-a na categoria" /></Card>
             ) : (
               <Card className="overflow-hidden">
                 <div className="overflow-x-auto">
@@ -405,7 +387,7 @@ export function ImpressorasPage() {
                     <thead className="bg-slate-50">
                       <tr>
                         <th className="th">Nome</th>
-                        <th className="th">Categorias dos pedidos</th>
+                        <th className="th">Categorias vinculadas</th>
                         <th className="th">Fechamento</th>
                         <th className="th">Bobina</th>
                         <th className="th"></th>
@@ -417,11 +399,9 @@ export function ImpressorasPage() {
                           <td className="td font-semibold text-slate-800">{a.nome}</td>
                           <td className="td">
                             <div className="flex max-w-md flex-wrap gap-1">
-                              {(a.categorias || []).length === 0 ? <span className="text-xs text-slate-400">Nenhuma</span> :
-                                (a.categorias || []).map((id: number) => {
-                                  const cat = categorias.find((c) => c.id === id);
-                                  return cat ? <Badge key={id} color="blue">{cat.nome}</Badge> : null;
-                                })}
+                              {categorias.filter((c) => c.impressora_herdada_id === a.id).length === 0
+                                ? <span className="text-xs text-slate-400">Nenhuma categoria</span>
+                                : categorias.filter((c) => c.impressora_herdada_id === a.id).map((cat) => <Badge key={cat.id} color="blue">{cat.categoria_pai_id ? `↳ ${cat.nome}` : cat.nome}</Badge>)}
                             </div>
                           </td>
                           <td className="td">{a.imprime_conta ? <Badge color="green">Imprime conta</Badge> : '—'}</td>
@@ -455,19 +435,11 @@ export function ImpressorasPage() {
         </div>
       )}
 
-      <Modal open={modal} onClose={() => { setModal(false); setEditandoAgente(null); }} title={tab === 'agentes' ? (editandoAgente ? 'Editar rota de impressão' : 'Nova rota de impressão') : `Novo ${tab === 'setores' ? 'setor' : 'modelo de etiqueta'}`}>
+      <Modal open={modal} onClose={() => { setModal(false); setEditandoAgente(null); }} title={tab === 'agentes' ? (editandoAgente ? 'Editar impressora' : 'Nova impressora') : 'Novo modelo de etiqueta'}>
         <form onSubmit={salvar} className="space-y-4">
           {tab !== 'agentes' && (
-            <Field label={tab === 'etiquetas' ? 'Nome do modelo *' : 'Nome *'}>
+            <Field label="Nome do modelo *">
               <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} autoFocus />
-            </Field>
-          )}
-          {tab === 'setores' && (
-            <Field label="Impressora padrão">
-              <Select value={form.padrao_impressora} onChange={(e) => setForm({ ...form, padrao_impressora: e.target.value })}>
-                <option value="">—</option>
-                {agentes.map((a) => <option key={a.id} value={a.nome}>{a.nome} ({a.ip})</option>)}
-              </Select>
             </Field>
           )}
           {tab === 'agentes' && (
@@ -480,15 +452,29 @@ export function ImpressorasPage() {
                 </Select>
               </Field>
               {!cupsOnline && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">O gestor local está inacessível neste dispositivo. Abra esta tela no computador do gestor para listar as filas CUPS.</p>}
-              <Field label="Categorias enviadas para esta impressora">
-                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200 p-3 sm:grid-cols-2">
-                  {categorias.map((cat) => (
-                    <label key={cat.id} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                      <input type="checkbox" checked={(form.categorias || []).includes(cat.id)} onChange={() => alternarCategoria(cat.id)} className="h-4 w-4 rounded border-slate-300" />
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: cat.cor }} />
-                      {cat.nome}
-                    </label>
+              <Field label="Categorias que imprimem nesta impressora">
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
+                  {categorias.filter((cat) => !cat.categoria_pai_id).map((categoria) => (
+                    <div key={categoria.id}>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 font-semibold text-slate-700 hover:bg-slate-50">
+                        <input type="checkbox" checked={(form.categorias || []).includes(categoria.id)} onChange={() => alternarCategoria(categoria)} />
+                        {categoria.nome}
+                        <span className="text-xs font-normal text-slate-400">(inclui todas as subcategorias)</span>
+                      </label>
+                      {categorias.filter((sub) => sub.categoria_pai_id === categoria.id).map((sub) => (
+                        <label key={sub.id} className="ml-7 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={(form.categorias || []).includes(sub.id)}
+                            disabled={(form.categorias || []).includes(categoria.id)}
+                            onChange={() => alternarCategoria(sub)}
+                          />
+                          {sub.nome}
+                        </label>
+                      ))}
+                    </div>
                   ))}
+                  {categorias.length === 0 && <p className="px-2 py-3 text-sm text-slate-400">Nenhuma categoria cadastrada.</p>}
                 </div>
               </Field>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -499,7 +485,7 @@ export function ImpressorasPage() {
                   </Select>
                 </Field>
                 <div className="space-y-2 pt-6">
-                  <Toggle checked={form.imprime_pedidos !== false} onChange={(v) => setForm({ ...form, imprime_pedidos: v })} label="Imprimir pedidos das categorias" />
+                  <Toggle checked={form.imprime_pedidos !== false} onChange={(v) => setForm({ ...form, imprime_pedidos: v })} label="Receber pedidos das categorias" />
                   <Toggle checked={!!form.imprime_conta} onChange={(v) => setForm({ ...form, imprime_conta: v })} label="Imprimir fechamento de conta" />
                 </div>
               </div>

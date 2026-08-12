@@ -37,8 +37,8 @@ export function Login() {
     if (!usuario.trim() || !senha) return toast('error', 'Informe usuário e senha');
     setLoading(true);
     try {
-      const r = await authApi.funcionario(usuario, senha);
-      const tk = `func:${r.id}`;
+      const r = await authApi.funcionario(token.trim(), usuario, senha);
+      const tk = r.token;
       setToken(tk);
       setAuth(tk, r.nome, r.perfil, r.modulos);
       toast('success', `Bem-vindo(a), ${r.nome}!`);
@@ -78,7 +78,7 @@ export function Login() {
                 <h2 className="text-sm font-semibold text-slate-200">Etapa 1 de 2</h2>
                 <span className="text-xs text-slate-500">Token do dispositivo</span>
               </div>
-              <Field label="Token de acesso" hint="Informe o token gerado nas Configurações ou por um administrador">
+              <Field label="Token do estabelecimento" hint="Informe o token entregue pelo administrador do SimplesX">
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input

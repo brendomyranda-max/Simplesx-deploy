@@ -50,8 +50,10 @@ export function ComandaPage() {
   const [taxa, setTaxa] = useState('');
   const [forma, setForma] = useState('dinheiro');
   const [finalizando, setFinalizando] = useState(false);
+  const [enviandoCozinha, setEnviandoCozinha] = useState(false);
   const [imprimir, setImprimir] = useState<{ impressao: string; setor: string } | null>(null);
   const [addProduto, setAddProduto] = useState<Produto | null>(null);
+  const [editandoItem, setEditandoItem] = useState<ComandaItem | null>(null);
   const [addQtd, setAddQtd] = useState(1);
   const [addObsSel, setAddObsSel] = useState<string[]>([]);
   const [addCustom, setAddCustom] = useState('');
@@ -92,11 +94,29 @@ export function ComandaPage() {
   };
 
   const abrirAdicionar = (p: Produto) => {
+    setEditandoItem(null);
     setAddProduto(p);
     setAddQtd(1);
     setAddObsSel([]);
     setAddCustom('');
     setAdicionando(false);
+  };
+
+  const abrirEditarItem = async (item: ComandaItem) => {
+    if (locked || item.status !== 'novo' || !item.produto_id) return;
+    try {
+      const produtoCompleto = produtos.find((p) => p.id === item.produto_id) || await produtoApi.get(item.produto_id);
+      const automaticas = produtoCompleto.comentarios || [];
+      const atuais = String(item.observacao || '').split(',').map((o) => o.trim()).filter(Boolean);
+      setEditandoItem(item);
+      setAddProduto(produtoCompleto);
+      setAddQtd(Number(item.quantidade));
+      setAddObsSel(automaticas.filter((o) => atuais.includes(o)));
+      setAddCustom(atuais.filter((o) => !automaticas.includes(o)).join(', '));
+      setAdicionando(false);
+    } catch (e: any) {
+      toast('error', e?.error || 'Erro ao abrir o produto');
+    }
   };
 
   const toggleObs = (o: string) =>
@@ -107,6 +127,14 @@ export function ComandaPage() {
     const observacao = [...addObsSel, addCustom.trim()].filter(Boolean).join(', ') || undefined;
     setAdicionando(true);
     try {
+      if (editandoItem) {
+        await comandaApi.updateItem(comandaId, editandoItem.id, { observacao });
+        toast('success', `Observações de ${addProduto.nome} atualizadas`);
+        setAddProduto(null);
+        setEditandoItem(null);
+        loadComanda();
+        return;
+      }
       await comandaApi.addItem(comandaId, {
         produto_id: addProduto.id,
         quantidade: addQtd,
@@ -156,7 +184,8 @@ export function ComandaPage() {
       const r = await impressoraApi.imprimirComanda(comandaId, { setor });
       setImprimir(r);
       loadComanda();
-      if (r.sem_rota?.length) toast('error', `${r.sem_rota.length} item(ns) sem impressora configurada`);
+      if (r.sem_rota?.length) toast('error', `${r.sem_rota.length} item(ns) sem impressora configurada: ${r.sem_rota.join(', ')}`);
+      else if (r.falhas?.length) toast('error', `Falha em ${r.falhas.map((f) => f.impressora).join(', ')}: ${r.falhas[0].erro}`);
       else toast('success', `${r.jobs?.length || 0} impressão(ões) enviada(s)`);
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao imprimir');
@@ -187,14 +216,18 @@ export function ComandaPage() {
   };
 
   const enviarCozinha = async () => {
+    if (enviandoCozinha) return;
+    setEnviandoCozinha(true);
     try {
       const r = await impressoraApi.imprimirComanda(comandaId, { setor });
-      setImprimir({ impressao: r.impressao, setor: r.setor });
       loadComanda();
-      if (r.sem_rota?.length) toast('error', `${r.sem_rota.length} item(ns) sem impressora configurada`);
+      if (r.sem_rota?.length) toast('error', `${r.sem_rota.length} item(ns) sem impressora configurada: ${r.sem_rota.join(', ')}`);
+      else if (r.falhas?.length) toast('error', `Falha em ${r.falhas.map((f) => f.impressora).join(', ')}: ${r.falhas[0].erro}`);
       else toast('success', `${r.itens} item(ns) enviado(s) para ${r.jobs?.length || 0} impressora(s)`);
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao enviar para a cozinha');
+    } finally {
+      setEnviandoCozinha(false);
     }
   };
 
@@ -583,8 +616,8 @@ export function ComandaPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-bold text-slate-700">Itens ({ativos.length})</h2>
               {!locked && itensNovos.length > 0 && (
-                <Button size="sm" variant="secondary" icon={<Send className="h-3.5 w-3.5" />} onClick={enviarCozinha}>
-                  Enviar {itensNovos.length} para a cozinha
+                <Button size="sm" variant="secondary" icon={<Send className="h-3.5 w-3.5" />} loading={enviandoCozinha} onClick={enviarCozinha}>
+                  Enviar
                 </Button>
               )}
             </div>
@@ -596,7 +629,15 @@ export function ComandaPage() {
                   const pessoa = nomePessoaDe(item.pessoa_id);
                   return (
                     <div key={item.id} className="rounded-xl bg-slate-50 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
+                      <div
+                        className={`flex items-center justify-between gap-2 ${!locked && item.status === 'novo' && item.produto_id ? 'cursor-pointer rounded-lg hover:bg-slate-100' : ''}`}
+                        onClick={() => abrirEditarItem(item)}
+                        role={!locked && item.status === 'novo' && item.produto_id ? 'button' : undefined}
+                        tabIndex={!locked && item.status === 'novo' && item.produto_id ? 0 : undefined}
+                        onKeyDown={(e) => {
+                          if ((e.key === 'Enter' || e.key === ' ') && !locked && item.status === 'novo' && item.produto_id) abrirEditarItem(item);
+                        }}
+                      >
                         <div className="min-w-0 flex-1">
                           <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                             <span>{item.nome}</span>
@@ -867,7 +908,7 @@ export function ComandaPage() {
       </Modal>
 
       {/* Adicionar produto */}
-      <Modal open={!!addProduto} onClose={() => setAddProduto(null)} title="Adicionar produto" width="max-w-md">
+      <Modal open={!!addProduto} onClose={() => { setAddProduto(null); setEditandoItem(null); }} title={editandoItem ? 'Observações do produto' : 'Adicionar produto'} width="max-w-md">
         {addProduto && (
           <div className="space-y-4">
             <div className="rounded-xl bg-slate-50 p-3">
@@ -877,19 +918,20 @@ export function ComandaPage() {
 
             <Field label="Quantidade">
               <div className="flex items-center gap-2">
-                <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => setAddQtd(Math.max(1, addQtd - 1))}>
+                {!editandoItem && <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => setAddQtd(Math.max(1, addQtd - 1))}>
                   <Minus className="h-4 w-4" />
-                </Button>
+                </Button>}
                 <Input
                   type="number"
                   min={1}
                   className="w-20 text-center"
                   value={addQtd}
+                  disabled={!!editandoItem}
                   onChange={(e) => setAddQtd(Math.max(1, Number(e.target.value) || 1))}
                 />
-                <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => setAddQtd(addQtd + 1)}>
+                {!editandoItem && <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => setAddQtd(addQtd + 1)}>
                   <Plus className="h-4 w-4" />
-                </Button>
+                </Button>}
               </div>
             </Field>
 
@@ -930,7 +972,7 @@ export function ComandaPage() {
             </div>
 
             <Button className="w-full" loading={adicionando} onClick={confirmarAdicao}>
-              Adicionar {addQtd}x {addProduto.nome}
+              {editandoItem ? 'Salvar observações' : `Adicionar ${addQtd}x ${addProduto.nome}`}
             </Button>
           </div>
         )}

@@ -11,6 +11,45 @@ export const hoje = () => new Date().toISOString().slice(0, 10);
 export const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
 export const randHex = () => randBytesHex(8);
 export const gerarToken = () => randBytesHex(16);
+export async function sha256(value) {
+  const data = new TextEncoder().encode(String(value));
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function hashSenha(senha) {
+  const salt = randBytesHex(16).toLowerCase();
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(senha)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 100000 },
+    material,
+    256
+  );
+  const hash = Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, '0')).join('');
+  return `pbkdf2:${salt}:${hash}`;
+}
+
+export async function verificarSenha(senha, armazenada) {
+  const [tipo, salt, esperado] = String(armazenada || '').split(':');
+  if (tipo !== 'pbkdf2' || !salt || !esperado) return String(senha) === String(armazenada || '');
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(senha)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 100000 },
+    material,
+    256
+  );
+  const atual = Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, '0')).join('');
+  if (atual.length !== esperado.length) return false;
+  let diferenca = 0;
+  for (let i = 0; i < atual.length; i++) diferenca |= atual.charCodeAt(i) ^ esperado.charCodeAt(i);
+  return diferenca === 0;
+}
+
+export function estabelecimentoId(env) {
+  const id = num(env?.estabelecimentoId);
+  if (!id) throw httpError(401, 'Estabelecimento não identificado');
+  return id;
+}
 
 export const MOD_GESTOR = 'gestor';
 export const MOD_PDV = 'pdv_mercado';
@@ -91,22 +130,24 @@ export function patternToRegex(pattern) {
 }
 
 export async function getConfig(env) {
-  const rows = await env.DB.prepare('SELECT chave, valor FROM empresa_config').all();
+  const rows = await env.DB.prepare('SELECT chave, valor FROM empresa_config WHERE estabelecimento_id=?')
+    .bind(estabelecimentoId(env)).all();
   const map = {};
   for (const r of rows.results) map[r.chave] = r.valor;
   return map;
 }
 
 export async function getConfigValue(env, key, def) {
-  const r = await env.DB.prepare('SELECT valor FROM empresa_config WHERE chave=?').bind(key).first();
+  const r = await env.DB.prepare('SELECT valor FROM empresa_config WHERE estabelecimento_id=? AND chave=?')
+    .bind(estabelecimentoId(env), key).first();
   return r ? r.valor : def;
 }
 
 export async function setConfig(env, key, value) {
   await env.DB.prepare(
-    'INSERT INTO empresa_config (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor'
+    'INSERT INTO empresa_config (estabelecimento_id, chave, valor) VALUES (?, ?, ?) ON CONFLICT(estabelecimento_id, chave) DO UPDATE SET valor=excluded.valor'
   )
-    .bind(key, String(value))
+    .bind(estabelecimentoId(env), key, String(value))
     .run();
 }
 

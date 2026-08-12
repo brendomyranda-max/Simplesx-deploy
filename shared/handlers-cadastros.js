@@ -1,9 +1,10 @@
-import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE } from './util.js';
+import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE, sha256, gerarToken, estabelecimentoId, hashSenha, verificarSenha } from './util.js';
 
 // ============================ FUNCIONÁRIOS ============================
 
 export async function listFuncionariosHandler(c, env) {
-  const rows = await env.DB.prepare('SELECT id, nome, usuario, perfil, pin, modulos, ativo, criado_em FROM funcionarios ORDER BY nome').all();
+  const rows = await env.DB.prepare('SELECT id, nome, usuario, perfil, pin, modulos, ativo, criado_em FROM funcionarios WHERE estabelecimento_id=? ORDER BY nome')
+    .bind(estabelecimentoId(env)).all();
   return c.json(rows.results.map((f) => ({ ...f, modulos: modulosFromString(f.modulos) })));
 }
 
@@ -12,16 +13,16 @@ export async function createFuncionarioHandler(c, env) {
   if (!b.nome || !b.usuario || !b.senha_hash) return c.json({ error: 'Nome, usuário e senha obrigatórios' }, 400);
   const modulos = modulosToString(b.modulos || MOD_RESTAURANTE);
   const r = await env.DB.prepare(
-    'INSERT INTO funcionarios (nome, usuario, senha_hash, perfil, pin, modulos, ativo, criado_em) VALUES (?,?,?,?,?,?,1,?)'
+    'INSERT INTO funcionarios (estabelecimento_id, nome, usuario, senha_hash, perfil, pin, modulos, ativo, criado_em) VALUES (?,?,?,?,?,?,?,1,?)'
   )
-    .bind(b.nome, b.usuario, b.senha_hash, b.perfil || 'caixa', b.pin || null, modulos, now())
+    .bind(estabelecimentoId(env), b.nome, b.usuario, await hashSenha(b.senha_hash), b.perfil || 'caixa', b.pin || null, modulos, now())
     .run();
   return c.json({ id: r.meta.last_row_id, nome: b.nome, usuario: b.usuario, perfil: b.perfil || 'caixa', pin: b.pin || null, modulos: modulosFromString(modulos), ativo: 1 }, 201);
 }
 
 export async function updateFuncionarioHandler(c, env) {
   const b = await c.req.json();
-  const atual = await env.DB.prepare('SELECT * FROM funcionarios WHERE id=?').bind(c.params.id).first();
+  const atual = await env.DB.prepare('SELECT * FROM funcionarios WHERE id=? AND estabelecimento_id=?').bind(c.params.id, estabelecimentoId(env)).first();
   if (!atual) return c.json({ error: 'Funcionário não encontrado' }, 404);
   const modulos = b.modulos !== undefined && b.modulos !== null
     ? modulosToString(b.modulos)
@@ -34,7 +35,7 @@ export async function updateFuncionarioHandler(c, env) {
       b.pin || null,
       modulos,
       b.ativo === false ? 0 : 1,
-      b.senha_hash || atual.senha_hash,
+      b.senha_hash ? await hashSenha(b.senha_hash) : atual.senha_hash,
       c.params.id
     )
     .run();
@@ -42,28 +43,43 @@ export async function updateFuncionarioHandler(c, env) {
 }
 
 export async function deleteFuncionarioHandler(c, env) {
-  await env.DB.prepare('UPDATE funcionarios SET ativo=0 WHERE id=?').bind(c.params.id).run();
+  if (num(c.params.id) === num(c.user?.id)) return c.json({ error: 'O dono não pode desativar o próprio acesso' }, 400);
+  await env.DB.prepare('UPDATE funcionarios SET ativo=0 WHERE id=? AND estabelecimento_id=?').bind(c.params.id, estabelecimentoId(env)).run();
   return c.json({ ok: true });
 }
 
 export async function loginFuncionarioHandler(c, env) {
   const b = await c.req.json();
+  const acessoHash = await sha256(String(b.estabelecimento_token || ''));
+  const acesso = await env.DB.prepare('SELECT estabelecimento_id FROM auth_tokens WHERE token_hash=? AND ativo=1').bind(acessoHash).first();
+  if (!acesso) return c.json({ error: 'Token do estabelecimento inválido' }, 401);
   const row = await env.DB.prepare(
-    'SELECT id, nome, perfil, modulos FROM funcionarios WHERE LOWER(usuario)=LOWER(?) AND senha_hash=? AND ativo=1'
+    'SELECT id, nome, perfil, modulos, estabelecimento_id, senha_hash FROM funcionarios WHERE estabelecimento_id=? AND LOWER(usuario)=LOWER(?) AND ativo=1'
   )
-    .bind(b.usuario || '', b.senha || '')
+    .bind(acesso.estabelecimento_id, b.usuario || '')
     .first();
-  if (!row) return c.json({ error: 'Usuário ou senha inválidos' }, 401);
-  return c.json({ ok: true, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) });
+  if (!row || !(await verificarSenha(b.senha || '', row.senha_hash))) return c.json({ error: 'Usuário ou senha inválidos' }, 401);
+  const sessao = gerarToken() + gerarToken();
+  const expira = new Date(Date.now() + 30 * 86400000).toISOString();
+  await env.DB.prepare('INSERT INTO sessoes (estabelecimento_id, funcionario_id, token_hash, expira_em, criado_em) VALUES (?,?,?,?,?)')
+    .bind(row.estabelecimento_id, row.id, await sha256(sessao), expira, now()).run();
+  return c.json({ ok: true, token: sessao, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) });
 }
 
 export async function loginPinHandler(c, env) {
   const b = await c.req.json();
-  const row = await env.DB.prepare('SELECT id, nome, perfil, modulos FROM funcionarios WHERE pin=? AND ativo=1')
-    .bind(b.pin || '')
+  const acesso = await env.DB.prepare('SELECT estabelecimento_id FROM auth_tokens WHERE token_hash=? AND ativo=1')
+    .bind(await sha256(String(b.estabelecimento_token || ''))).first();
+  if (!acesso) return c.json({ error: 'Token do estabelecimento inválido' }, 401);
+  const row = await env.DB.prepare('SELECT id, nome, perfil, modulos, estabelecimento_id FROM funcionarios WHERE estabelecimento_id=? AND pin=? AND ativo=1')
+    .bind(acesso.estabelecimento_id, b.pin || '')
     .first();
   if (!row) return c.json({ error: 'PIN inválido' }, 401);
-  return c.json({ ok: true, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) });
+  const sessao = gerarToken() + gerarToken();
+  const expira = new Date(Date.now() + 30 * 86400000).toISOString();
+  await env.DB.prepare('INSERT INTO sessoes (estabelecimento_id, funcionario_id, token_hash, expira_em, criado_em) VALUES (?,?,?,?,?)')
+    .bind(row.estabelecimento_id, row.id, await sha256(sessao), expira, now()).run();
+  return c.json({ ok: true, token: sessao, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) });
 }
 
 // ============================ SETORES / IMPRESSORAS ============================
@@ -108,6 +124,7 @@ export async function createAgenteHandler(c, env) {
       b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80, now()
     )
     .run();
+  await sincronizarCategoriasDaImpressora(env, r.meta.last_row_id, b.categorias);
   return c.json({ id: r.meta.last_row_id, ...b, porta: num(b.porta) || 9100, ativo: 1 }, 201);
 }
 
@@ -124,6 +141,7 @@ export async function updateAgenteHandler(c, env) {
     JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
     b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80, b.ativo === false ? 0 : 1, c.params.id
   ).run();
+  await sincronizarCategoriasDaImpressora(env, c.params.id, b.categorias);
   return c.json({ ok: true });
 }
 
@@ -160,6 +178,15 @@ function parseIds(value) {
 
 function normalizeIds(value) {
   return [...new Set((Array.isArray(value) ? value : []).map(num).filter((id) => id > 0))];
+}
+
+async function sincronizarCategoriasDaImpressora(env, impressoraId, categorias) {
+  const id = num(impressoraId);
+  const ids = normalizeIds(categorias);
+  await env.DB.prepare('UPDATE categorias SET impressora_agente_id=NULL WHERE impressora_agente_id=?').bind(id).run();
+  for (const categoriaId of ids) {
+    await env.DB.prepare('UPDATE categorias SET impressora_agente_id=? WHERE id=?').bind(id, categoriaId).run();
+  }
 }
 
 async function enqueueGestorJob(env, { conteudo, impressora, larguraMm = 80 }) {
@@ -247,12 +274,20 @@ export async function imprimirComandaHandler(c, env) {
   const itens = tipo === 'conta'
     ? await env.DB.prepare(
       `SELECT i.*,
-        (SELECT GROUP_CONCAT(pc.categoria_id) FROM produto_categorias pc WHERE pc.produto_id=i.produto_id) AS categoria_ids
+        (SELECT GROUP_CONCAT(DISTINCT COALESCE(c.impressora_agente_id, pai.impressora_agente_id))
+         FROM produto_categorias pc
+         JOIN categorias c ON c.id=pc.categoria_id
+         LEFT JOIN categorias pai ON pai.id=c.categoria_pai_id
+         WHERE pc.produto_id=i.produto_id) AS impressora_ids
        FROM comanda_itens i WHERE i.comanda_id=? AND i.status!='cancelado' ORDER BY i.id`
     ).bind(b.comanda_id).all()
     : await env.DB.prepare(
       `SELECT i.*,
-        (SELECT GROUP_CONCAT(pc.categoria_id) FROM produto_categorias pc WHERE pc.produto_id=i.produto_id) AS categoria_ids
+        (SELECT GROUP_CONCAT(DISTINCT COALESCE(c.impressora_agente_id, pai.impressora_agente_id))
+         FROM produto_categorias pc
+         JOIN categorias c ON c.id=pc.categoria_id
+         LEFT JOIN categorias pai ON pai.id=c.categoria_pai_id
+         WHERE pc.produto_id=i.produto_id) AS impressora_ids
        FROM comanda_itens i WHERE i.comanda_id=? AND i.status='novo' ORDER BY i.id`
     ).bind(b.comanda_id).all();
 
@@ -292,18 +327,19 @@ export async function imprimirComandaHandler(c, env) {
     return c.json({ impressao: txt, itens: itens.results.length, setor, tipo, agente: b.agente || null, jobs });
   }
   const rotas = await env.DB.prepare(
-    'SELECT id, nome, categorias, largura_mm FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1 ORDER BY id'
+    'SELECT id, nome, largura_mm FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1 ORDER BY id'
   ).all();
   const jobs = [];
   const enviados = new Set();
+  const comRota = new Set();
   let preview = '';
   for (const rota of rotas.results) {
-    const categorias = new Set(parseIds(rota.categorias));
     const selecionados = itens.results.filter((item) => {
-      const ids = String(item.categoria_ids || '').split(',').map(num).filter(Boolean);
-      return ids.some((id) => categorias.has(id));
+      const ids = String(item.impressora_ids || '').split(',').map(num).filter(Boolean);
+      return ids.includes(num(rota.id));
     });
     if (!selecionados.length) continue;
+    selecionados.forEach((item) => comRota.add(item.id));
     const txt = textoPedido({ empresa, cnpj, mesa, com, destino: rota.nome, itens: selecionados });
     if (!preview) preview = txt;
     const job = await enqueueGestorJob(env, { conteudo: txt, impressora: rota.nome, larguraMm: num(rota.largura_mm) || 80 });
@@ -316,9 +352,12 @@ export async function imprimirComandaHandler(c, env) {
     await env.DB.prepare(`UPDATE comanda_itens SET status='enviado', enviado_em=? WHERE id IN (${placeholders}) AND status='novo'`)
       .bind(now(), ...ids).run();
   }
-  const semRota = itens.results.filter((item) => !enviados.has(item.id)).map((item) => item.nome);
+  const semRota = itens.results.filter((item) => !comRota.has(item.id)).map((item) => item.nome);
+  const falhas = jobs
+    .filter((job) => !job.ok)
+    .map((job) => ({ impressora: job.impressora, erro: job.error || 'Falha ao enviar para o gestor' }));
   if (!preview) preview = textoPedido({ empresa, cnpj, mesa, com, destino: setor, itens: itens.results });
-  return c.json({ impressao: preview, itens: enviados.size, setor, tipo, agente: b.agente || null, jobs, sem_rota: semRota });
+  return c.json({ impressao: preview, itens: enviados.size, setor, tipo, agente: b.agente || null, jobs, sem_rota: semRota, falhas });
 }
 
 export async function imprimirPessoaComandaHandler(c, env) {

@@ -69,7 +69,7 @@ export function EstoquePage() {
   const remover = (p: Produto) => {
     confirm(
       `Excluir "${p.nome}"?`,
-      'Remove o produto, os códigos de barras, lotes, entradas, movimentações e validades ligadas a ele. Vendas e perdas antigas são mantidas.',
+      'Exclusão definitiva: remove o produto e todos os rastros ligados a ele, incluindo vendas completas, pagamentos, caixa, perdas, comandas, estoque e vencimentos. Esta ação não pode ser desfeita.',
       async () => {
         await produtoApi.remove(p.id);
         toast('success', 'Produto excluído');

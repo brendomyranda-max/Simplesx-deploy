@@ -9,6 +9,7 @@
     "server": "node server/index.js",
     "preview": "vite preview",
     "criar-token": "node server/criar-token.js",
+    "tokens": "node server/gerenciar-tokens.js",
     "deploy": "wrangler d1 migrations apply simplesx-db --remote && npm run build && wrangler pages deploy dist --project-name simplesx-projeto-beta",
     "db:create": "wrangler d1 create simplesx-db",
     "db:migrate": "wrangler d1 migrations apply simplesx-db --remote",

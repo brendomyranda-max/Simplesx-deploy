@@ -1,18 +1,15 @@
-import { patternToRegex, modulosFromString, temModulo } from './util.js';
+import { patternToRegex, modulosFromString, temModulo, sha256 } from './util.js';
 import * as cat from './handlers-catalog.js';
 import * as ven from './handlers-vendas.js';
 import * as fin from './handlers-financeiro.js';
 import * as cad from './handlers-cadastros.js';
 import * as gestor from './handlers-gestor.js';
+import { TenantDb } from './tenant-db.js';
 
 // Módulos: 'gestor' (tudo), 'pdv_mercado', 'restaurante'
 const routes = [
   // auth
   { m: 'POST', p: '/api/auth/login', h: cat.loginHandler, pub: true },
-  { m: 'GET', p: '/api/tokens', h: cat.listTokensHandler, mod: 'gestor' },
-  { m: 'POST', p: '/api/tokens', h: cat.createTokenHandler, mod: 'gestor' },
-  { m: 'DELETE', p: '/api/tokens/:id', h: cat.deleteTokenHandler, mod: 'gestor' },
-  { m: 'POST', p: '/api/tokens/:id/toggle', h: cat.toggleTokenHandler, mod: 'gestor' },
   // funcionários (login por senha/pin não usa token)
   { m: 'POST', p: '/api/funcionarios/login', h: cad.loginFuncionarioHandler, pub: true },
   { m: 'POST', p: '/api/funcionarios/pin', h: cad.loginPinHandler, pub: true },
@@ -73,6 +70,7 @@ const routes = [
   { m: 'DELETE', p: '/api/comandas/:id/pessoas/:pid', h: ven.removePessoaHandler },
   { m: 'PUT', p: '/api/comandas/:id/pessoas/:pid', h: ven.updatePessoaComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/itens', h: ven.addItemComandaHandler },
+  { m: 'PUT', p: '/api/comandas/:id/itens/:item_id', h: ven.updateItemComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/itens/:item_id/status', h: ven.updateItemStatusHandler },
   { m: 'POST', p: '/api/comandas/:id/fechar', h: ven.fecharComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/reabrir', h: ven.reabrirComandaHandler },
@@ -142,18 +140,16 @@ export async function authMiddleware(c, env) {
   else tokenValue = c.req.query('token') || '';
   if (!tokenValue) return null;
 
-  // Token de cliente (auth_tokens) apenas libera o dispositivo; não autentica acesso.
-  // A sessão só é criada após o login da pessoa (func:<id>).
-  if (!tokenValue.startsWith('func:')) return null;
-
-  // Token de funcionário (func:<id>)
-  const funcId = Number(String(tokenValue).slice(5));
-  if (!funcId) return null;
-  const f = await env.DB.prepare('SELECT id, nome, perfil, modulos FROM funcionarios WHERE id=? AND ativo=1')
-    .bind(funcId)
+  const f = await env.DB.prepare(
+    `SELECT f.id, f.nome, f.perfil, f.modulos, f.estabelecimento_id
+     FROM sessoes s JOIN funcionarios f ON f.id=s.funcionario_id AND f.estabelecimento_id=s.estabelecimento_id
+     JOIN estabelecimentos e ON e.id=s.estabelecimento_id
+     WHERE s.token_hash=? AND s.expira_em>? AND f.ativo=1 AND e.ativo=1`
+  )
+    .bind(await sha256(tokenValue), new Date().toISOString())
     .first();
   if (!f) return null;
-  return { id: f.id, nome: f.nome, perfil: f.perfil, modulos: modulosFromString(f.modulos), via_token: false };
+  return { id: f.id, nome: f.nome, perfil: f.perfil, modulos: modulosFromString(f.modulos), estabelecimento_id: f.estabelecimento_id };
 }
 
 export async function handle(c, env) {
@@ -176,6 +172,7 @@ export async function handle(c, env) {
         return c.json({ error: 'Usuário ou senha inválidos' }, 403);
       }
       c.user = user;
+      env = { ...env, rawDB: env.DB, DB: new TenantDb(env.DB, user.estabelecimento_id), estabelecimentoId: user.estabelecimento_id };
     }
     try {
       return await route.h(c, env);
