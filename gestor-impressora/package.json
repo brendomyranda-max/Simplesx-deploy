@@ -1,6 +1,6 @@
 {
   "name": "simplesx-gestor-impressora",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Agente local de impressao do SimplesX",
   "homepage": "https://simplesx-projeto-beta.pages.dev",
@@ -12,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "dist:linux": "electron-builder --linux AppImage",
+    "dist:linux": "electron-builder --linux tar.gz",
     "dist:windows": "electron-builder --win nsis"
   },
   "devDependencies": {
@@ -35,7 +35,7 @@
       "output": "release"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": ["tar.gz"],
       "category": "Utility",
       "maintainer": "SimplesX <suporte@simplesx.app>",
       "synopsis": "Agente local de impressao do SimplesX"

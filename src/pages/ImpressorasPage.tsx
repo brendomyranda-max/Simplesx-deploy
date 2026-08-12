@@ -214,15 +214,15 @@ export function ImpressorasPage() {
           </div>
           <a
             className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-win-x64.exe"
+            href="/downloads/gestor-windows"
           >
-            Baixar para Windows
+            Baixar para Windows (.exe)
           </a>
           <a
             className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            href="https://github.com/brendomyranda-max/Simplesx-deploy/releases/latest/download/SimplesX-Gestor-linux-x86_64.AppImage"
+            href="/downloads/gestor-linux"
           >
-            Baixar para Linux
+            Baixar para Linux (.tar.gz)
           </a>
         </div>
       </Card>
