@@ -29,7 +29,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: gestor-impressora/package-lock.json
-      - run: npm ci
+      - name: Instalar dependencias
+        id: instalar
+        continue-on-error: true
+        run: npm ci
+      - name: Repetir instalacao apos falha de rede
+        if: steps.instalar.outcome == 'failure'
+        run: npm ci
       - run: ${{ matrix.comando }}
       - uses: actions/upload-artifact@v4
         with:
