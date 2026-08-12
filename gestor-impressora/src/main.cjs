@@ -1,9 +1,13 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron')
 const crypto = require('node:crypto')
+const { execFile } = require('node:child_process')
 const fs = require('node:fs/promises')
 const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
+const { promisify } = require('node:util')
+
+const executarArquivo = promisify(execFile)
 
 const PORTA_LOCAL = 8410
 const INTERVALO_POLL = 3000
@@ -22,12 +26,14 @@ let ultimoJob = null
 
 const instanciaUnica = app.requestSingleInstanceLock()
 if (!instanciaUnica) app.quit()
-app.on('second-instance', () => {
-  if (!janela) return
-  if (janela.isMinimized()) janela.restore()
-  janela.show()
-  janela.focus()
-})
+else {
+  app.on('second-instance', () => {
+    if (!janela) return
+    if (janela.isMinimized()) janela.restore()
+    janela.show()
+    janela.focus()
+  })
+}
 
 const arquivoConfig = () => path.join(app.getPath('userData'), 'config.json')
 
@@ -105,17 +111,104 @@ function documentoTexto(texto) {
   return `<!doctype html><html><head><meta charset="UTF-8"><style>@page{margin:0}body{margin:0;padding:2mm;font:11px/1.35 "DejaVu Sans Mono","Courier New",monospace}pre{margin:0;white-space:pre-wrap}</style></head><body><pre>${seguro}</pre></body></html>`
 }
 
-async function imprimirHtml({ html, impressora, copias = 1 }) {
+async function filasCupsDisponiveis() {
+  if (process.platform !== 'linux') return null
+  try {
+    const opcoes = { env: { ...process.env, LC_ALL: 'C' }, timeout: 5000 }
+    const [{ stdout: estado }, { stdout: aceitando }] = await Promise.all([
+      executarArquivo('lpstat', ['-p'], opcoes),
+      executarArquivo('lpstat', ['-a'], opcoes),
+    ])
+    const habilitadas = new Set()
+    for (const linha of estado.split('\n')) {
+      const match = linha.match(/^printer\s+(\S+)\s+/)
+      if (match && !/\bdisabled\b/i.test(linha)) habilitadas.add(match[1])
+    }
+    const aceitas = new Set()
+    for (const linha of aceitando.split('\n')) {
+      const match = linha.match(/^(\S+)\s+accepting requests/i)
+      if (match) aceitas.add(match[1])
+    }
+    return new Set([...habilitadas].filter((nome) => aceitas.has(nome)))
+  } catch (erro) {
+    throw new Error(`CUPS indisponível: ${erro.stderr?.trim() || erro.message}`)
+  }
+}
+
+async function impressorasInstaladas() {
+  if (!janela || janela.isDestroyed()) return []
+  const printers = await janela.webContents.getPrintersAsync()
+  const cups = await filasCupsDisponiveis()
+  if (!cups) return printers
+  return printers.filter((printer) => cups.has(printer.name))
+}
+
+function nomeComparavel(value) {
+  return String(value || '').trim().toLocaleLowerCase('pt-BR')
+}
+
+async function resolverImpressora(nomeSolicitado) {
+  const printers = await impressorasInstaladas()
+  if (!printers.length) throw new Error('Nenhuma impressora instalada foi encontrada pelo Windows/Linux')
+
+  const solicitado = String(nomeSolicitado || '').trim()
+  const configurado = String(config.impressoraPadrao || '').trim()
+  for (const candidato of [solicitado, configurado]) {
+    if (!candidato) continue
+    const chave = nomeComparavel(candidato)
+    const printer = printers.find((p) =>
+      nomeComparavel(p.name) === chave || nomeComparavel(p.displayName) === chave)
+    if (printer) return printer
+    if (candidato === solicitado && solicitado) {
+      throw new Error(`A impressora "${solicitado}" não está disponível neste computador`)
+    }
+  }
+
+  // Sem destino solicitado, usa somente uma fila local confirmada como ativa.
+  return printers.find((p) => p.isDefault) || printers[0]
+}
+
+async function aguardarRenderizacao(webContents) {
+  await webContents.executeJavaScript(`new Promise((resolve) => {
+    const pronto = () => requestAnimationFrame(() => requestAnimationFrame(resolve));
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(pronto, pronto);
+    else pronto();
+  })`)
+}
+
+async function imprimirHtml({ html, impressora, larguraMm = 80, copias = 1 }) {
+  const printer = await resolverImpressora(impressora)
+  const larguraPapelMm = Number(larguraMm) === 58 ? 58 : 80
   const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.html`)
   await fs.writeFile(temporario, html, 'utf8')
-  const printWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
+  const printWindow = new BrowserWindow({
+    show: false,
+    backgroundColor: '#ffffff',
+    webPreferences: { sandbox: true, backgroundThrottling: false },
+  })
   try {
     await printWindow.loadFile(temporario)
+    await aguardarRenderizacao(printWindow.webContents)
+    const temConteudoVisivel = await printWindow.webContents.executeJavaScript(
+      `document.body && document.body.innerText.trim().length > 0`,
+    )
+    if (!temConteudoVisivel) throw new Error('O documento de impressao ficou vazio antes de chegar ao driver')
+    const alturaConteudoPx = await printWindow.webContents.executeJavaScript(
+      `Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)`,
+    )
+    // O Electron espera dimensoes em microns. Sem pageSize, a impressao
+    // silenciosa usa o papel padrao do driver (frequentemente A4) e reduz o
+    // cupom termico. A altura acompanha o documento para nao gerar papel vazio.
+    const alturaPapelMicrons = Math.max(10_000, Math.ceil(Number(alturaConteudoPx) * 264.583))
     await new Promise((resolve, reject) => {
       printWindow.webContents.print({
         silent: true,
         printBackground: true,
-        deviceName: impressora || config.impressoraPadrao || undefined,
+        // Electron exige o nome interno retornado por getPrintersAsync, nao o
+        // nome amigavel mostrado pelo painel de impressoras do Windows.
+        deviceName: printer.name,
+        pageSize: { width: larguraPapelMm * 1000, height: alturaPapelMicrons },
+        scaleFactor: 100,
         copies: Math.max(1, Number(copias) || 1),
         margins: { marginType: 'none' },
       }, (sucesso, motivo) => sucesso ? resolve() : reject(new Error(motivo || 'Falha ao imprimir')))
@@ -128,7 +221,7 @@ async function imprimirHtml({ html, impressora, copias = 1 }) {
 
 async function executarJob(job) {
   const html = job.tipo === 'html' ? String(job.conteudo) : documentoTexto(job.conteudo)
-  await imprimirHtml({ html, impressora: job.impressora, copias: job.copias })
+  await imprimirHtml({ html, impressora: job.impressora, larguraMm: job.largura_mm, copias: job.copias })
 }
 
 async function confirmarJob(job, status, erro) {
@@ -164,9 +257,17 @@ async function sincronizar() {
 }
 
 async function listarImpressoras() {
-  if (!janela) return []
-  const printers = await janela.webContents.getPrintersAsync()
-  return printers.map((p) => ({ name: p.name, displayName: p.displayName, status: p.status, isDefault: p.isDefault }))
+  const printers = await impressorasInstaladas()
+  return printers.map((p) => ({
+    name: p.name,
+    displayName: p.displayName,
+    description: p.description,
+    status: p.status,
+    state: 'disponivel',
+    enabled: true,
+    accepting: true,
+    isDefault: p.isDefault,
+  }))
 }
 
 function responderJson(res, status, data) {
@@ -219,6 +320,13 @@ function iniciarServidorLocal() {
     }
     responderJson(res, 404, { error: 'Rota nao encontrada' })
   })
+  servidorLocal.on('error', (erro) => {
+    ultimoErro = erro.code === 'EADDRINUSE'
+      ? `A porta ${PORTA_LOCAL} já está sendo usada. Feche a outra instância do Gestor e abra novamente.`
+      : `Servidor local: ${erro.message}`
+    servidorLocal = null
+    notificarStatus()
+  })
   servidorLocal.listen(PORTA_LOCAL, '127.0.0.1')
 }
 
@@ -261,14 +369,16 @@ ipcMain.handle('testar-impressora', async (_e, impressora) => {
 })
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))
 
-app.whenReady().then(async () => {
-  await carregarConfig()
-  criarJanela()
-  criarTray()
-  iniciarServidorLocal()
-  await sincronizar()
-  timer = setInterval(sincronizar, INTERVALO_POLL)
-})
+if (instanciaUnica) {
+  app.whenReady().then(async () => {
+    await carregarConfig()
+    criarJanela()
+    criarTray()
+    iniciarServidorLocal()
+    await sincronizar()
+    timer = setInterval(sincronizar, INTERVALO_POLL)
+  })
+}
 
 app.on('window-all-closed', () => {
   // O gestor permanece ativo na bandeja para continuar sincronizando.

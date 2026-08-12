@@ -29,15 +29,21 @@ function render(status) {
 
 async function carregarImpressoras() {
   const atual = estado?.impressoraPadrao || $('impressora').value
-  const lista = await window.simplesx.listarImpressoras()
-  $('impressora').innerHTML = '<option value="">Padrão do sistema</option>'
-  for (const p of lista) {
-    const option = document.createElement('option')
-    option.value = p.name
-    option.textContent = `${p.displayName || p.name}${p.isDefault ? ' (padrão)' : ''}`
-    $('impressora').appendChild(option)
+  try {
+    const lista = await window.simplesx.listarImpressoras()
+    $('impressora').innerHTML = '<option value="">Padrão do sistema</option>'
+    for (const p of lista) {
+      const option = document.createElement('option')
+      option.value = p.name
+      option.textContent = `${p.displayName || p.name}${p.isDefault ? ' (padrão)' : ''}`
+      $('impressora').appendChild(option)
+    }
+    $('impressora').value = lista.some((p) => p.name === atual) ? atual : ''
+    if (atual && !$('impressora').value) toast(`A impressora ${atual} não está mais disponível`)
+  } catch (e) {
+    $('impressora').innerHTML = '<option value="">Nenhuma impressora disponível</option>'
+    toast(`Erro: ${e.message}`)
   }
-  $('impressora').value = atual
 }
 
 $('copiar').onclick = async () => { await navigator.clipboard.writeText($('token').textContent); toast('Token copiado') }
