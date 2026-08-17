@@ -15,12 +15,14 @@ import { EntradaPage } from '@/pages/EntradaPage';
 import { ValidadePage } from '@/pages/ValidadePage';
 import { CategoriasPage } from '@/pages/CategoriasPage';
 import { FinanceiroPage } from '@/pages/FinanceiroPage';
+import { FechamentoCaixaPage } from '@/pages/FechamentoCaixaPage';
 import { RelatoriosPage } from '@/pages/RelatoriosPage';
 import { PerdasPage } from '@/pages/PerdasPage';
 import { FuncionariosPage } from '@/pages/FuncionariosPage';
 import { ImpressorasPage } from '@/pages/ImpressorasPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
-import { configApi, estadoApi } from '@/lib/api';
+import { FiscalPage } from '@/pages/FiscalPage';
+import { authApi, configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
 function Require({ mod, children }: { mod: Modulo; children: React.ReactNode }) {
@@ -97,6 +99,10 @@ function ProtectedApp({
           }
         />
         <Route
+          path="/fechamento-caixa"
+          element={<Require mod="gestor"><FechamentoCaixaPage /></Require>}
+        />
+        <Route
           path="/relatorios"
           element={
             <Require mod="gestor">
@@ -136,6 +142,7 @@ function ProtectedApp({
             </Require>
           }
         />
+        <Route path="/fiscal" element={<Require mod="gestor"><FiscalPage /></Require>} />
         <Route
           path="/pdv"
           element={
@@ -175,10 +182,18 @@ function ProtectedApp({
 }
 
 export default function App() {
-  const { token } = useAuth();
+  const { token, setAuth } = useAuth();
+  const [iniciando, setIniciando] = useState(true);
   const [empresa, setEmpresa] = useState<ConfigEmpresa | null>(null);
   const [badges, setBadges] = useState<Record<string, number>>({});
   const navigate = useNavigate();
+
+  useEffect(() => {
+    authApi.me()
+      .then((sessao) => setAuth(sessao.nome, sessao.perfil, sessao.modulos))
+      .catch(() => undefined)
+      .finally(() => setIniciando(false));
+  }, [setAuth]);
 
   useEffect(() => {
     if (!token) return;
@@ -217,6 +232,7 @@ export default function App() {
     return () => window.removeEventListener('simplesx:logout', onLogout);
   }, [navigate]);
 
+  if (iniciando) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Verificando sessão…</div>;
   if (!token) return <Login />;
 
   return (

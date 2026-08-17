@@ -15,15 +15,7 @@ import { AnimatedPage } from '@/components/anim';
 import { Badge, Button, Card, EmptyState, Field, Input, Spinner, StatCard, Tabs, useToast } from '@/components/ui';
 import { relatorioApi } from '@/lib/api';
 import type { ResumoRelatorio, Produto, ValidadeControle } from '@/lib/types';
-import { fmtBRL, fmtNum, diasAte, hojeLocal } from '@/lib/format';
-
-function addDiasLocal(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
+import { fmtBRL, fmtNum, diasAte, hojeLocal, addDiasLocal } from '@/lib/format';
 
 export function RelatoriosPage() {
   const toast = useToast();

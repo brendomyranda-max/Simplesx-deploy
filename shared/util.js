@@ -4,10 +4,14 @@ function randBytesHex(n) {
   return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
-import { converterQuantidade, custoLinha, arredondar } from './units.js';
+import { custoLinhaEmbalagem, quantidadeEmUnidadesEstoque, arredondar } from './units.js';
 
 export const now = () => new Date().toISOString();
-export const hoje = () => new Date().toISOString().slice(0, 10);
+export const hoje = () => {
+  const partes = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const get = (tipo) => partes.find((p) => p.type === tipo)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+};
 export const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
 export const randHex = () => randBytesHex(8);
 export const gerarToken = () => randBytesHex(16);
@@ -31,7 +35,7 @@ export async function hashSenha(senha) {
 
 export async function verificarSenha(senha, armazenada) {
   const [tipo, salt, esperado] = String(armazenada || '').split(':');
-  if (tipo !== 'pbkdf2' || !salt || !esperado) return String(senha) === String(armazenada || '');
+  if (tipo !== 'pbkdf2' || !salt || !esperado) return false;
   const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(senha)), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 100000 },
@@ -106,14 +110,38 @@ export async function kvGet(env, key) {
   if (env && env.AUTH_KV && typeof env.AUTH_KV.get === 'function') {
     return env.AUTH_KV.get(key);
   }
-  return memoryKv.get(key) || null;
+  const item = memoryKv.get(key);
+  if (!item) return null;
+  if (item.expiraEm && item.expiraEm <= Date.now()) {
+    memoryKv.delete(key);
+    return null;
+  }
+  return item.valor;
 }
 
 export async function kvPut(env, key, val, opts) {
   if (env && env.AUTH_KV && typeof env.AUTH_KV.put === 'function') {
     return env.AUTH_KV.put(key, val, opts);
   }
-  memoryKv.set(key, val);
+  memoryKv.set(key, {
+    valor: val,
+    expiraEm: opts?.expirationTtl ? Date.now() + Number(opts.expirationTtl) * 1000 : null,
+  });
+}
+
+export const soDigitos = (value) => String(value || '').replace(/\D/g, '');
+
+export function cnpjValido(value) {
+  const cnpj = soDigitos(value);
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const digito = (base, pesos) => {
+    const soma = pesos.reduce((total, peso, i) => total + Number(base[i]) * peso, 0);
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  const d1 = digito(cnpj, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const d2 = digito(cnpj, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return Number(cnpj[12]) === d1 && Number(cnpj[13]) === d2;
 }
 
 export function patternToRegex(pattern) {
@@ -159,13 +187,13 @@ export async function getFichaCompleta(env, id) {
   const rows = await env.DB.prepare(
     `SELECT f.id, f.insumo_id, f.quantidade, f.unidade,
             p.nome AS insumo_nome, p.unidade AS insumo_unidade, p.custo AS insumo_custo,
-            p.estoque_atual AS insumo_estoque
+            p.estoque_atual AS insumo_estoque, p.conteudo_quantidade, p.conteudo_unidade
      FROM ficha_tecnica f JOIN produtos p ON p.id=f.insumo_id
      WHERE f.produto_id=? ORDER BY f.id`
   )
     .bind(id)
     .all();
-  return rows.results.map((r) => ({ ...r, custo_linha: custoLinha(r.quantidade, r.unidade, r.insumo_unidade, r.insumo_custo) }));
+  return rows.results.map((r) => ({ ...r, custo_linha: custoLinhaEmbalagem(r.quantidade, r.unidade, r.insumo_unidade, r.insumo_custo, r.conteudo_quantidade, r.conteudo_unidade) }));
 }
 
 export async function getProdutoFull(env, id) {
@@ -189,7 +217,7 @@ export async function getProdutoFull(env, id) {
   if (p.tipo === 'composto' && ficha.length) {
     const possiveis = [];
     for (const f of ficha) {
-      const conv = converterQuantidade(f.quantidade, f.unidade, f.insumo_unidade);
+      const conv = quantidadeEmUnidadesEstoque(f.quantidade, f.unidade, f.insumo_unidade, f.conteudo_quantidade, f.conteudo_unidade);
       possiveis.push(conv === null || conv <= 0 ? 0 : Math.floor(num(f.insumo_estoque) / conv));
     }
     estoque_possivel = Math.min(...possiveis);
@@ -211,7 +239,7 @@ export async function calcularCmvFicha(env, ingredientes) {
   if (!Array.isArray(ingredientes) || !ingredientes.length) throw httpError(400, 'Ficha técnica vazia: adicione pelo menos um insumo');
   const ids = ingredientes.map((i) => num(i.insumo_id));
   const ph = ids.map(() => '?').join(',');
-  const rows = await env.DB.prepare(`SELECT id, unidade, custo FROM produtos WHERE id IN (${ph})`)
+  const rows = await env.DB.prepare(`SELECT id, unidade, custo, conteudo_quantidade, conteudo_unidade FROM produtos WHERE id IN (${ph})`)
     .bind(...ids)
     .all();
   const map = new Map(rows.results.map((r) => [r.id, r]));
@@ -221,7 +249,7 @@ export async function calcularCmvFicha(env, ingredientes) {
     if (!ins) throw httpError(400, 'Insumo não encontrado na ficha técnica');
     const qtd = num(ing.quantidade);
     if (qtd <= 0) throw httpError(400, 'Quantidade inválida na ficha técnica');
-    const conv = converterQuantidade(qtd, ing.unidade, ins.unidade);
+    const conv = quantidadeEmUnidadesEstoque(qtd, ing.unidade, ins.unidade, ins.conteudo_quantidade, ins.conteudo_unidade);
     if (conv === null) throw httpError(400, `Unidade ${ing.unidade} incompatível com o insumo (${ins.unidade})`);
     total += conv * num(ins.custo);
   }

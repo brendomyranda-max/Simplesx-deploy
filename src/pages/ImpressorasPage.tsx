@@ -111,8 +111,8 @@ export function ImpressorasPage() {
     setTestandoGestor(true);
     try {
       const res = await gestorApi.enviar({
-        tipo: 'html',
-        conteudo: '<meta charset="UTF-8"><pre>TESTE DE IMPRESSÃO\n' + new Date().toLocaleString('pt-BR') + '\n\nAcentuação: ç á é í ó ú ã õ\nConexão com o gestor OK!</pre>',
+        tipo: 'texto',
+        conteudo: 'TESTE DE IMPRESSAO\n' + new Date().toLocaleString('pt-BR') + '\n\nAcentuacao: c a e i o u a o\nConexao com o gestor OK!',
         gestor_token: gestorToken.trim() || undefined,
       });
       toast('success', 'Impressão enviada — confira a impressora (pode levar alguns segundos)');
@@ -210,7 +210,7 @@ export function ImpressorasPage() {
           </div>
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
-            <p className="text-sm text-slate-500">Instale no computador conectado às impressoras e copie o token exibido.</p>
+            <p className="text-sm text-slate-500">Baixe, abra o Gestor no computador das impressoras e copie o token exibido. Versão 1.0.5.</p>
           </div>
           <a
             className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
@@ -222,7 +222,7 @@ export function ImpressorasPage() {
             className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             href="/downloads/gestor-linux"
           >
-            Baixar para Linux (.tar.gz)
+            Baixar para Linux (.AppImage)
           </a>
         </div>
       </Card>

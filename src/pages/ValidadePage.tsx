@@ -12,6 +12,8 @@ export function ValidadePage() {
   const [controles, setControles] = useState<ValidadeControle[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [categoriaId, setCategoriaId] = useState('');
+  const [produtoTipo, setProdutoTipo] = useState('');
+  const [vencendoDias, setVencendoDias] = useState('30');
   const [load, setLoad] = useState(true);
   const [abrir, setAbrir] = useState(false);
   const [produto, setProduto] = useState<Produto | null>(null);
@@ -35,6 +37,8 @@ export function ValidadePage() {
       const filtros: Record<string, string> = {};
       if (tab === 'ativos') filtros.status = 'ativo';
       if (categoriaId) filtros.categoria_id = categoriaId;
+      if (produtoTipo) filtros.produto_tipo = produtoTipo;
+      if (vencendoDias && tab === 'ativos') filtros.vencendo_dias = vencendoDias;
       const rows = await validadeApi.list(filtros);
       setControles(rows);
     } catch (e: any) {
@@ -46,7 +50,7 @@ export function ValidadePage() {
 
   useEffect(() => {
     loadList();
-  }, [tab, categoriaId]);
+  }, [tab, categoriaId, produtoTipo, vencendoDias]);
 
   useEffect(() => {
     categoriaApi.list()
@@ -140,6 +144,23 @@ export function ValidadePage() {
 
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap items-end gap-3">
+          <Field label="Prazo de vencimento">
+            <Select value={vencendoDias} onChange={(e) => setVencendoDias(e.target.value)} className="min-w-44" disabled={tab !== 'ativos'}>
+              <option value="7">Próximos 7 dias</option>
+              <option value="15">Próximos 15 dias</option>
+              <option value="30">Próximos 30 dias</option>
+              <option value="60">Próximos 60 dias</option>
+              <option value="">Todos os vencimentos</option>
+            </Select>
+          </Field>
+          <Field label="Tipo de produto">
+            <Select value={produtoTipo} onChange={(e) => setProdutoTipo(e.target.value)} className="min-w-48">
+              <option value="">Todos os tipos</option>
+              <option value="produto">Produto simples</option>
+              <option value="composto">Produto composto</option>
+              <option value="insumo">Insumo</option>
+            </Select>
+          </Field>
           <Field label="Filtrar por categoria">
             <Select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} className="min-w-56">
               <option value="">Todas as categorias</option>
@@ -150,17 +171,34 @@ export function ValidadePage() {
               ))}
             </Select>
           </Field>
-          {categoriaId && (
-            <Button variant="secondary" onClick={() => setCategoriaId('')}>Mostrar tudo</Button>
+          {(categoriaId || produtoTipo || vencendoDias !== '30') && (
+            <Button variant="secondary" onClick={() => { setCategoriaId(''); setProdutoTipo(''); setVencendoDias('30'); }}>Limpar filtros</Button>
           )}
         </div>
       </Card>
+
+      {!load && tab === 'ativos' && controles.length > 0 && (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <Card className="border-red-200 bg-red-50 p-3">
+            <p className="text-xs font-semibold text-red-600">Vencidos / hoje</p>
+            <p className="text-2xl font-extrabold text-red-700">{controles.filter((v) => (diasAte(v.data_vencimento) ?? 1) <= 0).length}</p>
+          </Card>
+          <Card className="border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-600">Vencem em até 7 dias</p>
+            <p className="text-2xl font-extrabold text-amber-700">{controles.filter((v) => { const d = diasAte(v.data_vencimento); return d !== null && d > 0 && d <= 7; }).length}</p>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50 p-3">
+            <p className="text-xs font-semibold text-blue-600">Exibidos no filtro</p>
+            <p className="text-2xl font-extrabold text-blue-700">{controles.length}</p>
+          </Card>
+        </div>
+      )}
 
       {load ? (
         <Spinner />
       ) : controles.length === 0 ? (
         <Card>
-          <EmptyState icon={<CalendarClock className="h-8 w-8" />} title="Nenhum controle de validade" subtitle="Abra um produto para gerar o vencimento e a etiqueta" />
+          <EmptyState icon={<CalendarClock className="h-8 w-8" />} title="Nenhum vencimento encontrado" subtitle="Não há produtos dentro dos filtros e do prazo selecionados" />
         </Card>
       ) : (
         <Card className="overflow-hidden">
@@ -169,9 +207,12 @@ export function ValidadePage() {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="th">Produto</th>
+                  <th className="th">Tipo / Categoria</th>
                   <th className="th">Qtd</th>
+                  <th className="th">Fabricação</th>
                   <th className="th">Abertura</th>
                   <th className="th">Vencimento</th>
+                  <th className="th">Pós-abertura</th>
                   <th className="th">Temperatura</th>
                   <th className="th">Responsável</th>
                   <th className="th">Status</th>
@@ -182,9 +223,17 @@ export function ValidadePage() {
                 {controles.map((v) => (
                   <tr key={v.id} className="hover:bg-slate-50/60">
                     <td className="td font-semibold text-slate-800">{v.produto_nome}</td>
+                    <td className="td">
+                      <Badge color={v.produto_tipo === 'insumo' ? 'amber' : v.produto_tipo === 'composto' ? 'purple' : 'blue'}>
+                        {v.produto_tipo === 'insumo' ? 'Insumo' : v.produto_tipo === 'composto' ? 'Composto' : 'Simples'}
+                      </Badge>
+                      {v.categorias_nomes && <p className="mt-1 max-w-48 text-[11px] text-slate-400">{v.categorias_nomes}</p>}
+                    </td>
                     <td className="td">{fmtNum(v.quantidade)} {v.unidade}</td>
+                    <td className="td">{v.data_fabricacao ? fmtData(v.data_fabricacao) : '-'}</td>
                     <td className="td">{fmtData(v.data_abertura)}</td>
                     <td className="td font-semibold">{v.data_vencimento}</td>
+                    <td className="td">{v.produto_tipo === 'insumo' ? `${v.validade_aberto_dias || '-'} dias` : 'Não se aplica'}</td>
                     <td className="td">
                       <Badge color={v.temperatura === 'congelado' ? 'blue' : v.temperatura === 'refrigerado' ? 'purple' : 'slate'}>
                         {v.temperatura || 'Ambiente'}

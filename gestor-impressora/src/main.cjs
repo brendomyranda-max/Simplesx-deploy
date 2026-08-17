@@ -105,12 +105,6 @@ async function registrar() {
   await api('/gestor/register', { token: config.token, nome: config.nome, ip: os.hostname() })
 }
 
-function documentoTexto(texto) {
-  const seguro = String(texto)
-    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-  return `<!doctype html><html><head><meta charset="UTF-8"><style>@page{margin:0}body{margin:0;padding:2mm;font:11px/1.35 "DejaVu Sans Mono","Courier New",monospace}pre{margin:0;white-space:pre-wrap}</style></head><body><pre>${seguro}</pre></body></html>`
-}
-
 async function filasCupsDisponiveis() {
   if (process.platform !== 'linux') return null
   try {
@@ -168,60 +162,46 @@ async function resolverImpressora(nomeSolicitado) {
   return printers.find((p) => p.isDefault) || printers[0]
 }
 
-async function aguardarRenderizacao(webContents) {
-  await webContents.executeJavaScript(`new Promise((resolve) => {
-    const pronto = () => requestAnimationFrame(() => requestAnimationFrame(resolve));
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(pronto, pronto);
-    else pronto();
-  })`)
+function bytesEscPos(texto, { alimentar = 0, cortar = true } = {}) {
+  const normalizado = String(texto || '')
+    .replace(/\r\n?/g, '\n')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replaceAll('º', 'o').replaceAll('ª', 'a')
+    .replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
+    .trimEnd()
+  const partes = [Buffer.from([0x1b, 0x40]), Buffer.from(normalizado + '\n', 'ascii')]
+  if (alimentar > 0) partes.push(Buffer.from([0x1b, 0x64, Math.min(255, Number(alimentar) || 0)]))
+  if (cortar) partes.push(Buffer.from([0x1d, 0x56, 0x00]))
+  return Buffer.concat(partes)
 }
 
-async function imprimirHtml({ html, impressora, larguraMm = 80, copias = 1 }) {
+async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alimentar = 0 }) {
   const printer = await resolverImpressora(impressora)
-  const larguraPapelMm = Number(larguraMm) === 58 ? 58 : 80
-  const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.html`)
-  await fs.writeFile(temporario, html, 'utf8')
-  const printWindow = new BrowserWindow({
-    show: false,
-    backgroundColor: '#ffffff',
-    webPreferences: { sandbox: true, backgroundThrottling: false },
-  })
+  const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.bin`)
+  await fs.writeFile(temporario, bytesEscPos(texto, { alimentar, cortar }))
   try {
-    await printWindow.loadFile(temporario)
-    await aguardarRenderizacao(printWindow.webContents)
-    const temConteudoVisivel = await printWindow.webContents.executeJavaScript(
-      `document.body && document.body.innerText.trim().length > 0`,
-    )
-    if (!temConteudoVisivel) throw new Error('O documento de impressao ficou vazio antes de chegar ao driver')
-    const alturaConteudoPx = await printWindow.webContents.executeJavaScript(
-      `Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)`,
-    )
-    // O Electron espera dimensoes em microns. Sem pageSize, a impressao
-    // silenciosa usa o papel padrao do driver (frequentemente A4) e reduz o
-    // cupom termico. A altura acompanha o documento para nao gerar papel vazio.
-    const alturaPapelMicrons = Math.max(10_000, Math.ceil(Number(alturaConteudoPx) * 264.583))
-    await new Promise((resolve, reject) => {
-      printWindow.webContents.print({
-        silent: true,
-        printBackground: true,
-        // Electron exige o nome interno retornado por getPrintersAsync, nao o
-        // nome amigavel mostrado pelo painel de impressoras do Windows.
-        deviceName: printer.name,
-        pageSize: { width: larguraPapelMm * 1000, height: alturaPapelMicrons },
-        scaleFactor: 100,
-        copies: Math.max(1, Number(copias) || 1),
-        margins: { marginType: 'none' },
-      }, (sucesso, motivo) => sucesso ? resolve() : reject(new Error(motivo || 'Falha ao imprimir')))
-    })
+    for (let copia = 0; copia < Math.max(1, Number(copias) || 1); copia += 1) {
+      if (process.platform === 'linux') {
+        await executarArquivo('lp', ['-d', printer.name, '-o', 'raw', temporario], { timeout: 15000 })
+      } else if (process.platform === 'win32') {
+        await executarArquivo('powershell.exe', [
+          '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+          '-File', path.join(__dirname, 'windows-raw.ps1'), '-PrinterName', printer.name, '-FilePath', temporario,
+        ], { timeout: 15000, windowsHide: true })
+      } else {
+        throw new Error(`Impressao RAW ainda nao suportada em ${process.platform}`)
+      }
+    }
   } finally {
-    if (!printWindow.isDestroyed()) printWindow.destroy()
     await fs.unlink(temporario).catch(() => {})
   }
 }
 
 async function executarJob(job) {
-  const html = job.tipo === 'html' ? String(job.conteudo) : documentoTexto(job.conteudo)
-  await imprimirHtml({ html, impressora: job.impressora, larguraMm: job.largura_mm, copias: job.copias })
+  if (job.tipo === 'html') throw new Error('Job HTML recusado: o deploy deve enviar somente texto para impressao termica')
+  await imprimirRaw({ texto: job.conteudo, impressora: job.impressora, copias: job.copias, cortar: job.cortar, alimentar: job.alimentar })
 }
 
 async function confirmarJob(job, status, erro) {
@@ -312,7 +292,8 @@ function iniciarServidorLocal() {
           partes.push(parte)
         }
         const body = JSON.parse(Buffer.concat(partes).toString('utf8'))
-        await imprimirHtml({ html: body.html || documentoTexto(body.text || ''), impressora: body.printer, copias: body.copies })
+        if (body.html) throw new Error('HTML nao e aceito; envie o campo text')
+        await imprimirRaw({ texto: body.text || '', impressora: body.printer, copias: body.copies, cortar: body.cut, alimentar: body.feed })
         return responderJson(res, 200, { ok: true })
       } catch (erro) {
         return responderJson(res, 500, { ok: false, error: erro.message })
@@ -364,7 +345,7 @@ ipcMain.handle('status', () => statusAtual())
 ipcMain.handle('salvar-config', async (_e, value) => salvarConfig(value))
 ipcMain.handle('listar-impressoras', listarImpressoras)
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
-  await imprimirHtml({ html: documentoTexto('SIMPLESX - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK'), impressora })
+  await imprimirRaw({ texto: 'SIMPLESX - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
   return { ok: true }
 })
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))

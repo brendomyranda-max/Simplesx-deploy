@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
-import { ReceiptText, RotateCcw, Search, Store, UtensilsCrossed } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { FileCheck2, ReceiptText, RotateCcw, Search, Store, UtensilsCrossed } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
-import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, Textarea, useToast } from '@/components/ui';
 import { vendaApi } from '@/lib/api';
 import type { Venda, VendaItem, Pagamento } from '@/lib/types';
 import { fmtBRL, fmtData, fmtNum, formaLabel, hojeLocal, addDiasLocal } from '@/lib/format';
+import { useAuth } from '@/store/auth';
 
 export function VendasPage() {
+  const navigate = useNavigate();
   const toast = useToast();
-  const confirm = useConfirm();
+  const responsavel = useAuth((s) => s.nome);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [de, setDe] = useState(addDiasLocal(-30));
   const [ate, setAte] = useState(hojeLocal());
@@ -16,6 +19,10 @@ export function VendasPage() {
   const [busca, setBusca] = useState('');
   const [detalhe, setDetalhe] = useState<Venda | null>(null);
   const [detalheLoad, setDetalheLoad] = useState(false);
+  const [cancelando, setCancelando] = useState<Venda | null>(null);
+  const [cancelamentoMotivo, setCancelamentoMotivo] = useState('');
+  const [cancelamentoDestino, setCancelamentoDestino] = useState<'devolver_estoque' | 'perda'>('devolver_estoque');
+  const [cancelamentoSaving, setCancelamentoSaving] = useState(false);
 
   const carregar = async () => {
     setLoad(true);
@@ -47,16 +54,32 @@ export function VendasPage() {
   };
 
   const cancelar = (v: Venda) => {
-    confirm(
-      `Cancelar a venda ${v.numero}?`,
-      'O estoque será devolvido e o valor estornado do financeiro. Não é possível desfazer.',
-      async () => {
-        await vendaApi.cancelar(v.id);
-        toast('success', `Venda ${v.numero} cancelada`);
-        setDetalhe(null);
-        carregar();
-      }
-    );
+    setCancelando(v);
+    setCancelamentoMotivo('');
+    setCancelamentoDestino('devolver_estoque');
+  };
+
+  const confirmarCancelamento = async () => {
+    if (!cancelando) return;
+    if (cancelamentoMotivo.trim().length < 5) return toast('error', 'Explique o motivo do cancelamento');
+    setCancelamentoSaving(true);
+    try {
+      await vendaApi.cancelar(cancelando.id, { justificativa: cancelamentoMotivo.trim(), destino: cancelamentoDestino, responsavel: responsavel || undefined });
+      toast('success', cancelamentoDestino === 'perda' ? `Venda ${cancelando.numero} cancelada e produtos registrados em perdas` : `Venda ${cancelando.numero} cancelada e estoque devolvido`);
+      setCancelando(null); setDetalhe(null); carregar();
+    } catch (e: any) { toast('error', e?.error || 'Erro ao cancelar venda'); }
+    finally { setCancelamentoSaving(false); }
+  };
+
+  const emitirNfce = async (v: Venda) => {
+    setDetalheLoad(true);
+    try {
+      const doc = await vendaApi.emitirNfce(v.id);
+      toast('success', doc.status === 'simulada' ? `NFC-e ${doc.serie}/${doc.numero} simulada` : `NFC-e ${doc.serie}/${doc.numero} emitida`);
+      setDetalhe(null);
+      navigate('/fiscal');
+    } catch (e: any) { toast('error', e?.error || 'Não foi possível emitir a NFC-e'); }
+    finally { setDetalheLoad(false); }
   };
 
   const filtradas = busca
@@ -121,14 +144,22 @@ export function VendasPage() {
                     <td className="td text-slate-500">{v.responsavel || '-'}</td>
                     <td className="td text-right font-bold text-slate-800">{fmtBRL(v.total)}</td>
                     <td className="td">
-                      <Badge color={v.status === 'concluida' ? 'green' : 'red'}>
-                        {v.status === 'concluida' ? 'Concluída' : 'Cancelada'}
+                      <Badge color={v.status === 'concluida' ? 'green' : v.status === 'aguardando_fechamento' ? 'amber' : 'red'}>
+                        {v.status === 'concluida' ? 'Concluída' : v.status === 'aguardando_fechamento' ? 'Aguardando fechamento' : 'Cancelada'}
                       </Badge>
                     </td>
                     <td className="td">
                       <div className="flex justify-end gap-1">
-                        {v.status === 'concluida' && (
+                        {['concluida', 'aguardando_fechamento'].includes(v.status) && (
                           <div onClick={(e) => e.stopPropagation()}>
+                            {v.tipo === 'pdv' && (
+                              <IconButton
+                                label="Alterar venda no PDV"
+                                variant="ghost"
+                                icon={<RotateCcw className="h-4 w-4" />}
+                                onClick={() => navigate(`/pdv?reabrir=${v.id}`)}
+                              />
+                            )}
                             <IconButton
                               label="Cancelar venda"
                               variant="danger"
@@ -156,8 +187,8 @@ export function VendasPage() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Badge color={detalhe.status === 'concluida' ? 'green' : 'red'}>
-                      {detalhe.status === 'concluida' ? 'Concluída' : 'Cancelada'}
+                    <Badge color={detalhe.status === 'concluida' ? 'green' : detalhe.status === 'aguardando_fechamento' ? 'amber' : 'red'}>
+                      {detalhe.status === 'concluida' ? 'Concluída' : detalhe.status === 'aguardando_fechamento' ? 'Aguardando fechamento' : 'Cancelada'}
                     </Badge>
                     <span className="text-xs text-slate-400">{fmtData(detalhe.criado_em)}</span>
                   </div>
@@ -217,8 +248,16 @@ export function VendasPage() {
                   </div>
                 </div>
 
-                {detalhe.status === 'concluida' && (
-                  <div className="flex justify-end">
+                {['concluida', 'aguardando_fechamento'].includes(detalhe.status) && (
+                  <div className="flex justify-end gap-2">
+                    <Button icon={<FileCheck2 className="h-4 w-4" />} onClick={() => emitirNfce(detalhe)}>
+                      Emitir NFC-e
+                    </Button>
+                    {detalhe.tipo === 'pdv' && (
+                      <Button variant="secondary" icon={<RotateCcw className="h-4 w-4" />} onClick={() => navigate(`/pdv?reabrir=${detalhe.id}`)}>
+                        Alterar venda
+                      </Button>
+                    )}
                     <Button variant="danger" icon={<RotateCcw className="h-4 w-4" />} onClick={() => cancelar(detalhe)}>
                       Cancelar venda
                     </Button>
@@ -228,6 +267,27 @@ export function VendasPage() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!cancelando} onClose={() => !cancelamentoSaving && setCancelando(null)} title={cancelando ? `Cancelar venda ${cancelando.numero}` : 'Cancelar venda'} width="max-w-lg">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            O financeiro será estornado. Informe o que aconteceu com os produtos para que o estoque e as perdas fiquem corretos.
+          </div>
+          <Field label="Destino dos produtos *">
+            <Select value={cancelamentoDestino} onChange={(e) => setCancelamentoDestino(e.target.value as any)}>
+              <option value="devolver_estoque">Não foi perda — devolver produtos ao estoque</option>
+              <option value="perda">Foi perda — produtos não retornaram ao estoque</option>
+            </Select>
+          </Field>
+          <Field label="Motivo / observação obrigatória *" hint="Explique com clareza por que a venda está sendo cancelada">
+            <Textarea rows={4} autoFocus value={cancelamentoMotivo} onChange={(e) => setCancelamentoMotivo(e.target.value)} placeholder="Ex.: venda registrada em duplicidade; cliente desistiu após abrir o produto..." />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={cancelamentoSaving} onClick={() => setCancelando(null)}>Voltar</Button>
+            <Button variant="danger" loading={cancelamentoSaving} onClick={confirmarCancelamento}>Confirmar cancelamento</Button>
+          </div>
+        </div>
       </Modal>
     </AnimatedPage>
   );

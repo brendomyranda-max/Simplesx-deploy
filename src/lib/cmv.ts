@@ -3,6 +3,8 @@ export interface LinhaCmv {
   unidade: string;
   insumo_unidade?: string;
   insumo_custo?: number;
+  conteudo_quantidade?: number | null;
+  conteudo_unidade?: string | null;
 }
 
 // Famílias de unidades com fator para a base da família.
@@ -40,16 +42,18 @@ export function unidadeCompativel(deUnidade?: string, paraUnidade?: string): boo
   return false;
 }
 
-export function custoLinha(quantidade: number, unidade?: string, insumoUnidade?: string, insumoCusto?: number): number | null {
-  const q = converterQuantidade(quantidade, unidade, insumoUnidade);
+export function custoLinha(quantidade: number, unidade?: string, insumoUnidade?: string, insumoCusto?: number, conteudoQuantidade?: number | null, conteudoUnidade?: string | null): number | null {
+  const q = conteudoQuantidade && conteudoQuantidade > 0 && conteudoUnidade
+    ? converterQuantidade(quantidade, unidade, conteudoUnidade)
+    : converterQuantidade(quantidade, unidade, insumoUnidade);
   if (q === null) return null;
-  return q * Number(insumoCusto || 0);
+  return (conteudoQuantidade && conteudoQuantidade > 0 ? q / conteudoQuantidade : q) * Number(insumoCusto || 0);
 }
 
 export function calcularCmv(linhas: LinhaCmv[]): number {
   let total = 0;
   for (const l of linhas) {
-    const c = custoLinha(l.quantidade, l.unidade, l.insumo_unidade, l.insumo_custo);
+    const c = custoLinha(l.quantidade, l.unidade, l.insumo_unidade, l.insumo_custo, l.conteudo_quantidade, l.conteudo_unidade);
     if (c === null) return 0;
     total += c;
   }
@@ -58,8 +62,9 @@ export function calcularCmv(linhas: LinhaCmv[]): number {
 
 export function formatarUnidadeInsuficiente(linhas: LinhaCmv[]): string | null {
   for (const l of linhas) {
-    if (!unidadeCompativel(l.unidade, l.insumo_unidade)) {
-      return `${l.unidade} incompatível com a unidade do insumo (${l.insumo_unidade})`;
+    const destino = l.conteudo_quantidade && l.conteudo_unidade ? l.conteudo_unidade : l.insumo_unidade;
+    if (!unidadeCompativel(l.unidade, destino || undefined)) {
+      return `${l.unidade} incompatível com a unidade do insumo (${destino})`;
     }
   }
   return null;

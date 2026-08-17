@@ -1,2 +1,15 @@
 node_modules
 gestor-impressora/release
+data/
+.wrangler/
+dist/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx

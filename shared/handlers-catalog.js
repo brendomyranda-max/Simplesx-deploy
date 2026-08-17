@@ -1,5 +1,6 @@
 import {
   now,
+  hoje,
   num,
   getConfig,
   setConfig,
@@ -16,8 +17,10 @@ import {
   httpError,
   sha256,
   estabelecimentoId,
+  cnpjValido,
+  soDigitos,
 } from './util.js';
-import { converterQuantidade, arredondar } from './units.js';
+import { quantidadeEmUnidadesEstoque, arredondar } from './units.js';
 
 // ============================ AUTH ============================
 
@@ -51,8 +54,11 @@ export async function loginHandler(c, env) {
 
 export async function getConfigHandler(c, env) {
   const config = await getConfig(env);
+  const configPublica = Object.fromEntries(
+    Object.entries(config).filter(([chave]) => !/(token|secret|senha|password|certificado|private.?key)/i.test(chave))
+  );
   return c.json({
-    config,
+    config: configPublica,
     modo: config.modo_operacao === 'estoque' ? 'estoque' : 'mercado',
     taxa_garcom_pct: num(config.taxa_garcom_pct),
     perda_timeout_min: num(config.perda_timeout_min),
@@ -66,6 +72,14 @@ export async function putConfigHandler(c, env) {
   const body = await c.req.json();
   if (body && typeof body === 'object') {
     for (const [k, v] of Object.entries(body)) {
+      if (k === 'empresa_cnpj') {
+        const cnpj = soDigitos(v);
+        if (!cnpjValido(cnpj)) return c.json({ error: 'CNPJ inválido' }, 400);
+        await env.rawDB.prepare('UPDATE estabelecimentos SET cnpj=? WHERE id=?')
+          .bind(cnpj, estabelecimentoId(env)).run();
+        await setConfig(env, k, cnpj);
+        continue;
+      }
       if (k === 'gestor_token' && v) {
         const gestor = await env.rawDB.prepare('SELECT estabelecimento_id FROM gestores WHERE token=? AND ativo=1').bind(String(v)).first();
         if (!gestor) return c.json({ error: 'Gestor não encontrado ou inativo' }, 400);
@@ -197,7 +211,8 @@ export async function listProdutosHandler(c, env) {
       'SELECT produto_id, texto FROM produto_comentarios ORDER BY ordem, id'
     ).all(),
     env.DB.prepare(
-      `SELECT f.produto_id, f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade, p.estoque_atual AS insumo_estoque
+      `SELECT f.produto_id, f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade, p.estoque_atual AS insumo_estoque,
+              p.conteudo_quantidade, p.conteudo_unidade
        FROM ficha_tecnica f JOIN produtos p ON p.id=f.insumo_id`
     ).all(),
   ]);
@@ -227,7 +242,7 @@ export async function listProdutosHandler(c, env) {
     if (p.tipo === 'composto' && ficha.length) {
       const possiveis = [];
       for (const f of ficha) {
-        const conv = converterQuantidade(f.quantidade, f.unidade, f.insumo_unidade);
+        const conv = quantidadeEmUnidadesEstoque(f.quantidade, f.unidade, f.insumo_unidade, f.conteudo_quantidade, f.conteudo_unidade);
         if (conv === null || conv <= 0) {
           possiveis.push(0);
           continue;
@@ -268,6 +283,26 @@ export async function buscarProdutoHandler(c, env) {
     return c.json({ error: 'Produto não cadastrado para o PDV', codigo }, 404);
   }
   return c.json(p);
+}
+
+export async function addCodigoBarrasProdutoHandler(c, env) {
+  const b = await c.req.json();
+  const codigo = String(b.codigo || '').trim();
+  if (!codigo) return c.json({ error: 'Código de barras obrigatório' }, 400);
+  if (codigo.length > 512) return c.json({ error: 'Código de barras/QR muito longo' }, 400);
+  const produto = await env.DB.prepare('SELECT id, nome FROM produtos WHERE id=?').bind(c.params.id).first();
+  if (!produto) return c.json({ error: 'Produto não encontrado' }, 404);
+  const existente = await env.DB.prepare('SELECT produto_id FROM produto_codigos_barras WHERE codigo=?').bind(codigo).first();
+  if (existente && num(existente.produto_id) !== num(produto.id)) {
+    const outro = await env.DB.prepare('SELECT nome FROM produtos WHERE id=?').bind(existente.produto_id).first();
+    return c.json({ error: `Este código já pertence ao produto ${outro?.nome || existente.produto_id}` }, 409);
+  }
+  if (!existente) {
+    const primeiro = await env.DB.prepare('SELECT id FROM produto_codigos_barras WHERE produto_id=? LIMIT 1').bind(produto.id).first();
+    await env.DB.prepare('INSERT INTO produto_codigos_barras (produto_id, codigo, principal, criado_em) VALUES (?,?,?,?)')
+      .bind(produto.id, codigo, primeiro ? 0 : 1, now()).run();
+  }
+  return c.json(await getProdutoFull(env, produto.id), existente ? 200 : 201);
 }
 
 export function normalizeCodigos(codigos) {
@@ -324,6 +359,13 @@ export async function createProdutoHandler(c, env) {
   const ingredientes = Array.isArray(b.ingredientes) ? b.ingredientes : Array.isArray(b.ficha) ? b.ficha : [];
   const tipo = normalizarTipo(b, ingredientes);
   validaPreco(config, preco, tipo);
+  if (tipo !== 'composto' && (!b.data_fabricacao || !b.data_vencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
+  if (tipo === 'insumo' && num(b.validade_aberto_dias) <= 0) {
+    return c.json({ error: 'Informe a validade após abertura do insumo' }, 400);
+  }
+  if (tipo !== 'composto' && b.data_fabricacao && b.data_vencimento && b.data_vencimento < b.data_fabricacao) {
+    return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
+  }
 
   let custo = num(b.custo);
   if (tipo === 'composto') {
@@ -332,9 +374,9 @@ export async function createProdutoHandler(c, env) {
 
   const r = await env.DB.prepare(
     `INSERT INTO produtos (nome, codigo_interno, unidade, estoque_atual, estoque_minimo, custo, preco, fornecedor_id,
-     marca, validade_fabricacao_dias, validade_aberto_dias, temperatura, ativo, observacoes,
-     exibir_restaurante, exibir_mercado, tipo, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)`
+     marca, validade_fabricacao_dias, validade_aberto_dias, data_fabricacao, data_vencimento, temperatura, ativo, observacoes,
+     exibir_restaurante, exibir_mercado, tipo, conteudo_quantidade, conteudo_unidade, criado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)`
   )
     .bind(
       b.nome,
@@ -348,11 +390,15 @@ export async function createProdutoHandler(c, env) {
       b.marca || null,
       b.validade_fabricacao_dias || null,
       b.validade_aberto_dias || null,
+      b.data_fabricacao || null,
+      b.data_vencimento || null,
       b.temperatura || null,
       b.observacoes || null,
       b.exibir_restaurante === true ? 1 : 0,
       b.exibir_mercado === true ? 1 : 0,
       tipo,
+      tipo === 'insumo' && num(b.conteudo_quantidade) > 0 ? num(b.conteudo_quantidade) : null,
+      tipo === 'insumo' && b.conteudo_unidade ? b.conteudo_unidade : null,
       now()
     )
     .run();
@@ -396,6 +442,18 @@ export async function createProdutoHandler(c, env) {
       );
     }
   }
+  if (num(b.estoque_atual) > 0 && tipo !== 'composto' && b.data_vencimento) {
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO lotes (produto_id, quantidade, custo_unitario, data_fabricacao, data_validade, temperatura,
+         fornecedor_id, nota_fiscal, responsavel, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?)`
+      ).bind(id, num(b.estoque_atual), custo, b.data_fabricacao, b.data_vencimento, b.temperatura || null, b.fornecedor_id || null, null, 'admin', now()),
+      env.DB.prepare(
+        `INSERT INTO validade_controles (produto_id, tipo, quantidade, data_fabricacao, data_abertura, data_vencimento,
+         temperatura, responsavel, observacoes, status, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(id, 'fabricacao', num(b.estoque_atual), b.data_fabricacao, null, b.data_vencimento, b.temperatura || null, 'admin', 'Estoque inicial do cadastro', 'ativo', now())
+    );
+  }
   if (stmts.length) await env.DB.batch(stmts);
   if (num(b.estoque_atual) > 0 && tipo !== 'composto') {
     await registrarMovimentacao(env, {
@@ -424,6 +482,13 @@ export async function updateProdutoHandler(c, env) {
   if (b.tipo === 'insumo' || b.tipo === 'produto' || b.tipo === 'composto') tipo = b.tipo;
   else if (ingredientes) tipo = ingredientes.length ? 'composto' : 'produto';
   validaPreco(config, preco, tipo);
+  const dataFabricacao = b.data_fabricacao || atual.data_fabricacao;
+  const dataVencimento = b.data_vencimento || atual.data_vencimento;
+  if (tipo !== 'composto' && (!dataFabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
+  if (tipo !== 'composto' && dataVencimento < dataFabricacao) return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
+  if (tipo === 'insumo' && num(b.validade_aberto_dias ?? atual.validade_aberto_dias) <= 0) {
+    return c.json({ error: 'Informe o vencimento pós-abertura do insumo' }, 400);
+  }
 
   let custo = b.custo === undefined || b.custo === null || b.custo === '' ? num(atual.custo) : num(b.custo);
   let fichaFonte = null;
@@ -440,8 +505,8 @@ export async function updateProdutoHandler(c, env) {
 
   await env.DB.prepare(
     `UPDATE produtos SET nome=?, codigo_interno=?, unidade=?, estoque_minimo=?, custo=?, preco=?, fornecedor_id=?, marca=?,
-     validade_fabricacao_dias=?, validade_aberto_dias=?, temperatura=?, ativo=?, observacoes=?,
-     exibir_restaurante=?, exibir_mercado=?, tipo=?, atualizado_em=?
+     validade_fabricacao_dias=?, validade_aberto_dias=?, data_fabricacao=?, data_vencimento=?, temperatura=?, ativo=?, observacoes=?,
+     exibir_restaurante=?, exibir_mercado=?, tipo=?, conteudo_quantidade=?, conteudo_unidade=?, atualizado_em=?
      WHERE id=?`
   )
     .bind(
@@ -455,12 +520,16 @@ export async function updateProdutoHandler(c, env) {
       b.marca || null,
       b.validade_fabricacao_dias || null,
       b.validade_aberto_dias || null,
+      dataFabricacao,
+      dataVencimento,
       b.temperatura || null,
       b.ativo === false ? 0 : 1,
       b.observacoes || null,
       b.exibir_restaurante === true ? 1 : b.exibir_restaurante === false ? 0 : num(atual.exibir_restaurante),
       b.exibir_mercado === true ? 1 : b.exibir_mercado === false ? 0 : num(atual.exibir_mercado),
       tipo,
+      tipo === 'insumo' && num(b.conteudo_quantidade ?? atual.conteudo_quantidade) > 0 ? num(b.conteudo_quantidade ?? atual.conteudo_quantidade) : null,
+      tipo === 'insumo' ? (b.conteudo_unidade || atual.conteudo_unidade || null) : null,
       now(),
       c.params.id
     )
@@ -519,6 +588,7 @@ export async function updateProdutoHandler(c, env) {
     }
   }
   if (stmts.length) await env.DB.batch(stmts);
+  if (tipo === 'insumo') await recalcularCmvDeInsumo(env, c.params.id);
   return c.json(await getProdutoFull(env, c.params.id));
 }
 
@@ -665,10 +735,32 @@ export async function entradaMercadoriaHandler(c, env) {
   if (!p) return c.json({ error: 'Produto não encontrado' }, 404);
   const qtd = num(b.quantidade);
   if (qtd <= 0) return c.json({ error: 'Quantidade inválida' }, 400);
+  if (!b.data_fabricacao || !b.data_validade) {
+    return c.json({ error: 'Informe as datas de fabricação e vencimento da mercadoria' }, 400);
+  }
+  if (b.data_validade < b.data_fabricacao) {
+    return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
+  }
   const custo =
     b.custo_unitario !== undefined && b.custo_unitario !== null && b.custo_unitario !== ''
       ? num(b.custo_unitario)
       : num(p.custo);
+
+  const codigoRecebido = String(b.codigo_barras || '').trim();
+  if (codigoRecebido) {
+    if (codigoRecebido.length > 512) return c.json({ error: 'Código de barras/QR muito longo' }, 400);
+    const codigoAtual = await env.DB.prepare('SELECT produto_id FROM produto_codigos_barras WHERE codigo=?')
+      .bind(codigoRecebido).first();
+    if (codigoAtual && num(codigoAtual.produto_id) !== num(p.id)) {
+      const outro = await env.DB.prepare('SELECT nome FROM produtos WHERE id=?').bind(codigoAtual.produto_id).first();
+      return c.json({ error: `Este código já pertence ao produto ${outro?.nome || codigoAtual.produto_id}` }, 409);
+    }
+    if (!codigoAtual) {
+      const primeiro = await env.DB.prepare('SELECT id FROM produto_codigos_barras WHERE produto_id=? LIMIT 1').bind(p.id).first();
+      await env.DB.prepare('INSERT INTO produto_codigos_barras (produto_id,codigo,principal,criado_em) VALUES (?,?,?,?)')
+        .bind(p.id, codigoRecebido, primeiro ? 0 : 1, now()).run();
+    }
+  }
 
   const r = await env.DB.prepare(
     `INSERT INTO lotes (produto_id, quantidade, custo_unitario, data_fabricacao, data_validade, temperatura,
@@ -711,7 +803,17 @@ export async function entradaMercadoriaHandler(c, env) {
     responsavel: b.responsavel || null,
     observacoes: `Entrada de mercadoria${b.nota_fiscal ? ' NF ' + b.nota_fiscal : ''}`,
   });
-  return c.json({ lote_id: loteId, novo_saldo: novoSaldo, custo_medio: custoFinal });
+  if (b.data_validade) {
+    await env.DB.prepare(
+      `INSERT INTO validade_controles (produto_id, tipo, quantidade, data_fabricacao, data_abertura, data_vencimento,
+       temperatura, responsavel, observacoes, status, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(
+      b.produto_id, 'fabricacao', qtd, b.data_fabricacao || null, null, b.data_validade,
+      b.temperatura || p.temperatura || null, b.responsavel || null,
+      `Entrada de mercadoria${b.nota_fiscal ? ' · NF ' + b.nota_fiscal : ''}`, 'ativo', now()
+    ).run();
+  }
+  return c.json({ lote_id: loteId, novo_saldo: novoSaldo, custo_medio: custoFinal, codigo_barras: codigoRecebido || null });
 }
 
 export async function ajustarEstoqueHandler(c, env) {
@@ -739,13 +841,13 @@ export async function ajustarEstoqueHandler(c, env) {
 }
 
 export async function estadoHandler(c, env) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const dataHoje = hoje();
   const prod = await env.DB.prepare("SELECT COUNT(*) c FROM produtos WHERE ativo=1").first();
   const baixo = await env.DB.prepare('SELECT COUNT(*) c FROM produtos WHERE ativo=1 AND estoque_atual <= estoque_minimo').first();
   const vendasHoje = await env.DB.prepare(
-    "SELECT COUNT(*) c, COALESCE(SUM(total),0) s FROM vendas WHERE status='concluida' AND criado_em LIKE ?"
+    "SELECT COUNT(*) c, COALESCE(SUM(total),0) s FROM vendas WHERE status='concluida' AND date(datetime(criado_em, '-3 hours'))=?"
   )
-    .bind(`${hoje}%`)
+    .bind(dataHoje)
     .first();
   const mesas = await env.DB.prepare("SELECT COUNT(*) c FROM mesas WHERE status='ocupada'").first();
   const comandas = await env.DB.prepare("SELECT COUNT(*) c FROM comandas WHERE status='aberta'").first();
@@ -756,7 +858,7 @@ export async function estadoHandler(c, env) {
   )
     .bind(diasAviso)
     .first();
-  const perdas = await env.DB.prepare("SELECT COUNT(*) c FROM perdas WHERE criado_em LIKE ?").bind(`${hoje}%`).first();
+  const perdas = await env.DB.prepare("SELECT COUNT(*) c FROM perdas WHERE date(datetime(criado_em, '-3 hours'))=?").bind(dataHoje).first();
   return c.json({
     produtos: num(prod.c),
     estoque_baixo: num(baixo.c),

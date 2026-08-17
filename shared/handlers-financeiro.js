@@ -1,4 +1,4 @@
-import { now, hoje, num, diasAte, addDays, criarPerda, registrarLancamento, registrarCaixa } from './util.js';
+import { now, hoje, num, diasAte, addDays, criarPerda, registrarLancamento, registrarCaixa, registrarMovimentacao } from './util.js';
 
 // ============================ PERDAS ============================
 
@@ -6,16 +6,19 @@ export async function listPerdasHandler(c, env) {
   const de = c.req.query('de') || '';
   const ate = c.req.query('ate') || '';
   let sql =
-    'SELECT pe.*, p.nome AS produto_nome FROM perdas pe LEFT JOIN produtos p ON p.id=pe.produto_id';
+    `SELECT pe.*, p.nome AS produto_nome, p.codigo_interno, p.unidade,
+     vi.venda_id, v.numero AS venda_numero, v.tipo AS venda_tipo
+     FROM perdas pe LEFT JOIN produtos p ON p.id=pe.produto_id
+     LEFT JOIN venda_itens vi ON vi.id=pe.item_id LEFT JOIN vendas v ON v.id=vi.venda_id`;
   const where = [];
   const params = [];
   if (de) {
-    where.push('pe.criado_em >= ?');
-    params.push(`${de}T00:00:00`);
+    where.push("date(datetime(pe.criado_em, '-3 hours')) >= ?");
+    params.push(de);
   }
   if (ate) {
-    where.push('pe.criado_em <= ?');
-    params.push(`${ate}T23:59:59`);
+    where.push("date(datetime(pe.criado_em, '-3 hours')) <= ?");
+    params.push(ate);
   }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY pe.id DESC LIMIT 300';
@@ -211,7 +214,7 @@ export async function createLancamentoHandler(c, env) {
 
 export async function listCaixaHandler(c, env) {
   const data = c.req.query('data') || hoje();
-  const rows = await env.DB.prepare('SELECT * FROM caixa WHERE data LIKE ? ORDER BY id DESC').bind(`${data}%`).all();
+  const rows = await env.DB.prepare("SELECT * FROM caixa WHERE date(datetime(data, '-3 hours'))=? ORDER BY id DESC").bind(data).all();
   return c.json(rows.results);
 }
 
@@ -224,6 +227,125 @@ export async function createCaixaHandler(c, env) {
     .bind(now(), b.tipo || 'entrada', num(b.valor), b.metodo || null, b.observacao || null, b.funcionario || null, now())
     .run();
   return c.json({ id: r.meta.last_row_id, ...b }, 201);
+}
+
+// ============================ FECHAMENTO DE CAIXA ============================
+
+const FORMAS_CAIXA = ['dinheiro', 'pix', 'credito', 'debito', 'vale', 'boleto', 'outro'];
+
+async function calcularResumoFechamento(env, data) {
+  const vendasRes = await env.DB.prepare(
+    `SELECT v.id, v.numero, v.tipo, v.status, v.total, v.criado_em,
+     p.forma, p.valor AS pagamento_valor
+     FROM vendas v LEFT JOIN pagamentos p ON p.venda_id=v.id
+     WHERE date(datetime(v.criado_em, '-3 hours'))=? ORDER BY v.id, p.id`
+  ).bind(data).all();
+  const vendas = new Map();
+  for (const row of vendasRes.results) {
+    if (!vendas.has(row.id)) vendas.set(row.id, { id: row.id, numero: row.numero, tipo: row.tipo, status: row.status, total: num(row.total), criado_em: row.criado_em, pagamentos: [] });
+    if (row.forma) vendas.get(row.id).pagamentos.push({ forma: row.forma, valor: num(row.pagamento_valor) });
+  }
+  const formas = Object.fromEntries(FORMAS_CAIXA.map((forma) => [forma, 0]));
+  let vendasMercado = 0, totalMercado = 0, vendasRestaurante = 0, totalRestaurante = 0, canceladas = 0;
+  const detalhes = [];
+  for (const venda of vendas.values()) {
+    if (venda.status === 'cancelada') { canceladas++; detalhes.push(venda); continue; }
+    if (venda.tipo === 'pdv') { vendasMercado++; totalMercado += venda.total; }
+    else { vendasRestaurante++; totalRestaurante += venda.total; }
+    const pago = venda.pagamentos.reduce((s, p) => s + p.valor, 0);
+    const troco = Math.max(0, pago - venda.total);
+    let trocoRestante = troco;
+    for (const pg of venda.pagamentos) {
+      const forma = FORMAS_CAIXA.includes(pg.forma) ? pg.forma : 'outro';
+      const desconta = forma === 'dinheiro' ? Math.min(trocoRestante, pg.valor) : 0;
+      formas[forma] += pg.valor - desconta;
+      trocoRestante -= desconta;
+    }
+    detalhes.push(venda);
+  }
+  const caixaRes = await env.DB.prepare("SELECT * FROM caixa WHERE date(datetime(data, '-3 hours'))=?").bind(data).all();
+  const entradas = caixaRes.results.filter((x) => x.tipo === 'entrada').reduce((s, x) => s + num(x.valor), 0);
+  const saidas = caixaRes.results.filter((x) => x.tipo === 'saida').reduce((s, x) => s + num(x.valor), 0);
+  const totalVendas = totalMercado + totalRestaurante;
+  return {
+    data, vendas_mercado: vendasMercado, total_mercado: totalMercado,
+    vendas_restaurante: vendasRestaurante, total_restaurante: totalRestaurante,
+    vendas_canceladas: canceladas, total_vendas: totalVendas, formas,
+    entradas, saidas, saldo_caixa: entradas - saidas, vendas: detalhes,
+  };
+}
+
+export async function resumoFechamentoCaixaHandler(c, env) {
+  return c.json(await calcularResumoFechamento(env, c.req.query('data') || hoje()));
+}
+
+export async function listFechamentosCaixaHandler(c, env) {
+  const rows = await env.DB.prepare('SELECT * FROM fechamentos_caixa ORDER BY data DESC, id DESC LIMIT 100').all();
+  return c.json(rows.results);
+}
+
+export async function createFechamentoCaixaHandler(c, env) {
+  const b = await c.req.json();
+  const data = b.data || hoje();
+  const resumo = await calcularResumoFechamento(env, data);
+  const justificativa = String(b.justificativa || '').trim();
+  const pendentes = resumo.vendas.filter((v) => v.status === 'aguardando_fechamento');
+  const confirmadas = new Set((Array.isArray(b.vendas_confirmadas) ? b.vendas_confirmadas : pendentes.map((v) => v.id)).map(num));
+  const rejeitadas = pendentes.filter((v) => !confirmadas.has(v.id));
+  if (rejeitadas.length && justificativa.length < 5) {
+    return c.json({ error: 'Justifique as operações marcadas como não realizadas' }, 400);
+  }
+  const formasConfirmadas = { ...resumo.formas };
+  for (const venda of rejeitadas) {
+    const pago = venda.pagamentos.reduce((s, p) => s + p.valor, 0);
+    let troco = Math.max(0, pago - venda.total);
+    for (const pg of venda.pagamentos) {
+      const forma = FORMAS_CAIXA.includes(pg.forma) ? pg.forma : 'outro';
+      const desconta = forma === 'dinheiro' ? Math.min(troco, pg.valor) : 0;
+      formasConfirmadas[forma] -= pg.valor - desconta;
+      troco -= desconta;
+    }
+  }
+  const informados = b.valores && typeof b.valores === 'object' ? b.valores : {};
+  const itens = FORMAS_CAIXA.map((forma) => ({ forma, esperado: num(formasConfirmadas[forma]), informado: num(informados[forma]) }));
+  const totalEsperado = itens.reduce((s, x) => s + x.esperado, 0);
+  const totalInformado = itens.reduce((s, x) => s + x.informado, 0);
+  const diferenca = Math.round((totalInformado - totalEsperado) * 100) / 100;
+  if (Math.abs(diferenca) >= 0.01 && justificativa.length < 5) {
+    return c.json({ error: 'Informe uma justificativa para a diferença do caixa' }, 400);
+  }
+  for (const venda of pendentes) {
+    if (confirmadas.has(venda.id)) {
+      await env.DB.prepare("UPDATE vendas SET status='concluida' WHERE id=?").bind(venda.id).run();
+      continue;
+    }
+    await env.DB.prepare("UPDATE vendas SET status='cancelada', observacoes=? WHERE id=?")
+      .bind(`Não confirmada no fechamento de caixa: ${justificativa}`, venda.id).run();
+    const movs = await env.DB.prepare("SELECT * FROM estoque_movimentacoes WHERE origem='venda' AND ref_id=?").bind(venda.id).all();
+    for (const m of movs.results) {
+      await env.DB.prepare('UPDATE produtos SET estoque_atual=estoque_atual+? WHERE id=?').bind(m.quantidade, m.produto_id).run();
+      const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(m.produto_id).first();
+      await registrarMovimentacao(env, { produto_id: m.produto_id, tipo: 'entrada', quantidade: m.quantidade,
+        saldo_apos: num(saldo.estoque_atual), custo_unitario: m.custo_unitario, origem: 'estorno', ref_id: venda.id,
+        responsavel: b.responsavel || null, observacoes: `Venda ${venda.numero} não confirmada no fechamento` });
+    }
+    await registrarLancamento(env, { data: now(), tipo: 'despesa', categoria: 'Estorno', descricao: `Venda ${venda.numero} não confirmada`, valor: venda.total, ref_tipo: 'venda', ref_id: venda.id });
+    await registrarCaixa(env, { data: now(), tipo: 'saida', valor: venda.total, observacao: `Estorno da venda ${venda.numero}`, funcionario: b.responsavel || null });
+  }
+  const r = await env.DB.prepare(
+    `INSERT INTO fechamentos_caixa (data, vendas_mercado, total_mercado, vendas_restaurante, total_restaurante,
+     vendas_canceladas, entradas, saidas, total_esperado, total_informado, diferenca, status, justificativa, responsavel, criado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(data, resumo.vendas_mercado - rejeitadas.filter((v) => v.tipo === 'pdv').length,
+    resumo.total_mercado - rejeitadas.filter((v) => v.tipo === 'pdv').reduce((s, v) => s + v.total, 0),
+    resumo.vendas_restaurante - rejeitadas.filter((v) => v.tipo !== 'pdv').length,
+    resumo.total_restaurante - rejeitadas.filter((v) => v.tipo !== 'pdv').reduce((s, v) => s + v.total, 0),
+    resumo.vendas_canceladas, resumo.entradas, resumo.saidas, totalEsperado, totalInformado, diferenca,
+    Math.abs(diferenca) < 0.01 ? 'conferido' : 'divergente', justificativa || null, b.responsavel || null, now()).run();
+  await env.DB.batch(itens.map((x) => env.DB.prepare(
+    'INSERT INTO fechamento_caixa_itens (fechamento_id, forma, esperado, informado, diferenca) VALUES (?,?,?,?,?)'
+  ).bind(r.meta.last_row_id, x.forma, x.esperado, x.informado, x.informado - x.esperado)));
+  return c.json({ id: r.meta.last_row_id, diferenca, status: Math.abs(diferenca) < 0.01 ? 'conferido' : 'divergente' }, 201);
 }
 
 // ============================ RELATÓRIOS ============================

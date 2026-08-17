@@ -4,12 +4,16 @@ import * as ven from './handlers-vendas.js';
 import * as fin from './handlers-financeiro.js';
 import * as cad from './handlers-cadastros.js';
 import * as gestor from './handlers-gestor.js';
+import * as fiscal from './handlers-fiscal.js';
 import { TenantDb } from './tenant-db.js';
 
 // Módulos: 'gestor' (tudo), 'pdv_mercado', 'restaurante'
 const routes = [
   // auth
   { m: 'POST', p: '/api/auth/login', h: cat.loginHandler, pub: true },
+  { m: 'GET', p: '/api/auth/config', h: cad.authConfigHandler, pub: true },
+  { m: 'GET', p: '/api/auth/me', h: cad.meHandler },
+  { m: 'POST', p: '/api/auth/logout', h: cad.logoutHandler },
   // funcionários (login por senha/pin não usa token)
   { m: 'POST', p: '/api/funcionarios/login', h: cad.loginFuncionarioHandler, pub: true },
   { m: 'POST', p: '/api/funcionarios/pin', h: cad.loginPinHandler, pub: true },
@@ -17,6 +21,15 @@ const routes = [
   // config
   { m: 'GET', p: '/api/config', h: cat.getConfigHandler },
   { m: 'PUT', p: '/api/config', h: cat.putConfigHandler, mod: 'gestor' },
+
+  // NFC-e / fiscal
+  { m: 'GET', p: '/api/fiscal/config', h: fiscal.getFiscalConfigHandler, mod: 'gestor' },
+  { m: 'PUT', p: '/api/fiscal/config', h: fiscal.putFiscalConfigHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/fiscal/produtos', h: fiscal.listProdutosFiscaisHandler, mod: 'gestor' },
+  { m: 'PUT', p: '/api/fiscal/produtos/:id', h: fiscal.putProdutoFiscalHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/fiscal/documentos', h: fiscal.listDocumentosFiscaisHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/fiscal/documentos/:id', h: fiscal.getDocumentoFiscalHandler, mod: 'gestor' },
+  { m: 'POST', p: '/api/fiscal/documentos/:id/cancelar', h: fiscal.cancelarDocumentoFiscalHandler, mod: 'gestor' },
 
   // estado / dashboard
   { m: 'GET', p: '/api/estado', h: cat.estadoHandler },
@@ -35,6 +48,7 @@ const routes = [
   { m: 'GET', p: '/api/produtos', h: cat.listProdutosHandler },
   { m: 'POST', p: '/api/produtos', h: cat.createProdutoHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/produtos/buscar', h: cat.buscarProdutoHandler },
+  { m: 'POST', p: '/api/produtos/:id/codigos-barras', h: cat.addCodigoBarrasProdutoHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/produtos/:id', h: cat.getProdutoHandler },
   { m: 'PUT', p: '/api/produtos/:id', h: cat.updateProdutoHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/produtos/:id', h: cat.deleteProdutoHandler, mod: 'gestor' },
@@ -55,7 +69,10 @@ const routes = [
   { m: 'POST', p: '/api/vendas', h: ven.criarVendaHandler },
   { m: 'GET', p: '/api/vendas', h: ven.listVendasHandler },
   { m: 'GET', p: '/api/vendas/:id', h: ven.getVendaHandler },
+  { m: 'POST', p: '/api/vendas/:id/reabrir', h: ven.reabrirVendaPdvHandler },
+  { m: 'PUT', p: '/api/vendas/:id/ajustar', h: ven.ajustarVendaPdvHandler },
   { m: 'POST', p: '/api/vendas/:id/cancelar', h: ven.cancelarVendaHandler, mod: 'gestor' },
+  { m: 'POST', p: '/api/vendas/:id/nfce', h: fiscal.emitirNfceHandler },
 
   // mesas
   { m: 'GET', p: '/api/mesas', h: ven.listMesasHandler },
@@ -85,7 +102,7 @@ const routes = [
   { m: 'POST', p: '/api/gestor/register', h: gestor.registerGestorHandler, pub: true },
   { m: 'POST', p: '/api/gestor/pull', h: gestor.pullGestorJobsHandler, pub: true },
   { m: 'POST', p: '/api/gestor/jobs/:id/status', h: gestor.gestorJobStatusHandler, pub: true },
-  { m: 'GET', p: '/api/gestores', h: gestor.listGestoresHandler },
+  { m: 'GET', p: '/api/gestores', h: gestor.listGestoresHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/impressao/enviar', h: gestor.enviarImpressaoHandler },
 
   // perdas
@@ -105,6 +122,9 @@ const routes = [
   { m: 'POST', p: '/api/lancamentos', h: fin.createLancamentoHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/caixa', h: fin.listCaixaHandler },
   { m: 'POST', p: '/api/caixa', h: fin.createCaixaHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/fechamento-caixa/resumo', h: fin.resumoFechamentoCaixaHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/fechamento-caixa', h: fin.listFechamentosCaixaHandler, mod: 'gestor' },
+  { m: 'POST', p: '/api/fechamento-caixa', h: fin.createFechamentoCaixaHandler, mod: 'gestor' },
 
   // relatórios
   { m: 'GET', p: '/api/relatorios/resumo', h: fin.resumoRelatorioHandler, mod: 'gestor' },
@@ -117,7 +137,7 @@ const routes = [
   { m: 'GET', p: '/api/relatorios/vendas-funcionario', h: fin.vendasPorFuncionarioHandler, mod: 'gestor' },
 
   // funcionários
-  { m: 'GET', p: '/api/funcionarios', h: cad.listFuncionariosHandler },
+  { m: 'GET', p: '/api/funcionarios', h: cad.listFuncionariosHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/funcionarios', h: cad.createFuncionarioHandler, mod: 'gestor' },
   { m: 'PUT', p: '/api/funcionarios/:id', h: cad.updateFuncionarioHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/funcionarios/:id', h: cad.deleteFuncionarioHandler, mod: 'gestor' },
@@ -134,9 +154,12 @@ const routes = [
 
 export async function authMiddleware(c, env) {
   const header = c.req.header('authorization') || c.req.header('x-token') || '';
+  const cookies = String(c.req.header('cookie') || '').split(';').map((item) => item.trim());
+  const cookieSessao = cookies.find((item) => item.startsWith('simplesx_session='));
   let tokenValue = '';
   if (header.startsWith('Bearer ')) tokenValue = header.slice(7).trim();
   else if (header) tokenValue = header.trim();
+  else if (cookieSessao) tokenValue = decodeURIComponent(cookieSessao.slice('simplesx_session='.length));
   else tokenValue = c.req.query('token') || '';
   if (!tokenValue) return null;
 
@@ -178,7 +201,7 @@ export async function handle(c, env) {
       return await route.h(c, env);
     } catch (e) {
       const status = e && e.status ? e.status : 500;
-      const msg = e && e.message ? e.message : 'Erro interno';
+      const msg = status >= 500 ? 'Erro interno' : (e && e.message ? e.message : 'Erro interno');
       if (status === 500) console.error('[handler error]', path, e);
       return c.json({ error: msg }, status);
     }

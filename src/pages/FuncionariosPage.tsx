@@ -92,7 +92,7 @@ export function FuncionariosPage() {
       usuario: f?.usuario || '',
       senha: '',
       perfil,
-      pin: f?.pin || '',
+      pin: '',
       modulos: f?.modulos?.length ? f.modulos : modulosPadrao(perfil),
     });
     setModal(true);
@@ -149,7 +149,7 @@ export function FuncionariosPage() {
                         {!f.modulos?.length && <span className="text-xs text-slate-400">—</span>}
                       </div>
                     </td>
-                    <td className="td">{f.pin ? <span className="inline-flex items-center gap-1"><KeyRound className="h-3 w-3 text-slate-400" />••••</span> : '-'}</td>
+                    <td className="td">{f.pin_configurado ? <span className="inline-flex items-center gap-1"><KeyRound className="h-3 w-3 text-slate-400" />configurado</span> : '-'}</td>
                     <td className="td">{f.ativo ? <Badge color="green">ativo</Badge> : <Badge color="red">inativo</Badge>}</td>
                     <td className="td">
                       <div className="flex justify-end">

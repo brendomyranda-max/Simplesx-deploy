@@ -8,6 +8,10 @@ const TABELAS = [
   'perdas', 'despesas', 'contas_pagar', 'contas_receber', 'lancamentos', 'caixa',
   'funcionarios', 'setores_impressao', 'impressora_agentes', 'impressora_etiquetas',
   'gestores', 'gestor_jobs',
+  'venda_ajustes',
+  'fechamentos_caixa', 'fechamento_caixa_itens',
+  'fiscal_config', 'produto_fiscal', 'documentos_fiscais',
+  'documento_fiscal_itens', 'documento_fiscal_eventos',
 ];
 
 const RESERVADAS = new Set([

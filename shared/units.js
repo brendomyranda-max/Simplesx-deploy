@@ -45,6 +45,23 @@ export function custoLinha(quantidade, unidade, insumoUnidade, insumoCusto) {
   return q * num(insumoCusto);
 }
 
+// Converte o consumo da ficha em unidades de estoque/embalagens do insumo.
+// Ex.: 100 G de um insumo cuja UN contém 500 G = 0,2 UN.
+// Sem conteúdo cadastrado, mantém a regra legada (custo por unidade de medida).
+export function quantidadeEmUnidadesEstoque(quantidade, unidade, insumoUnidade, conteudoQuantidade, conteudoUnidade) {
+  const conteudo = num(conteudoQuantidade);
+  if (conteudo > 0 && conteudoUnidade) {
+    const q = converterQuantidade(quantidade, unidade, conteudoUnidade);
+    return q === null ? null : q / conteudo;
+  }
+  return converterQuantidade(quantidade, unidade, insumoUnidade);
+}
+
+export function custoLinhaEmbalagem(quantidade, unidade, insumoUnidade, insumoCusto, conteudoQuantidade, conteudoUnidade) {
+  const q = quantidadeEmUnidadesEstoque(quantidade, unidade, insumoUnidade, conteudoQuantidade, conteudoUnidade);
+  return q === null ? null : q * num(insumoCusto);
+}
+
 export function arredondar(v, casas = 2) {
   const f = Math.pow(10, casas);
   return Math.round((num(v) + Number.EPSILON) * f) / f;

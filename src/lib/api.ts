@@ -4,6 +4,8 @@ import type {
   Produto,
   MovimentacaoEstoque,
   ValidadeControle,
+  FechamentoCaixa,
+  FechamentoCaixaResumo,
   Mesa,
   Comanda,
   ComandaPessoa,
@@ -25,19 +27,8 @@ export interface ApiError {
 
 const BASE = '/api';
 
-function getToken(): string {
-  return localStorage.getItem('simplesx_token') || '';
-}
-
-export function setToken(t: string) {
-  if (t) localStorage.setItem('simplesx_token', t);
-  else localStorage.removeItem('simplesx_token');
-}
-
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -48,6 +39,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'include',
       signal: controller.signal,
     });
   } catch {
@@ -66,7 +58,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     }
     const err: ApiError = { error: msg, status: res.status };
     if (res.status === 401) {
-      setToken('');
       window.dispatchEvent(new CustomEvent('simplesx:logout'));
     }
     throw err;
@@ -83,14 +74,18 @@ export const api = {
 };
 
 export const authApi = {
+  config: () => request<{ turnstile_site_key: string }>('GET', '/auth/config'),
+  me: () => request<{ id: number; nome: string; perfil: string; modulos?: string[] }>('GET', '/auth/me'),
   login: (token: string) =>
     request<{ ok: boolean; nome: string; token_id: number }>('POST', '/auth/login', { token }),
-  funcionario: (estabelecimento_token: string, usuario: string, senha: string) =>
-    request<{ ok: boolean; token: string; nome: string; perfil: string; modulos?: string[]; id: number }>('POST', '/funcionarios/login', {
-      estabelecimento_token,
+  funcionario: (cnpj: string, usuario: string, senha: string, turnstile_token: string) =>
+    request<{ ok: boolean; nome: string; perfil: string; modulos?: string[]; id: number }>('POST', '/funcionarios/login', {
+      cnpj,
       usuario,
       senha,
+      turnstile_token,
     }),
+  logout: () => request<{ ok: boolean }>('POST', '/auth/logout'),
 };
 
 export const configApi = {
@@ -125,6 +120,7 @@ export const produtoApi = {
     api.put<Produto>(`/produtos/${id}`, b),
   remove: (id: number) => api.del<{ ok: boolean }>(`/produtos/${id}`),
   buscar: (codigo: string, local?: 'restaurante' | 'mercado') => api.post<Produto>('/produtos/buscar', { codigo, local }),
+  adicionarCodigo: (id: number, codigo: string) => api.post<Produto>(`/produtos/${id}/codigos-barras`, { codigo }),
 };
 
 export const estoqueApi = {
@@ -142,7 +138,8 @@ export const estoqueApi = {
     fornecedor_id?: number;
     nota_fiscal?: string;
     responsavel?: string;
-  }) => api.post<{ lote_id: number; novo_saldo: number }>('/estoque/entrada', b),
+    codigo_barras?: string;
+  }) => api.post<{ lote_id: number; novo_saldo: number; custo_medio: number; codigo_barras?: string | null }>('/estoque/entrada', b),
   ajuste: (b: { produto_id: number; quantidade_nova: number; motivo?: string; responsavel?: string }) =>
     api.post<{ ok: boolean }>('/estoque/ajuste', b),
 };
@@ -184,7 +181,22 @@ export const vendaApi = {
     return api.get<Venda[]>(`/vendas?${params}`);
   },
   get: (id: number) => api.get<Venda>(`/vendas/${id}`),
-  cancelar: (id: number) => api.post<{ ok: boolean }>(`/vendas/${id}/cancelar`),
+  reabrir: (id: number) => api.post<Venda>(`/vendas/${id}/reabrir`),
+  ajustar: (id: number, b: { itens: { produto_id: number; quantidade: number }[]; pagamentos: { forma: string; valor: number }[]; desconto?: number; responsavel?: string; justificativa: string; reducoes: { produto_id: number; motivo: 'nao_pago' | 'duplicado_nao_vendido' }[] }) =>
+    api.put<Venda>(`/vendas/${id}/ajustar`, b),
+  cancelar: (id: number, b: { justificativa: string; destino: 'devolver_estoque' | 'perda'; responsavel?: string }) =>
+    api.post<{ ok: boolean }>(`/vendas/${id}/cancelar`, b),
+  emitirNfce: (id: number) => api.post<any>(`/vendas/${id}/nfce`),
+};
+
+export const fiscalApi = {
+  config: () => api.get<any>('/fiscal/config'),
+  salvarConfig: (b: Record<string, unknown>) => api.put<any>('/fiscal/config', b),
+  produtos: () => api.get<any[]>('/fiscal/produtos'),
+  salvarProduto: (id: number, b: Record<string, unknown>) => api.put<{ ok: boolean }>(`/fiscal/produtos/${id}`, b),
+  documentos: () => api.get<any[]>('/fiscal/documentos'),
+  documento: (id: number) => api.get<any>(`/fiscal/documentos/${id}`),
+  cancelar: (id: number, justificativa: string) => api.post<{ ok: boolean; status: string }>(`/fiscal/documentos/${id}/cancelar`, { justificativa }),
 };
 
 export const mesaApi = {
@@ -243,6 +255,13 @@ export const financeiroApi = {
   criarContaReceber: (b: { descricao: string; cliente?: string; valor: number; data_vencimento?: string }) =>
     api.post<{ id: number }>('/contas-receber', b),
   receberConta: (id: number, metodo?: string) => api.post<{ ok: boolean }>(`/contas-receber/${id}/receber?metodo=${metodo || ''}`),
+};
+
+export const fechamentoCaixaApi = {
+  resumo: (data: string) => api.get<FechamentoCaixaResumo>(`/fechamento-caixa/resumo?data=${data}`),
+  list: () => api.get<FechamentoCaixa[]>('/fechamento-caixa'),
+  create: (b: { data: string; valores: Record<string, number>; vendas_confirmadas?: number[]; justificativa?: string; responsavel?: string }) =>
+    api.post<{ id: number; diferenca: number; status: string }>('/fechamento-caixa', b),
 };
 
 export const relatorioApi = {

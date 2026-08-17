@@ -37,6 +37,8 @@ export interface FichaIngrediente {
   insumo_unidade?: string;
   insumo_custo?: number;
   insumo_estoque?: number;
+  conteudo_quantidade?: number | null;
+  conteudo_unidade?: string | null;
   custo_linha?: number;
 }
 
@@ -48,6 +50,8 @@ export interface Produto {
   tipo?: ProdutoTipo;
   estoque_atual: number;
   estoque_minimo: number;
+  conteudo_quantidade?: number | null;
+  conteudo_unidade?: string | null;
   custo: number;
   preco: number | null;
   fornecedor_id: number | null;
@@ -55,6 +59,8 @@ export interface Produto {
   marca: string | null;
   validade_fabricacao_dias: number | null;
   validade_aberto_dias: number | null;
+  data_fabricacao?: string | null;
+  data_vencimento?: string | null;
   temperatura: string | null;
   ativo: number;
   exibir_restaurante: number;
@@ -98,6 +104,9 @@ export interface ValidadeControle {
   responsavel: string | null;
   observacoes: string | null;
   status: string;
+  produto_tipo?: ProdutoTipo;
+  categorias_nomes?: string | null;
+  validade_aberto_dias?: number | null;
 }
 
 export interface Mesa {
@@ -172,8 +181,21 @@ export interface Venda {
   responsavel: string | null;
   observacoes: string | null;
   criado_em: string;
+  ajustes?: VendaAjuste[];
   itens?: VendaItem[];
   pagamentos?: Pagamento[];
+}
+
+export interface VendaAjuste {
+  id: number;
+  venda_id: number;
+  produto_id: number | null;
+  item_id: number | null;
+  tipo: 'nao_pago' | 'duplicado_nao_vendido' | 'alteracao_venda' | 'cancelamento_perda' | 'cancelamento_devolucao';
+  quantidade: number;
+  justificativa: string;
+  responsavel: string | null;
+  criado_em: string;
 }
 
 export interface VendaItem {
@@ -204,6 +226,11 @@ export interface Perda {
   origem: string;
   responsavel: string | null;
   criado_em: string;
+  codigo_interno?: string | null;
+  unidade?: string | null;
+  venda_id?: number | null;
+  venda_numero?: string | null;
+  venda_tipo?: string | null;
 }
 
 export interface Lancamento {
@@ -226,6 +253,38 @@ export interface CaixaMov {
   funcionario: string | null;
 }
 
+export interface FechamentoCaixaResumo {
+  data: string;
+  vendas_mercado: number;
+  total_mercado: number;
+  vendas_restaurante: number;
+  total_restaurante: number;
+  vendas_canceladas: number;
+  total_vendas: number;
+  formas: Record<string, number>;
+  entradas: number;
+  saidas: number;
+  saldo_caixa: number;
+  vendas: { id: number; numero: string; tipo: string; status: string; total: number; criado_em: string; pagamentos?: { forma: string; valor: number }[] }[];
+}
+
+export interface FechamentoCaixa {
+  id: number;
+  data: string;
+  vendas_mercado: number;
+  total_mercado: number;
+  vendas_restaurante: number;
+  total_restaurante: number;
+  vendas_canceladas: number;
+  total_esperado: number;
+  total_informado: number;
+  diferenca: number;
+  status: string;
+  justificativa: string | null;
+  responsavel: string | null;
+  criado_em: string;
+}
+
 export interface Conta {
   id: number;
   descricao: string;
@@ -241,7 +300,7 @@ export interface Funcionario {
   nome: string;
   usuario: string;
   perfil: string;
-  pin: string | null;
+  pin_configurado?: number;
   modulos: string[];
   ativo: number;
 }

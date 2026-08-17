@@ -16,7 +16,8 @@ import {
   gerarNumeroVenda,
   httpError,
 } from './util.js';
-import { converterQuantidade } from './units.js';
+import { quantidadeEmUnidadesEstoque } from './units.js';
+import { emitirNfceVenda } from './handlers-fiscal.js';
 
 // ============================ VALIDADE ============================
 
@@ -24,8 +25,11 @@ export async function listValidadeHandler(c, env) {
   const status = c.req.query('status') || '';
   const dias = c.req.query('vencendo_dias') || '';
   const categoriaId = num(c.req.query('categoria_id'));
+  const produtoTipo = c.req.query('produto_tipo') || '';
   let sql =
-    'SELECT v.*, p.nome AS produto_nome, p.unidade FROM validade_controles v LEFT JOIN produtos p ON p.id=v.produto_id';
+    `SELECT v.*, p.nome AS produto_nome, p.unidade, p.tipo AS produto_tipo, p.validade_aberto_dias,
+     (SELECT GROUP_CONCAT(ca.nome, ', ') FROM produto_categorias pc JOIN categorias ca ON ca.id=pc.categoria_id WHERE pc.produto_id=p.id) AS categorias_nomes
+     FROM validade_controles v LEFT JOIN produtos p ON p.id=v.produto_id`;
   const where = [];
   const params = [];
   if (status) {
@@ -39,6 +43,10 @@ export async function listValidadeHandler(c, env) {
   if (categoriaId) {
     where.push('EXISTS (SELECT 1 FROM produto_categorias pc WHERE pc.produto_id=v.produto_id AND pc.categoria_id=?)');
     params.push(categoriaId);
+  }
+  if (['produto', 'composto', 'insumo'].includes(produtoTipo)) {
+    where.push('p.tipo=?');
+    params.push(produtoTipo);
   }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY v.data_vencimento ASC';
@@ -144,7 +152,7 @@ export async function criarVendaHandler(c, env) {
     if (p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length) {
       // Valida o estoque dos insumos da ficha técnica
       for (const ing of p.ficha) {
-        const conv = converterQuantidade(ing.quantidade, ing.unidade, ing.insumo_unidade);
+        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
         if (conv === null) {
           return c.json({ error: `Unidade incompatível na ficha de ${p.nome} (${ing.insumo_nome})` }, 400);
         }
@@ -187,7 +195,7 @@ export async function criarVendaHandler(c, env) {
       desconto,
       0,
       total,
-      'concluida',
+      'aguardando_fechamento',
       responsavel,
       responsavel,
       b.observacoes || null,
@@ -206,7 +214,7 @@ export async function criarVendaHandler(c, env) {
     );
     if (it.composto) {
       for (const ing of it.produto.ficha) {
-        const conv = converterQuantidade(ing.quantidade, ing.unidade, ing.insumo_unidade);
+        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
         const needed = conv * it.qtd;
         stmts.push(
           env.DB.prepare('UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE id=?').bind(needed, ing.insumo_id)
@@ -232,7 +240,7 @@ export async function criarVendaHandler(c, env) {
   for (const it of itensNorm) {
     if (it.composto) {
       for (const ing of it.produto.ficha) {
-        const conv = converterQuantidade(ing.quantidade, ing.unidade, ing.insumo_unidade);
+        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
         const needed = conv * it.qtd;
         const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(ing.insumo_id).first();
         await registrarMovimentacao(env, {
@@ -282,7 +290,16 @@ export async function criarVendaHandler(c, env) {
     funcionario: responsavel,
   });
 
-  return c.json({ venda_id: vendId, numero, subtotal, desconto, total, pagamentos, itens: itensNorm.map((i) => ({ nome: i.produto.nome, qtd: i.qtd, preco: i.preco, total: i.total })) }, 201);
+  let nfce = null;
+  let nfce_erro = null;
+  try {
+    nfce = await emitirNfceVenda(env, vendId, { automatico: true });
+  } catch (e) {
+    nfce_erro = e?.message || 'Não foi possível emitir a NFC-e automaticamente';
+  }
+  return c.json({ venda_id: vendId, numero, subtotal, desconto, total, pagamentos,
+    itens: itensNorm.map((i) => ({ nome: i.produto.nome, qtd: i.qtd, preco: i.preco, total: i.total })),
+    nfce, nfce_erro }, 201);
 }
 
 export async function listVendasHandler(c, env) {
@@ -292,12 +309,12 @@ export async function listVendasHandler(c, env) {
   const where = [];
   const params = [];
   if (de) {
-    where.push('criado_em >= ?');
-    params.push(`${de}T00:00:00`);
+    where.push("date(datetime(criado_em, '-3 hours')) >= ?");
+    params.push(de);
   }
   if (ate) {
-    where.push('criado_em <= ?');
-    params.push(`${ate}T23:59:59`);
+    where.push("date(datetime(criado_em, '-3 hours')) <= ?");
+    params.push(ate);
   }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY id DESC LIMIT 200';
@@ -310,36 +327,213 @@ export async function getVendaHandler(c, env) {
   if (!v) return c.json({ error: 'Venda não encontrada' }, 404);
   const itens = await env.DB.prepare('SELECT * FROM venda_itens WHERE venda_id=?').bind(v.id).all();
   const pagamentos = await env.DB.prepare('SELECT * FROM pagamentos WHERE venda_id=?').bind(v.id).all();
-  return c.json({ ...v, itens: itens.results, pagamentos: pagamentos.results });
+  const ajustes = v.tipo === 'pdv'
+    ? await env.DB.prepare('SELECT * FROM venda_ajustes WHERE venda_id=? ORDER BY id').bind(v.id).all()
+    : { results: [] };
+  return c.json({ ...v, itens: itens.results, pagamentos: pagamentos.results, ajustes: ajustes.results });
+}
+
+// O pagamento já foi registrado, mas a venda fica reabrível. Qualquer alteração
+// posterior é auditada no ajuste (e reduções exigem a destinação do produto).
+export async function reabrirVendaPdvHandler(c, env) {
+  const v = await env.DB.prepare("SELECT * FROM vendas WHERE id=? AND tipo='pdv'").bind(c.params.id).first();
+  if (!v) return c.json({ error: 'Venda de mercado não encontrada' }, 404);
+  if (!['concluida', 'pre_fechamento', 'aguardando_fechamento'].includes(v.status)) {
+    return c.json({ error: 'Esta venda não pode ser reaberta' }, 400);
+  }
+  const fiscal = await env.DB.prepare('SELECT id FROM documentos_fiscais WHERE venda_id=? LIMIT 1').bind(v.id).first();
+  if (fiscal) return c.json({ error: 'Venda com NFC-e não pode ser reaberta; cancele o documento fiscal e faça uma nova venda' }, 409);
+  // A venda permanece contabilmente concluída enquanto é conferida. Assim, se o
+  // operador apenas fechar a tela, caixa e histórico não ficam em estado pendente.
+  return getVendaHandler(c, env);
+}
+
+async function movimentarItemPdv(env, produto, quantidade, entrada, venda, responsavel) {
+  if (produto.tipo === 'composto' && Array.isArray(produto.ficha) && produto.ficha.length) {
+    for (const ing of produto.ficha) {
+      const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
+      if (conv === null) throw new Error(`Unidade incompatível na ficha de ${produto.nome}`);
+      const qtd = conv * quantidade;
+      if (!entrada && num(ing.insumo_estoque) < qtd - 0.0001) throw new Error(`Estoque insuficiente de ${ing.insumo_nome}`);
+      await env.DB.prepare(`UPDATE produtos SET estoque_atual=estoque_atual ${entrada ? '+' : '-'} ? WHERE id=?`).bind(qtd, ing.insumo_id).run();
+      const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(ing.insumo_id).first();
+      await registrarMovimentacao(env, {
+        produto_id: ing.insumo_id, tipo: entrada ? 'entrada' : 'saida', quantidade: qtd,
+        saldo_apos: num(saldo.estoque_atual), custo_unitario: num(ing.insumo_custo),
+        origem: entrada ? 'ajuste_venda' : 'venda', ref_id: venda.id, responsavel,
+        observacoes: `Ajuste da venda ${venda.numero} · ${quantidade}x ${produto.nome}`,
+      });
+    }
+    return;
+  }
+  if (!entrada && num(produto.estoque_atual) < quantidade - 0.0001) throw new Error(`Estoque insuficiente para ${produto.nome}`);
+  await env.DB.prepare(`UPDATE produtos SET estoque_atual=estoque_atual ${entrada ? '+' : '-'} ? WHERE id=?`).bind(quantidade, produto.id).run();
+  const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(produto.id).first();
+  await registrarMovimentacao(env, {
+    produto_id: produto.id, tipo: entrada ? 'entrada' : 'saida', quantidade,
+    saldo_apos: num(saldo.estoque_atual), custo_unitario: num(produto.custo), preco_unitario: num(produto.preco),
+    origem: entrada ? 'ajuste_venda' : 'venda', ref_id: venda.id, responsavel,
+    observacoes: `Ajuste da venda ${venda.numero}`,
+  });
+}
+
+export async function ajustarVendaPdvHandler(c, env) {
+  const b = await c.req.json();
+  const v = await env.DB.prepare("SELECT * FROM vendas WHERE id=? AND tipo='pdv'").bind(c.params.id).first();
+  if (!v) return c.json({ error: 'Venda de mercado não encontrada' }, 404);
+  if (!['concluida', 'pre_fechamento', 'aguardando_fechamento'].includes(v.status)) return c.json({ error: 'Esta venda não pode ser alterada' }, 400);
+  const fiscal = await env.DB.prepare('SELECT id FROM documentos_fiscais WHERE venda_id=? LIMIT 1').bind(v.id).first();
+  if (fiscal) return c.json({ error: 'Venda com NFC-e não pode ser alterada; cancele o documento fiscal e faça uma nova venda' }, 409);
+  const justificativa = String(b.justificativa || '').trim();
+  if (justificativa.length < 5) return c.json({ error: 'Informe uma justificativa com pelo menos 5 caracteres' }, 400);
+  if (!Array.isArray(b.itens) || !b.itens.length) return c.json({ error: 'A venda precisa ter ao menos um item' }, 400);
+
+  const antigosRes = await env.DB.prepare('SELECT * FROM venda_itens WHERE venda_id=?').bind(v.id).all();
+  const antigos = antigosRes.results;
+  const novos = new Map();
+  let subtotal = 0;
+  for (const it of b.itens) {
+    const produto = await getProdutoFull(env, it.produto_id);
+    if (!produto || !produto.ativo) return c.json({ error: 'Produto inválido no ajuste' }, 400);
+    const qtd = num(it.quantidade);
+    if (qtd <= 0) return c.json({ error: 'Quantidade inválida no ajuste' }, 400);
+    const preco = num(produto.preco);
+    novos.set(num(it.produto_id), { produto, qtd, preco });
+    subtotal += qtd * preco;
+  }
+  const reducoes = new Map((Array.isArray(b.reducoes) ? b.reducoes : []).map((r) => [num(r.produto_id), r]));
+  const responsavel = b.responsavel || v.responsavel || null;
+  for (const antigo of antigos) {
+    const delta = num(antigo.quantidade) - (novos.get(num(antigo.produto_id))?.qtd || 0);
+    if (delta > 0 && !['nao_pago', 'duplicado_nao_vendido'].includes(reducoes.get(num(antigo.produto_id))?.motivo)) {
+      return c.json({ error: `Informe o motivo da redução de ${antigo.nome}` }, 400);
+    }
+  }
+  const desconto = Math.min(num(b.desconto), subtotal);
+  const total = Math.max(0, subtotal - desconto);
+  const pagamentos = Array.isArray(b.pagamentos) && b.pagamentos.length ? b.pagamentos : [{ forma: 'dinheiro', valor: total }];
+  if (pagamentos.reduce((s, p) => s + num(p.valor), 0) + 0.005 < total) return c.json({ error: 'Os pagamentos não cobrem o novo total' }, 400);
+
+  // Valida todas as novas baixas antes de fazer a primeira movimentação. Isso
+  // também cobre dois compostos que disputem o mesmo insumo.
+  const necessidades = new Map();
+  for (const [produtoId, novo] of novos) {
+    const antigo = antigos.find((it) => num(it.produto_id) === produtoId);
+    const delta = novo.qtd - num(antigo?.quantidade);
+    if (delta <= 0) continue;
+    if (novo.produto.tipo === 'composto' && Array.isArray(novo.produto.ficha) && novo.produto.ficha.length) {
+      for (const ing of novo.produto.ficha) {
+        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
+        if (conv === null) return c.json({ error: `Unidade incompatível na ficha de ${novo.produto.nome}` }, 400);
+        const atual = necessidades.get(ing.insumo_id) || { nome: ing.insumo_nome, disponivel: num(ing.insumo_estoque), qtd: 0 };
+        atual.qtd += conv * delta;
+        necessidades.set(ing.insumo_id, atual);
+      }
+    } else {
+      const atual = necessidades.get(produtoId) || { nome: novo.produto.nome, disponivel: num(novo.produto.estoque_atual), qtd: 0 };
+      atual.qtd += delta;
+      necessidades.set(produtoId, atual);
+    }
+  }
+  for (const necessidade of necessidades.values()) {
+    if (necessidade.disponivel < necessidade.qtd - 0.0001) {
+      return c.json({ error: `Estoque insuficiente de ${necessidade.nome}` }, 400);
+    }
+  }
+
+  try {
+    for (const antigo of antigos) {
+      const novo = novos.get(num(antigo.produto_id));
+      const delta = num(antigo.quantidade) - (novo?.qtd || 0);
+      if (delta <= 0) continue;
+      const reducao = reducoes.get(num(antigo.produto_id));
+      const produto = await getProdutoFull(env, antigo.produto_id);
+      if (reducao.motivo === 'nao_pago') {
+        await criarPerda(env, {
+          produto_id: antigo.produto_id, quantidade: delta, valor_unitario: num(antigo.preco_unitario),
+          motivo: 'Produto não pago', origem: 'pdv_pos_fechamento', item_id: antigo.id,
+          responsavel, movimentaEstoque: false,
+        });
+      } else {
+        await movimentarItemPdv(env, produto, delta, true, v, responsavel);
+      }
+      await env.DB.prepare(
+        'INSERT INTO venda_ajustes (venda_id, produto_id, item_id, tipo, quantidade, justificativa, responsavel, criado_em) VALUES (?,?,?,?,?,?,?,?)'
+      ).bind(v.id, antigo.produto_id, antigo.id, reducao.motivo, delta, justificativa, responsavel, now()).run();
+    }
+    for (const [produtoId, novo] of novos) {
+      const antigo = antigos.find((it) => num(it.produto_id) === produtoId);
+      const delta = novo.qtd - num(antigo?.quantidade);
+      if (delta > 0) await movimentarItemPdv(env, novo.produto, delta, false, v, responsavel);
+    }
+    await env.DB.prepare(
+      'INSERT INTO venda_ajustes (venda_id, produto_id, item_id, tipo, quantidade, justificativa, responsavel, criado_em) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(v.id, null, null, 'alteracao_venda', 0, justificativa, responsavel, now()).run();
+  } catch (e) {
+    return c.json({ error: e?.message || 'Não foi possível movimentar o estoque' }, 400);
+  }
+
+  await env.DB.prepare('DELETE FROM venda_itens WHERE venda_id=?').bind(v.id).run();
+  const inserts = [...novos.values()].map((it) => env.DB.prepare(
+    'INSERT INTO venda_itens (venda_id, produto_id, nome, quantidade, custo_unitario, preco_unitario, total) VALUES (?,?,?,?,?,?,?)'
+  ).bind(v.id, it.produto.id, it.produto.nome, it.qtd, num(it.produto.custo), it.preco, it.qtd * it.preco));
+  if (inserts.length) await env.DB.batch(inserts);
+
+  await env.DB.prepare('DELETE FROM pagamentos WHERE venda_id=?').bind(v.id).run();
+  await env.DB.batch(pagamentos.map((p) => env.DB.prepare('INSERT INTO pagamentos (venda_id, forma, valor) VALUES (?,?,?)').bind(v.id, p.forma || 'dinheiro', num(p.valor))));
+  await env.DB.prepare("UPDATE vendas SET subtotal=?, desconto=?, total=?, status=?, responsavel=?, observacoes=? WHERE id=?")
+    .bind(subtotal, desconto, total, v.status === 'aguardando_fechamento' ? v.status : 'concluida', responsavel, `${v.observacoes || ''}${v.observacoes ? '\n' : ''}Ajuste pós-fechamento: ${justificativa}`, v.id).run();
+  await env.DB.prepare("UPDATE lancamentos SET valor=?, metodo=?, descricao=? WHERE ref_tipo='venda' AND ref_id=?")
+    .bind(total, pagamentos[0].forma || 'dinheiro', `Venda ${v.numero} (ajustada)`, v.id).run();
+  await env.DB.prepare("UPDATE caixa SET valor=?, metodo=?, observacao=? WHERE tipo='entrada' AND observacao IN (?,?)")
+    .bind(total, pagamentos.map((p) => p.forma).join('+'), `Venda ${v.numero} (ajustada)`, `Venda ${v.numero}`, `Venda ${v.numero} (ajustada)`).run();
+  return getVendaHandler(c, env);
 }
 
 export async function cancelarVendaHandler(c, env) {
+  const b = await c.req.json().catch(() => ({}));
   const v = await env.DB.prepare('SELECT * FROM vendas WHERE id=?').bind(c.params.id).first();
   if (!v) return c.json({ error: 'Venda não encontrada' }, 404);
-  if (v.status !== 'concluida') return c.json({ error: 'Venda já cancelada' }, 400);
-  await env.DB.prepare("UPDATE vendas SET status='cancelada' WHERE id=?").bind(v.id).run();
+  if (!['concluida', 'aguardando_fechamento'].includes(v.status)) return c.json({ error: 'Venda já cancelada' }, 400);
+  const fiscal = await env.DB.prepare('SELECT status FROM documentos_fiscais WHERE venda_id=? LIMIT 1').bind(v.id).first();
+  if (fiscal && fiscal.status !== 'cancelada') {
+    return c.json({ error: 'Cancele a NFC-e antes de cancelar a venda' }, 409);
+  }
+  const justificativa = String(b.justificativa || '').trim();
+  if (justificativa.length < 5) return c.json({ error: 'Explique o motivo do cancelamento (mínimo de 5 caracteres)' }, 400);
+  if (!['devolver_estoque', 'perda'].includes(b.destino)) return c.json({ error: 'Informe o destino dos produtos cancelados' }, 400);
+  await env.DB.prepare("UPDATE vendas SET status='cancelada', observacoes=? WHERE id=?")
+    .bind(`${v.observacoes || ''}${v.observacoes ? '\n' : ''}Cancelamento: ${justificativa}`, v.id).run();
+  const itens = await env.DB.prepare('SELECT * FROM venda_itens WHERE venda_id=?').bind(v.id).all();
   // Reverte todas as baixas da venda (produtos simples e insumos de fichas técnicas),
   // usando as movimentações registradas na venda.
   const movs = await env.DB.prepare("SELECT * FROM estoque_movimentacoes WHERE origem='venda' AND ref_id=?")
     .bind(v.id)
     .all();
-  for (const m of movs.results) {
-    await env.DB.prepare('UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE id=?')
-      .bind(m.quantidade, m.produto_id)
-      .run();
-    const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(m.produto_id).first();
-    await registrarMovimentacao(env, {
-      produto_id: m.produto_id,
-      tipo: 'entrada',
-      quantidade: m.quantidade,
-      saldo_apos: num(saldo.estoque_atual),
-      custo_unitario: m.custo_unitario,
-      origem: 'estorno',
-      ref_id: v.id,
-      responsavel: null,
-      observacoes: `Estorno da venda ${v.numero}${m.observacoes ? ' · ' + m.observacoes.replace(`Venda ${v.numero}`, '').trim() : ''}`,
-    });
+  if (b.destino === 'devolver_estoque') {
+    for (const m of movs.results) {
+      await env.DB.prepare('UPDATE produtos SET estoque_atual = estoque_atual + ? WHERE id=?').bind(m.quantidade, m.produto_id).run();
+      const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(m.produto_id).first();
+      await registrarMovimentacao(env, {
+        produto_id: m.produto_id, tipo: 'entrada', quantidade: m.quantidade, saldo_apos: num(saldo.estoque_atual),
+        custo_unitario: m.custo_unitario, origem: 'estorno', ref_id: v.id, responsavel: b.responsavel || null,
+        observacoes: `Cancelamento da venda ${v.numero}: ${justificativa}`,
+      });
+    }
+  } else {
+    // O estoque já saiu na venda. A perda é apenas classificada, sem nova baixa.
+    for (const item of itens.results) {
+      if (!item.produto_id) continue;
+      await criarPerda(env, {
+        produto_id: item.produto_id, quantidade: num(item.quantidade), valor_unitario: num(item.preco_unitario),
+        motivo: `Cancelamento de venda: ${justificativa}`, origem: 'cancelamento_venda', item_id: item.id,
+        responsavel: b.responsavel || null, movimentaEstoque: false,
+      });
+    }
   }
+  await env.DB.prepare(
+    'INSERT INTO venda_ajustes (venda_id, produto_id, item_id, tipo, quantidade, justificativa, responsavel, criado_em) VALUES (?,?,?,?,?,?,?,?)'
+  ).bind(v.id, null, null, b.destino === 'perda' ? 'cancelamento_perda' : 'cancelamento_devolucao', 0, justificativa, b.responsavel || null, now()).run();
   await registrarLancamento(env, {
     data: now(),
     tipo: 'despesa',
@@ -356,7 +550,7 @@ export async function cancelarVendaHandler(c, env) {
     valor: num(v.total),
     metodo: null,
     observacao: `Estorno da venda ${v.numero}`,
-    funcionario: null,
+    funcionario: b.responsavel || null,
   });
   return c.json({ ok: true });
 }
@@ -906,7 +1100,7 @@ async function criarVendaInterna(env, o) {
     const baixas = [];
     if (p && p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length) {
       for (const ing of p.ficha) {
-        const conv = converterQuantidade(ing.quantidade, ing.unidade, ing.insumo_unidade);
+        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
         if (conv === null) {
           throw httpError(400, `Unidade incompatível na ficha de ${p.nome} (${ing.insumo_nome})`);
         }

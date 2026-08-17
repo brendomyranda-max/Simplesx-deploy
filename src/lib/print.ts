@@ -24,12 +24,12 @@ export async function printDirect(
   title?: string,
 ): Promise<boolean> {
   if (!getDirectPrint() || !el) return false;
-  const html = el.innerHTML?.trim();
-  if (!html) return false;
+  const text = (el.innerText || el.textContent || '').trim();
+  if (!text) return false;
   const res = await sendCupsPrint({
     printer: getPrinterForWidth(width),
     title: title || document.title,
-    html,
+    text,
     width,
     cut: true,
     feed: width === '58' ? 3 : 0,

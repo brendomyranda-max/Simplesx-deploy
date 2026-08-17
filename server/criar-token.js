@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes, pbkdf2Sync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import SqliteDb from './sqlite-db.js';
+import { cnpjValido } from '../shared/util.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DB_FILE = process.env.SIMPLESX_DB || path.join(ROOT, 'data', 'simplesx.db');
@@ -11,10 +12,11 @@ fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 
 const remoto = process.argv.includes('--remote');
 const argumentos = process.argv.slice(2).filter((a) => a !== '--remote');
-const [nome, usuario, senha] = argumentos;
-if (!nome || !usuario || !senha) {
-  console.error('Uso local:  npm run criar-token -- "Estabelecimento" usuario "senha"');
-  console.error('Uso deploy: npm run criar-token -- "Estabelecimento" usuario "senha" --remote');
+const [nome, cnpjInformado, usuario, senha] = argumentos;
+const cnpj = String(cnpjInformado || '').replace(/\D/g, '');
+if (!nome || !cnpjValido(cnpj) || !usuario || !senha) {
+  console.error('Uso local:  npm run criar-token -- "Estabelecimento" 00000000000000 usuario "senha"');
+  console.error('Uso deploy: npm run criar-token -- "Estabelecimento" 00000000000000 usuario "senha" --remote');
   process.exit(1);
 }
 if (senha.length < 8) {
@@ -32,13 +34,13 @@ const sqlValor = (v) => `'${String(v ?? '').replaceAll("'", "''")}'`;
 if (remoto) {
   const q = sqlValor;
   const sql = [
-    `INSERT INTO estabelecimentos(nome,ativo,criado_em) VALUES (${q(nome.trim())},1,${q(agora)});`,
+    `INSERT INTO estabelecimentos(nome,cnpj,ativo,criado_em) VALUES (${q(nome.trim())},${q(cnpj)},1,${q(agora)});`,
     `INSERT INTO auth_tokens(estabelecimento_id,token_hash,nome,ativo,criado_em) VALUES (last_insert_rowid(),${q(tokenHash)},${q(`Acesso ${nome.trim()}`)},1,${q(agora)});`,
     `INSERT INTO funcionarios(estabelecimento_id,nome,usuario,senha_hash,perfil,modulos,ativo,criado_em) SELECT estabelecimento_id,'Dono',${q(usuario.trim())},${q(senhaHash)},'admin','gestor',1,${q(agora)} FROM auth_tokens WHERE token_hash=${q(tokenHash)};`,
     `INSERT INTO mesas(estabelecimento_id,numero,nome,capacidade,setor,status,tipo,ativo,criado_em) SELECT estabelecimento_id,9999,'Pagamentos Individuais',99,'Pagamentos','livre','pagamentos',1,${q(agora)} FROM auth_tokens WHERE token_hash=${q(tokenHash)};`,
     ...[
       ['modo_operacao', 'mercado'], ['taxa_garcom_pct', '10'], ['perda_timeout_min', '2'],
-      ['empresa_nome', nome.trim()], ['dias_vencimento_aviso', '7'],
+      ['empresa_nome', nome.trim()], ['empresa_cnpj', cnpj], ['dias_vencimento_aviso', '7'],
     ].map(([chave, valor]) => `INSERT INTO empresa_config(estabelecimento_id,chave,valor) SELECT estabelecimento_id,${q(chave)},${q(valor)} FROM auth_tokens WHERE token_hash=${q(tokenHash)};`),
   ].join(' ');
   const resultado = spawnSync('npx', ['wrangler', 'd1', 'execute', 'simplesx-db', '--remote', '--command', sql], {
@@ -56,8 +58,8 @@ if (remoto) {
 const db = new SqliteDb(DB_FILE);
 
 try {
-  const estId = db.prepare('INSERT INTO estabelecimentos (nome, ativo, criado_em) VALUES (?,1,?)')
-    .bind(nome.trim(), agora).run().meta.last_row_id;
+  const estId = db.prepare('INSERT INTO estabelecimentos (nome, cnpj, ativo, criado_em) VALUES (?,?,1,?)')
+    .bind(nome.trim(), cnpj, agora).run().meta.last_row_id;
   db.batch([
     db.prepare('INSERT INTO auth_tokens (estabelecimento_id, token_hash, nome, ativo, criado_em) VALUES (?,?,?,1,?)')
       .bind(estId, tokenHash, `Acesso ${nome.trim()}`, agora),
@@ -67,7 +69,7 @@ try {
       .bind(estId, agora),
     ...[
       ['modo_operacao', 'mercado'], ['taxa_garcom_pct', '10'], ['perda_timeout_min', '2'],
-      ['empresa_nome', nome.trim()], ['dias_vencimento_aviso', '7'],
+      ['empresa_nome', nome.trim()], ['empresa_cnpj', cnpj], ['dias_vencimento_aviso', '7'],
     ].map(([chave, valor]) => db.prepare('INSERT INTO empresa_config (estabelecimento_id, chave, valor) VALUES (?,?,?)').bind(estId, chave, valor)),
   ]);
   console.log('\nEstabelecimento criado com sucesso. Guarde o token: ele não será exibido novamente.\n');

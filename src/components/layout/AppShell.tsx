@@ -20,6 +20,8 @@ import {
   X,
   Tags,
   Home,
+  ClipboardCheck,
+  FileCheck2,
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 
@@ -104,6 +106,7 @@ export function AppShell({
       items: [
         { to: '/pdv', label: 'PDV Mercado', icon: <ScanBarcode className="h-5 w-5" /> },
         { to: '/vendas', label: 'Vendas', icon: <ReceiptText className="h-5 w-5" /> },
+        { to: '/fiscal', label: 'NFC-e', icon: <FileCheck2 className="h-5 w-5" /> },
         { to: '/restaurante', label: 'Restaurante', icon: <UtensilsCrossed className="h-5 w-5" />, badge: badges?.mesas },
       ],
     },
@@ -120,6 +123,7 @@ export function AppShell({
       title: 'Gestão',
       items: [
         { to: '/financeiro', label: 'Financeiro', icon: <Wallet className="h-5 w-5" /> },
+        { to: '/fechamento-caixa', label: 'Fechamento de Caixa', icon: <ClipboardCheck className="h-5 w-5" /> },
         { to: '/relatorios', label: 'Relatórios', icon: <BarChart3 className="h-5 w-5" /> },
         { to: '/perdas', label: 'Controle de Perdas', icon: <Trash2 className="h-5 w-5" />, badge: badges?.perdas },
         { to: '/funcionarios', label: 'Funcionários', icon: <Users className="h-5 w-5" /> },

@@ -1,9 +1,66 @@
-import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE, sha256, gerarToken, estabelecimentoId, hashSenha, verificarSenha } from './util.js';
+import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE, sha256, gerarToken, estabelecimentoId, hashSenha, verificarSenha, cnpjValido, soDigitos, kvGet, kvPut } from './util.js';
+
+const LOGIN_LIMIT = 8;
+const LOGIN_TTL = 15 * 60;
+
+async function loginKey(c, tipo, identificador) {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-real-ip') || 'local';
+  return `login:${tipo}:${await sha256(`${ip}:${String(identificador || '').toLowerCase()}`)}`;
+}
+
+async function loginBloqueado(env, key) {
+  return num(await kvGet(env, key)) >= LOGIN_LIMIT;
+}
+
+async function registrarFalha(env, key) {
+  const atual = num(await kvGet(env, key));
+  await kvPut(env, key, String(atual + 1), { expirationTtl: LOGIN_TTL });
+}
+
+async function limparFalhas(env, key) {
+  await kvPut(env, key, '0', { expirationTtl: LOGIN_TTL });
+}
+
+function cookieSessao(token, c, maxAge = 12 * 60 * 60) {
+  const seguro = c.req.header('x-forwarded-proto') === 'https' || !!c.req.header('cf-ray');
+  return `simplesx_session=${encodeURIComponent(token || '')}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${seguro ? '; Secure' : ''}`;
+}
+
+async function validarTurnstile(c, env, token) {
+  if (!env.TURNSTILE_SECRET_KEY) return { indisponivel: true };
+  if (!token || String(token).length > 2048) return { valido: false };
+  const body = new URLSearchParams({
+    secret: String(env.TURNSTILE_SECRET_KEY),
+    response: String(token),
+  });
+  const ip = c.req.header('cf-connecting-ip');
+  if (ip) body.set('remoteip', ip);
+  try {
+    const resposta = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const resultado = await resposta.json();
+    return { valido: resposta.ok && resultado.success === true };
+  } catch {
+    return { indisponivel: true };
+  }
+}
+
+export async function authConfigHandler(c, env) {
+  if (!env.TURNSTILE_SITE_KEY) return c.json({ error: 'Proteção humana não configurada' }, 503);
+  return c.json({ turnstile_site_key: String(env.TURNSTILE_SITE_KEY) });
+}
+
+export async function meHandler(c) {
+  return c.json({ id: c.user.id, nome: c.user.nome, perfil: c.user.perfil, modulos: c.user.modulos });
+}
 
 // ============================ FUNCIONÁRIOS ============================
 
 export async function listFuncionariosHandler(c, env) {
-  const rows = await env.DB.prepare('SELECT id, nome, usuario, perfil, pin, modulos, ativo, criado_em FROM funcionarios WHERE estabelecimento_id=? ORDER BY nome')
+  const rows = await env.DB.prepare("SELECT id, nome, usuario, perfil, CASE WHEN pin IS NOT NULL AND pin <> '' THEN 1 ELSE 0 END AS pin_configurado, modulos, ativo, criado_em FROM funcionarios WHERE estabelecimento_id=? ORDER BY nome")
     .bind(estabelecimentoId(env)).all();
   return c.json(rows.results.map((f) => ({ ...f, modulos: modulosFromString(f.modulos) })));
 }
@@ -11,17 +68,21 @@ export async function listFuncionariosHandler(c, env) {
 export async function createFuncionarioHandler(c, env) {
   const b = await c.req.json();
   if (!b.nome || !b.usuario || !b.senha_hash) return c.json({ error: 'Nome, usuário e senha obrigatórios' }, 400);
+  if (String(b.senha_hash).length < 8) return c.json({ error: 'A senha deve ter pelo menos 8 caracteres' }, 400);
+  if (b.pin && !/^\d{4,6}$/.test(String(b.pin))) return c.json({ error: 'O PIN deve ter de 4 a 6 dígitos' }, 400);
   const modulos = modulosToString(b.modulos || MOD_RESTAURANTE);
   const r = await env.DB.prepare(
     'INSERT INTO funcionarios (estabelecimento_id, nome, usuario, senha_hash, perfil, pin, modulos, ativo, criado_em) VALUES (?,?,?,?,?,?,?,1,?)'
   )
-    .bind(estabelecimentoId(env), b.nome, b.usuario, await hashSenha(b.senha_hash), b.perfil || 'caixa', b.pin || null, modulos, now())
+    .bind(estabelecimentoId(env), b.nome, b.usuario, await hashSenha(b.senha_hash), b.perfil || 'caixa', b.pin ? await hashSenha(b.pin) : null, modulos, now())
     .run();
-  return c.json({ id: r.meta.last_row_id, nome: b.nome, usuario: b.usuario, perfil: b.perfil || 'caixa', pin: b.pin || null, modulos: modulosFromString(modulos), ativo: 1 }, 201);
+  return c.json({ id: r.meta.last_row_id, nome: b.nome, usuario: b.usuario, perfil: b.perfil || 'caixa', pin_configurado: b.pin ? 1 : 0, modulos: modulosFromString(modulos), ativo: 1 }, 201);
 }
 
 export async function updateFuncionarioHandler(c, env) {
   const b = await c.req.json();
+  if (b.senha_hash && String(b.senha_hash).length < 8) return c.json({ error: 'A senha deve ter pelo menos 8 caracteres' }, 400);
+  if (b.pin && !/^\d{4,6}$/.test(String(b.pin))) return c.json({ error: 'O PIN deve ter de 4 a 6 dígitos' }, 400);
   const atual = await env.DB.prepare('SELECT * FROM funcionarios WHERE id=? AND estabelecimento_id=?').bind(c.params.id, estabelecimentoId(env)).first();
   if (!atual) return c.json({ error: 'Funcionário não encontrado' }, 404);
   const modulos = b.modulos !== undefined && b.modulos !== null
@@ -32,7 +93,7 @@ export async function updateFuncionarioHandler(c, env) {
       b.nome,
       b.usuario,
       b.perfil || 'caixa',
-      b.pin || null,
+      b.pin ? await hashSenha(b.pin) : atual.pin,
       modulos,
       b.ativo === false ? 0 : 1,
       b.senha_hash ? await hashSenha(b.senha_hash) : atual.senha_hash,
@@ -50,36 +111,92 @@ export async function deleteFuncionarioHandler(c, env) {
 
 export async function loginFuncionarioHandler(c, env) {
   const b = await c.req.json();
-  const acessoHash = await sha256(String(b.estabelecimento_token || ''));
-  const acesso = await env.DB.prepare('SELECT estabelecimento_id FROM auth_tokens WHERE token_hash=? AND ativo=1').bind(acessoHash).first();
-  if (!acesso) return c.json({ error: 'Token do estabelecimento inválido' }, 401);
+  const cnpj = soDigitos(b.cnpj);
+  const key = await loginKey(c, 'senha', `${cnpj}:${b.usuario || ''}`);
+  if (await loginBloqueado(env, key)) return c.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, 429);
+  const humano = await validarTurnstile(c, env, b.turnstile_token);
+  if (humano.indisponivel) return c.json({ error: 'Verificação de segurança temporariamente indisponível' }, 503);
+  if (!humano.valido) {
+    await registrarFalha(env, key);
+    return c.json({ error: 'Confirme que você é humano' }, 400);
+  }
+  if (!cnpjValido(cnpj)) {
+    await registrarFalha(env, key);
+    return c.json({ error: 'CNPJ, usuário ou senha inválidos' }, 401);
+  }
+  const acesso = await env.DB.prepare('SELECT id AS estabelecimento_id FROM estabelecimentos WHERE cnpj=? AND ativo=1').bind(cnpj).first();
+  if (!acesso) {
+    await registrarFalha(env, key);
+    return c.json({ error: 'CNPJ, usuário ou senha inválidos' }, 401);
+  }
   const row = await env.DB.prepare(
     'SELECT id, nome, perfil, modulos, estabelecimento_id, senha_hash FROM funcionarios WHERE estabelecimento_id=? AND LOWER(usuario)=LOWER(?) AND ativo=1'
   )
     .bind(acesso.estabelecimento_id, b.usuario || '')
     .first();
-  if (!row || !(await verificarSenha(b.senha || '', row.senha_hash))) return c.json({ error: 'Usuário ou senha inválidos' }, 401);
+  if (!row || !(await verificarSenha(b.senha || '', row.senha_hash))) {
+    await registrarFalha(env, key);
+    return c.json({ error: 'CNPJ, usuário ou senha inválidos' }, 401);
+  }
+  await limparFalhas(env, key);
   const sessao = gerarToken() + gerarToken();
-  const expira = new Date(Date.now() + 30 * 86400000).toISOString();
+  const expira = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   await env.DB.prepare('INSERT INTO sessoes (estabelecimento_id, funcionario_id, token_hash, expira_em, criado_em) VALUES (?,?,?,?,?)')
     .bind(row.estabelecimento_id, row.id, await sha256(sessao), expira, now()).run();
-  return c.json({ ok: true, token: sessao, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) });
+  return c.json(
+    { ok: true, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) },
+    200,
+    { 'set-cookie': cookieSessao(sessao, c) }
+  );
 }
 
 export async function loginPinHandler(c, env) {
   const b = await c.req.json();
-  const acesso = await env.DB.prepare('SELECT estabelecimento_id FROM auth_tokens WHERE token_hash=? AND ativo=1')
-    .bind(await sha256(String(b.estabelecimento_token || ''))).first();
-  if (!acesso) return c.json({ error: 'Token do estabelecimento inválido' }, 401);
-  const row = await env.DB.prepare('SELECT id, nome, perfil, modulos, estabelecimento_id FROM funcionarios WHERE estabelecimento_id=? AND pin=? AND ativo=1')
-    .bind(acesso.estabelecimento_id, b.pin || '')
-    .first();
-  if (!row) return c.json({ error: 'PIN inválido' }, 401);
+  const cnpj = soDigitos(b.cnpj);
+  const key = await loginKey(c, 'pin', cnpj);
+  if (await loginBloqueado(env, key)) return c.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, 429);
+  const humano = await validarTurnstile(c, env, b.turnstile_token);
+  if (humano.indisponivel) return c.json({ error: 'Verificação de segurança temporariamente indisponível' }, 503);
+  if (!humano.valido) {
+    await registrarFalha(env, key);
+    return c.json({ error: 'Confirme que você é humano' }, 400);
+  }
+  const acesso = cnpjValido(cnpj)
+    ? await env.DB.prepare('SELECT id AS estabelecimento_id FROM estabelecimentos WHERE cnpj=? AND ativo=1').bind(cnpj).first()
+    : null;
+  const rows = acesso
+    ? await env.DB.prepare("SELECT id, nome, perfil, modulos, estabelecimento_id, pin FROM funcionarios WHERE estabelecimento_id=? AND pin IS NOT NULL AND pin <> '' AND ativo=1")
+      .bind(acesso.estabelecimento_id).all()
+    : { results: [] };
+  let row = null;
+  for (const candidato of rows.results) {
+    if (await verificarSenha(b.pin || '', candidato.pin)) {
+      row = candidato;
+      break;
+    }
+  }
+  if (!row) {
+    await registrarFalha(env, key);
+    return c.json({ error: 'CNPJ ou PIN inválido' }, 401);
+  }
+  await limparFalhas(env, key);
   const sessao = gerarToken() + gerarToken();
-  const expira = new Date(Date.now() + 30 * 86400000).toISOString();
+  const expira = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   await env.DB.prepare('INSERT INTO sessoes (estabelecimento_id, funcionario_id, token_hash, expira_em, criado_em) VALUES (?,?,?,?,?)')
     .bind(row.estabelecimento_id, row.id, await sha256(sessao), expira, now()).run();
-  return c.json({ ok: true, token: sessao, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) });
+  return c.json(
+    { ok: true, id: row.id, nome: row.nome, perfil: row.perfil, modulos: modulosFromString(row.modulos) },
+    200,
+    { 'set-cookie': cookieSessao(sessao, c) }
+  );
+}
+
+export async function logoutHandler(c, env) {
+  const header = c.req.header('authorization') || '';
+  const cookie = String(c.req.header('cookie') || '').split(';').map((item) => item.trim()).find((item) => item.startsWith('simplesx_session='));
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : (cookie ? decodeURIComponent(cookie.slice('simplesx_session='.length)) : '');
+  if (token) await env.rawDB.prepare('DELETE FROM sessoes WHERE token_hash=?').bind(await sha256(token)).run();
+  return c.json({ ok: true }, 200, { 'set-cookie': cookieSessao('', c, 0) });
 }
 
 // ============================ SETORES / IMPRESSORAS ============================
@@ -194,31 +311,12 @@ async function enqueueGestorJob(env, { conteudo, impressora, larguraMm = 80 }) {
   if (!gestorToken) return { ok: false, error: 'Nenhum gestor configurado' };
   const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND ativo=1').bind(gestorToken).first();
   if (!gestor) return { ok: false, error: 'Gestor configurado não está cadastrado ou está inativo' };
-  // Filas RAW/ESC-POS interpretam texto conforme a pagina de codigos configurada
-  // na impressora e frequentemente descartam caracteres como c-cedilha e acentos.
-  // O gestor ja suporta HTML, que e renderizado em Unicode antes de chegar ao CUPS.
-  const larguraImprimivel = larguraMm === 58 ? 48 : 72;
   const conteudoCompativel = textoCompativelComEscPos(conteudo);
-  const conteudoHtml = `<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    @page { size: ${larguraImprimivel}mm auto; margin: 0; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; width: ${larguraImprimivel}mm; }
-    body { color: #000; background: #fff; font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: 11px; line-height: 1.35; }
-    pre { width: 100%; margin: 0; padding: 2mm; color: #000; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
-  </style>
-</head>
-<body><pre>${escapePrintHtml(conteudoCompativel)}</pre></body>
-</html>`;
   const r = await env.DB.prepare(
     `INSERT INTO gestor_jobs
       (gestor_token, tipo, conteudo, impressora, largura_mm, copias, cortar, alimentar, status, criado_em)
-     VALUES (?, 'html', ?, ?, ?, 1, 1, ?, 'pendente', ?)`
-  ).bind(gestorToken, conteudoHtml, impressora, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
+     VALUES (?, 'texto', ?, ?, ?, 1, 1, ?, 'pendente', ?)`
+  ).bind(gestorToken, conteudoCompativel, impressora, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
   return { ok: true, job_id: r.meta.last_row_id };
 }
 
@@ -232,15 +330,6 @@ function textoCompativelComEscPos(value) {
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
-}
-
-function escapePrintHtml(value) {
-  return String(value).normalize('NFC')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }
 
 function textoPedido({ empresa, cnpj, mesa, com, destino, itens }) {

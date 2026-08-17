@@ -4,7 +4,7 @@ import { Button, Field, Input, Modal, Select, Textarea, Toggle, useToast } from 
 import { categoriaApi, fornecedorApi, produtoApi } from '@/lib/api';
 import type { Categoria, Fornecedor, Produto, ProdutoTipo } from '@/lib/types';
 import { fmtBRL } from '@/lib/format';
-import { UNIDADES, calcularCmv, converterQuantidade, custoLinha, unidadeCompativel } from '@/lib/cmv';
+import { UNIDADES, calcularCmv, custoLinha, unidadeCompativel } from '@/lib/cmv';
 
 const TEMPERATURAS = [
   { v: '', label: 'Ambiente' },
@@ -24,7 +24,7 @@ interface LinhaFicha {
   unidade: string;
 }
 
-function initialState(p?: Produto | null) {
+function initialState(p?: Produto | null, codigoInicial?: string) {
   return {
     tipo: (p?.tipo as ProdutoTipo) || 'produto',
     nome: p?.nome ?? '',
@@ -34,16 +34,22 @@ function initialState(p?: Produto | null) {
     custo: p?.custo ?? '',
     estoque_atual: p?.estoque_atual ?? '',
     estoque_minimo: p?.estoque_minimo ?? '',
+    conteudo_quantidade: p?.conteudo_quantidade ?? '',
+    conteudo_unidade: p?.conteudo_unidade ?? 'G',
     marca: p?.marca || '',
     validade_fabricacao_dias: p?.validade_fabricacao_dias || '',
     validade_aberto_dias: p?.validade_aberto_dias || '',
+    data_fabricacao: p?.data_fabricacao || new Date().toLocaleDateString('sv-SE'),
+    data_vencimento: p?.data_vencimento || '',
     temperatura: p?.temperatura || '',
     observacoes: p?.observacoes || '',
     fornecedor_id: p?.fornecedor_id || '',
     ativo: p ? !!p.ativo : true,
     exibir_restaurante: p ? !!p.exibir_restaurante : false,
     exibir_mercado: p ? !!p.exibir_mercado : false,
-    codigos_barras: (p?.codigos_barras || []).map((c) => ({ codigo: c.codigo, principal: c.principal })),
+    codigos_barras: p?.codigos_barras?.length
+      ? p.codigos_barras.map((c) => ({ codigo: c.codigo, principal: c.principal }))
+      : codigoInicial ? [{ codigo: codigoInicial, principal: 1 }] : [],
     categoria_ids: (p?.categorias || []).map((c) => c.id),
     comentarios: (p?.comentarios || []).map((c) => c),
     ficha: ((p?.ficha || []) as any[]).map((i) => ({
@@ -59,11 +65,13 @@ export function ProdutoForm({
   onClose,
   produto,
   onSaved,
+  codigoInicial,
 }: {
   open: boolean;
   onClose: () => void;
   produto?: Produto | null;
-  onSaved: () => void;
+  onSaved: (produto?: Produto) => void;
+  codigoInicial?: string;
 }) {
   const toast = useToast();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -71,16 +79,16 @@ export function ProdutoForm({
   const [insumos, setInsumos] = useState<Produto[]>([]);
   const [saving, setSaving] = useState(false);
   const [novoComentario, setNovoComentario] = useState('');
-  const [form, setForm] = useState<any>(() => initialState(produto));
+  const [form, setForm] = useState<any>(() => initialState(produto, codigoInicial));
 
   useEffect(() => {
     if (!open) return;
     categoriaApi.list().then(setCategorias).catch(() => {});
     fornecedorApi.list().then(setFornecedores).catch(() => {});
     produtoApi.insumos().then(setInsumos).catch(() => {});
-    setForm(initialState(produto));
+    setForm(initialState(produto, codigoInicial));
     setNovoComentario('');
-  }, [open, produto]);
+  }, [open, produto, codigoInicial]);
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
   const setFicha = (i: number, k: string, v: any) => {
@@ -99,13 +107,14 @@ export function ProdutoForm({
       .map((l: LinhaFicha) => {
         const ing = insumoById(Number(l.insumo_id));
         const qtd = Number(l.quantidade || 0);
-        const custo = custoLinha(qtd, l.unidade, ing?.unidade, ing?.custo);
+        const custo = custoLinha(qtd, l.unidade, ing?.unidade, ing?.custo, ing?.conteudo_quantidade, ing?.conteudo_unidade);
+        const unidadeConsumo = ing?.conteudo_quantidade ? ing.conteudo_unidade : ing?.unidade;
         return {
           ...l,
           ing,
           qtd,
           custo: custo,
-          compativel: unidadeCompativel(l.unidade, ing?.unidade),
+          compativel: unidadeCompativel(l.unidade, unidadeConsumo || undefined),
         };
       });
   }, [form.ficha, insumos]);
@@ -114,7 +123,7 @@ export function ProdutoForm({
     return calcularCmv(
       linhasCalculadas
         .filter((l: any) => l.custo !== null)
-        .map((l: any) => ({ quantidade: l.qtd, unidade: l.unidade, insumo_unidade: l.ing?.unidade, insumo_custo: l.ing?.custo }))
+        .map((l: any) => ({ quantidade: l.qtd, unidade: l.unidade, insumo_unidade: l.ing?.unidade, insumo_custo: l.ing?.custo, conteudo_quantidade: l.ing?.conteudo_quantidade, conteudo_unidade: l.ing?.conteudo_unidade }))
     );
   }, [linhasCalculadas]);
 
@@ -140,6 +149,14 @@ export function ProdutoForm({
       return toast('error', unidadeIncompativel.ing ? `Unidade incompatível: ${unidadeIncompativel.ing.nome}` : 'Unidade incompatível');
     if (form.tipo === 'composto' && Number(form.preco) <= 0)
       return toast('error', 'Informe o preço de venda do produto composto');
+    if (form.tipo !== 'composto' && (!form.data_fabricacao || !form.data_vencimento))
+      return toast('error', 'Informe as datas de fabricação e vencimento');
+    if (form.tipo !== 'composto' && form.data_vencimento < form.data_fabricacao)
+      return toast('error', 'O vencimento não pode ser anterior à fabricação');
+    if (form.tipo === 'insumo' && Number(form.validade_aberto_dias) <= 0)
+      return toast('error', 'Informe a validade após abertura do insumo');
+    if (form.tipo === 'insumo' && Number(form.conteudo_quantidade) <= 0)
+      return toast('error', 'Informe a gramatura ou o volume por unidade do insumo');
     setSaving(true);
     try {
       const payload = {
@@ -149,11 +166,17 @@ export function ProdutoForm({
         unidade: form.unidade,
         preco: form.preco === '' ? null : Number(form.preco),
         custo: form.tipo === 'composto' ? undefined : Number(form.custo || 0),
-        estoque_atual: form.tipo === 'composto' ? undefined : Number(form.estoque_atual || 0),
-        estoque_minimo: form.tipo === 'composto' ? undefined : Number(form.estoque_minimo || 0),
+        estoque_atual: form.tipo === 'produto' ? Number(form.estoque_atual || 0) : undefined,
+        estoque_minimo: form.tipo === 'produto' ? Number(form.estoque_minimo || 0) : undefined,
+        conteudo_quantidade: form.tipo === 'insumo' ? Number(form.conteudo_quantidade) : undefined,
+        conteudo_unidade: form.tipo === 'insumo' ? form.conteudo_unidade : undefined,
         marca: form.marca.trim() || null,
-        validade_fabricacao_dias: form.validade_fabricacao_dias === '' ? null : Number(form.validade_fabricacao_dias),
+        validade_fabricacao_dias: form.tipo !== 'composto'
+          ? Math.max(1, Math.round((new Date(`${form.data_vencimento}T12:00:00`).getTime() - new Date(`${form.data_fabricacao}T12:00:00`).getTime()) / 86400000))
+          : undefined,
         validade_aberto_dias: form.validade_aberto_dias === '' ? null : Number(form.validade_aberto_dias),
+        data_fabricacao: form.data_fabricacao || null,
+        data_vencimento: form.data_vencimento || null,
         temperatura: form.temperatura || null,
         observacoes: form.observacoes.trim() || null,
         fornecedor_id: form.fornecedor_id ? Number(form.fornecedor_id) : null,
@@ -170,10 +193,9 @@ export function ProdutoForm({
                 .map((l: LinhaFicha) => ({ insumo_id: Number(l.insumo_id), quantidade: Number(l.quantidade), unidade: l.unidade }))
             : undefined,
       };
-      if (produto) await produtoApi.update(produto.id, payload);
-      else await produtoApi.create(payload);
+      const salvo = produto ? await produtoApi.update(produto.id, payload) : await produtoApi.create(payload);
       toast('success', produto ? 'Produto atualizado!' : 'Produto criado!');
-      onSaved();
+      onSaved(salvo);
       onClose();
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao salvar produto');
@@ -273,15 +295,16 @@ export function ProdutoForm({
             <div className="space-y-2">
               {form.ficha.map((l: LinhaFicha, i: number) => {
                 const ing = insumoById(Number(l.insumo_id));
-                const c = custoLinha(Number(l.quantidade || 0), l.unidade, ing?.unidade, ing?.custo);
-                const compat = unidadeCompativel(l.unidade, ing?.unidade);
+                const c = custoLinha(Number(l.quantidade || 0), l.unidade, ing?.unidade, ing?.custo, ing?.conteudo_quantidade, ing?.conteudo_unidade);
+                const unidadeConsumo = ing?.conteudo_quantidade ? ing.conteudo_unidade : ing?.unidade;
+                const compat = unidadeCompativel(l.unidade, unidadeConsumo || undefined);
                 return (
                   <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
                     <Select value={String(l.insumo_id)} onChange={(e) => setFicha(i, 'insumo_id', e.target.value ? Number(e.target.value) : '')} className="min-w-[180px] flex-1">
                       <option value="">Selecione o insumo...</option>
                       {insumos.map((ins) => (
                         <option key={ins.id} value={ins.id}>
-                          {ins.nome} ({ins.unidade})
+                          {ins.nome} ({ins.conteudo_quantidade ? `${ins.conteudo_quantidade} ${ins.conteudo_unidade}/${ins.unidade}` : ins.unidade})
                         </option>
                       ))}
                     </Select>
@@ -309,7 +332,7 @@ export function ProdutoForm({
                       )}
                       {ing && (
                         <p className="text-[10px] text-slate-400">
-                          {fmtBRL(ing.custo)}/{ing.unidade}
+                          {fmtBRL(ing.custo)}/{ing.unidade}{ing.conteudo_quantidade ? ` · ${ing.conteudo_quantidade} ${ing.conteudo_unidade}` : ''}
                         </p>
                       )}
                     </div>
@@ -336,7 +359,7 @@ export function ProdutoForm({
 
             {unidadeIncompativel && (
               <p className="mt-2 text-xs text-red-500">
-                {unidadeIncompativel.ing?.nome}: a unidade "{unidadeIncompativel.unidade}" não é compatível com a unidade do insumo ({unidadeIncompativel.ing?.unidade}).
+                {unidadeIncompativel.ing?.nome}: a unidade "{unidadeIncompativel.unidade}" não é compatível com o conteúdo do insumo ({unidadeIncompativel.ing?.conteudo_unidade || unidadeIncompativel.ing?.unidade}).
               </p>
             )}
 
@@ -385,7 +408,7 @@ export function ProdutoForm({
           )}
         </div>
 
-        {form.tipo !== 'composto' && (
+        {form.tipo === 'produto' && (
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Estoque atual">
               <Input type="number" step="0.001" value={form.estoque_atual} onChange={(e) => set('estoque_atual', e.target.value)} />
@@ -399,13 +422,41 @@ export function ProdutoForm({
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Validade fechado (dias)">
-            <Input type="number" value={form.validade_fabricacao_dias} onChange={(e) => set('validade_fabricacao_dias', e.target.value)} placeholder="ex.: 365" />
+        {form.tipo === 'insumo' && (
+          <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3">
+            <p className="mb-3 text-sm font-bold text-slate-800">Conteúdo por unidade</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Gramatura ou volume *" hint={`Quantidade contida em cada ${form.unidade}`}>
+                <Input type="number" step="0.001" min="0.001" value={form.conteudo_quantidade} onChange={(e) => set('conteudo_quantidade', e.target.value)} placeholder="Ex.: 500" />
+              </Field>
+              <Field label="Unidade do conteúdo *">
+                <Select value={form.conteudo_unidade} onChange={(e) => set('conteudo_unidade', e.target.value)}>
+                  {['G', 'KG', 'ML', 'L'].map((u) => <option key={u} value={u}>{u}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">O custo informado acima é por {form.unidade}. O estoque será lançado depois, pela entrada de mercadoria.</p>
+          </div>
+        )}
+
+        {form.tipo !== 'composto' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="mb-3 text-sm font-bold text-amber-800">Validades do produto</p>
+          <div className={`grid gap-4 ${form.tipo === 'insumo' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          <Field label="1. Data de fabricação *">
+            <Input type="date" value={form.data_fabricacao} onChange={(e) => set('data_fabricacao', e.target.value)} />
           </Field>
-          <Field label="Validade após abrir (dias)">
-            <Input type="number" value={form.validade_aberto_dias} onChange={(e) => set('validade_aberto_dias', e.target.value)} placeholder="ex.: 5" />
+          <Field label="2. Data de vencimento *">
+            <Input type="date" min={form.data_fabricacao || undefined} value={form.data_vencimento} onChange={(e) => set('data_vencimento', e.target.value)} />
           </Field>
+          {form.tipo === 'insumo' && (
+            <Field label="3. Vencimento pós-abertura (dias) *" hint="Prazo depois que a embalagem for aberta">
+              <Input type="number" min="1" value={form.validade_aberto_dias} onChange={(e) => set('validade_aberto_dias', e.target.value)} placeholder="ex.: 5" />
+            </Field>
+          )}
+          </div>
+        </div>}
+
+        <div className="grid gap-4 sm:grid-cols-1">
           <Field label="Temperatura">
             <Select value={form.temperatura} onChange={(e) => set('temperatura', e.target.value)}>
               {TEMPERATURAS.map((t) => (
@@ -414,6 +465,7 @@ export function ProdutoForm({
             </Select>
           </Field>
         </div>
+
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Categorias">

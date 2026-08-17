@@ -109,7 +109,7 @@ export async function gestorJobStatusHandler(c, env) {
 /** Lista os gestores cadastrados (para o pareamento na tela de Impressoras). */
 export async function listGestoresHandler(c, env) {
   const rows = await env.DB.prepare(
-    'SELECT id, token, nome, ip, ultima_conexao, ativo FROM gestores ORDER BY nome'
+    "SELECT id, nome, ip, ultima_conexao, ativo, '••••' || SUBSTR(token, -4) AS token_final FROM gestores ORDER BY nome"
   ).all();
   return c.json(rows.results);
 }
@@ -124,6 +124,9 @@ export async function enviarImpressaoHandler(c, env) {
 
   const conteudo = b.conteudo != null ? String(b.conteudo) : '';
   if (!conteudo.trim()) return c.json({ error: 'Informe o conteúdo da impressão' }, 400);
+  if (b.tipo && b.tipo !== 'texto') {
+    return c.json({ error: 'Somente conteúdo textual é aceito para impressão térmica RAW' }, 400);
+  }
 
   const gestorToken = (b.gestor_token && String(b.gestor_token).trim()) || (await getConfigValue(env, 'gestor_token', ''));
   if (!gestorToken) {
@@ -142,7 +145,7 @@ export async function enviarImpressaoHandler(c, env) {
   )
     .bind(
       gestorToken,
-      b.tipo === 'html' ? 'html' : 'texto',
+      'texto',
       conteudo,
       b.impressora ? String(b.impressora) : null,
       num(b.largura_mm) || 80,

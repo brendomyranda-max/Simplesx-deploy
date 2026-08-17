@@ -12,51 +12,38 @@ export function fmtData(iso?: string | null): string {
   if (!iso) return '-';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('pt-BR', { timeZone: TIME_ZONE, day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 export function fmtDataCurta(iso?: string | null): string {
   if (!iso) return '-';
-  return String(iso).slice(0, 10);
+  const parte = String(iso).slice(0, 10).split('-');
+  return parte.length === 3 ? `${parte[2]}/${parte[1]}/${parte[0]}` : String(iso);
 }
 
 export function fmtHora(iso?: string | null): string {
   if (!iso) return '-';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '-';
-  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('pt-BR', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit' });
 }
 
 export function diasAte(iso?: string | null): number | null {
   if (!iso) return null;
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const alvo = new Date(String(iso).slice(0, 10));
-  alvo.setHours(0, 0, 0, 0);
+  const hoje = new Date(`${dataSaoPaulo()}T12:00:00-03:00`);
+  const alvo = new Date(`${String(iso).slice(0, 10)}T12:00:00-03:00`);
   return Math.round((alvo.getTime() - hoje.getTime()) / 86400000);
 }
 
-export function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function hojeLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return dataSaoPaulo();
 }
 
 export function addDiasLocal(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
+  const [y, m, d] = dataSaoPaulo().split('-').map(Number);
+  const alvo = new Date(Date.UTC(y, m - 1, d + days, 12));
+  return alvo.toISOString().slice(0, 10);
 }
-
-export const UNIDADES = ['UN', 'KG', 'G', 'L', 'ML', 'CX', 'PC', 'DZ', 'PCT', 'LT'];
 
 export const FORMAS_PAGAMENTO = [
   { valor: 'dinheiro', label: 'Dinheiro', cor: '#16a34a' },
@@ -68,4 +55,11 @@ export const FORMAS_PAGAMENTO = [
 
 export function formaLabel(f: string): string {
   return FORMAS_PAGAMENTO.find((x) => x.valor === f)?.label || f;
+}
+const TIME_ZONE = 'America/Sao_Paulo';
+
+function dataSaoPaulo(date = new Date()): string {
+  const partes = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const get = (tipo: string) => partes.find((p) => p.type === tipo)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
