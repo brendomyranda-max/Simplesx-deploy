@@ -102,7 +102,8 @@ async function api(endpoint, body) {
 }
 
 async function registrar() {
-  await api('/gestor/register', { token: config.token, nome: config.nome, ip: os.hostname() })
+  const printers = await listarImpressoras()
+  await api('/gestor/register', { token: config.token, nome: config.nome, ip: os.hostname(), printers })
 }
 
 async function filasCupsDisponiveis() {

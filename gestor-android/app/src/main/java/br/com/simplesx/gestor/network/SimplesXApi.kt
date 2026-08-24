@@ -42,14 +42,19 @@ class SimplesXApi(private val config: AppConfig) {
         val response = request("/device/pair", JSONObject()
             .put("pairing_id", pairingId.trim()).put("code", code.trim())
             .put("device_id", config.deviceId).put("name", config.deviceName)
-            .put("platform", "android").put("version", "1.1.0"), authenticated = false)
+            .put("platform", "android").put("version", "1.1.1"), authenticated = false)
         config.deviceToken = response.getString("device_token")
         config.tokenExpiresAt = response.optString("token_expires_at")
     }
 
     fun heartbeat(status: String = "online", error: String? = null) {
-        request("/device/heartbeat", JSONObject().put("status", status).put("version", "1.1.0").apply {
+        request("/device/heartbeat", JSONObject().put("status", status).put("version", "1.1.1").apply {
             if (error != null) put("error", error.take(1000))
+            put("printers", JSONArray().apply {
+                config.printers.forEach { printer -> put(JSONObject()
+                    .put("name", printer.name).put("connection", printer.connection.name.lowercase())
+                    .put("width_mm", printer.widthMm)) }
+            })
         })
     }
 

@@ -233,13 +233,16 @@ export async function createAgenteHandler(c, env) {
   if (!b.nome) return c.json({ error: 'Nome da rota de impressão obrigatório' }, 400);
   const r = await env.DB.prepare(
     `INSERT INTO impressora_agentes
-      (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, largura_mm, ativo, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,1,?)`
+      (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, largura_mm,
+       servidor_tipo, servidor_id, impressora_destino, ativo, criado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
   )
     .bind(
       String(b.nome).trim(), b.ip || '', num(b.porta) || 9100, b.tipo || 'impressora', b.protocolo || 'cups',
       JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
-      b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80, now()
+      b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80,
+      b.servidor_tipo || null, b.servidor_id ? String(b.servidor_id) : null,
+      b.impressora_destino ? String(b.impressora_destino).trim() : null, now()
     )
     .run();
   await sincronizarCategoriasDaImpressora(env, r.meta.last_row_id, b.categorias);
@@ -253,11 +256,15 @@ export async function updateAgenteHandler(c, env) {
   if (!atual) return c.json({ error: 'Impressora não encontrada' }, 404);
   await env.DB.prepare(
     `UPDATE impressora_agentes SET nome=?, ip=?, porta=?, tipo=?, protocolo=?, categorias=?,
-      imprime_pedidos=?, imprime_conta=?, largura_mm=?, ativo=? WHERE id=?`
+      imprime_pedidos=?, imprime_conta=?, largura_mm=?, servidor_tipo=?, servidor_id=?,
+      impressora_destino=?, ativo=? WHERE id=?`
   ).bind(
     String(b.nome).trim(), b.ip || '', num(b.porta) || 9100, b.tipo || 'impressora', b.protocolo || 'cups',
     JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
-    b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80, b.ativo === false ? 0 : 1, c.params.id
+    b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80,
+    b.servidor_tipo || null, b.servidor_id ? String(b.servidor_id) : null,
+    b.impressora_destino ? String(b.impressora_destino).trim() : null,
+    b.ativo === false ? 0 : 1, c.params.id
   ).run();
   await sincronizarCategoriasDaImpressora(env, c.params.id, b.categorias);
   return c.json({ ok: true });
@@ -307,19 +314,28 @@ async function sincronizarCategoriasDaImpressora(env, impressoraId, categorias) 
   }
 }
 
-async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 80 }) {
-  const deviceId = await getConfigValue(env, 'gestor_device_id', '');
+async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 80, servidorTipo, servidorId, impressoraDestino }) {
+  const destino = impressoraDestino || impressora;
+  const deviceId = servidorTipo === 'android'
+    ? String(servidorId || '')
+    : (!servidorTipo ? await getConfigValue(env, 'gestor_device_id', '') : '');
   if (deviceId) {
     const result = await createDeviceTask(env, user, {
       device_id: deviceId,
       type: 'PRINT_ORDER',
-      payload: { content: textoCompativelComEscPos(conteudo), printer: impressora, width_mm: larguraMm, copies: 1, cut: true, feed: larguraMm === 58 ? 3 : 0 },
+      payload: { content: textoCompativelComEscPos(conteudo), printer: destino, width_mm: larguraMm, copies: 1, cut: true, feed: larguraMm === 58 ? 3 : 0 },
       idempotency_key: `order-print-${crypto.randomUUID()}`,
       source_type: 'comanda',
     });
     return { ok: true, task_id: result.task.id };
   }
-  const gestorToken = await getConfigValue(env, 'gestor_token', '');
+  let gestorToken = '';
+  if (servidorTipo === 'desktop' && servidorId) {
+    const gestorSelecionado = await env.DB.prepare('SELECT token FROM gestores WHERE id=? AND ativo=1').bind(servidorId).first();
+    gestorToken = gestorSelecionado?.token || '';
+  } else if (!servidorTipo) {
+    gestorToken = await getConfigValue(env, 'gestor_token', '');
+  }
   if (!gestorToken) return { ok: false, error: 'Nenhum gestor configurado' };
   const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND ativo=1').bind(gestorToken).first();
   if (!gestor) return { ok: false, error: 'Gestor configurado não está cadastrado ou está inativo' };
@@ -328,7 +344,7 @@ async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 8
     `INSERT INTO gestor_jobs
       (gestor_token, tipo, conteudo, impressora, largura_mm, copias, cortar, alimentar, status, criado_em)
      VALUES (?, 'texto', ?, ?, ?, 1, 1, ?, 'pendente', ?)`
-  ).bind(gestorToken, conteudoCompativel, impressora, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
+  ).bind(gestorToken, conteudoCompativel, destino, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
   return { ok: true, job_id: r.meta.last_row_id };
 }
 
@@ -418,17 +434,22 @@ export async function imprimirComandaHandler(c, env) {
       .filter((l) => l !== '')
       .join('\n');
     const destinos = await env.DB.prepare(
-      'SELECT nome, largura_mm FROM impressora_agentes WHERE ativo=1 AND imprime_conta=1 ORDER BY id'
+      `SELECT nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
+       FROM impressora_agentes WHERE ativo=1 AND imprime_conta=1 ORDER BY id`
     ).all();
     const jobs = [];
     for (const destino of destinos.results) {
-      const job = await enqueueGestorJob(env, c.user, { conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80 });
+      const job = await enqueueGestorJob(env, c.user, {
+        conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
+        servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id, impressoraDestino: destino.impressora_destino,
+      });
       jobs.push({ impressora: destino.nome, ...job });
     }
     return c.json({ impressao: txt, itens: itens.results.length, setor, tipo, agente: b.agente || null, jobs });
   }
   const rotas = await env.DB.prepare(
-    'SELECT id, nome, largura_mm FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1 ORDER BY id'
+    `SELECT id, nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
+     FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1 ORDER BY id`
   ).all();
   const jobs = [];
   const enviados = new Set();
@@ -443,7 +464,10 @@ export async function imprimirComandaHandler(c, env) {
     selecionados.forEach((item) => comRota.add(item.id));
     const txt = textoPedido({ empresa, cnpj, mesa, com, destino: rota.nome, itens: selecionados });
     if (!preview) preview = txt;
-    const job = await enqueueGestorJob(env, c.user, { conteudo: txt, impressora: rota.nome, larguraMm: num(rota.largura_mm) || 80 });
+    const job = await enqueueGestorJob(env, c.user, {
+      conteudo: txt, impressora: rota.nome, larguraMm: num(rota.largura_mm) || 80,
+      servidorTipo: rota.servidor_tipo, servidorId: rota.servidor_id, impressoraDestino: rota.impressora_destino,
+    });
     jobs.push({ impressora: rota.nome, itens: selecionados.length, ...job });
     if (job.ok) selecionados.forEach((item) => enviados.add(item.id));
   }

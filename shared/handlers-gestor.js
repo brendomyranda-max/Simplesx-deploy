@@ -19,15 +19,20 @@ export async function registerGestorHandler(c, env) {
   const token = (b.token && String(b.token).trim()) || gerarToken();
   const nome = (b.nome && String(b.nome).trim()) || 'Gestor';
   const ip = (b.ip && String(b.ip).trim()) || '';
+  const printers = Array.isArray(b.printers) ? b.printers.slice(0, 100).map((p) => ({
+    name: String(p?.name || '').trim().slice(0, 120),
+    displayName: String(p?.displayName || p?.name || '').trim().slice(0, 120),
+    isDefault: !!p?.isDefault,
+  })).filter((p) => p.name) : [];
 
   const existe = await env.DB.prepare('SELECT id FROM gestores WHERE token=?').bind(token).first();
   if (existe) {
-    await env.DB.prepare('UPDATE gestores SET nome=?, ip=?, ultima_conexao=? WHERE token=?')
-      .bind(nome, ip, now(), token)
+    await env.DB.prepare('UPDATE gestores SET nome=?, ip=?, printers_json=?, ultima_conexao=? WHERE token=?')
+      .bind(nome, ip, JSON.stringify(printers), now(), token)
       .run();
   } else {
-    await env.DB.prepare('INSERT INTO gestores (token, nome, ip, ultima_conexao, criado_em, ativo) VALUES (?,?,?,?,?,1)')
-      .bind(token, nome, ip, now(), now())
+    await env.DB.prepare('INSERT INTO gestores (token, nome, ip, printers_json, ultima_conexao, criado_em, ativo) VALUES (?,?,?,?,?,?,1)')
+      .bind(token, nome, ip, JSON.stringify(printers), now(), now())
       .run();
   }
   return c.json({ ok: true, token, nome, ip });
@@ -110,9 +115,9 @@ export async function gestorJobStatusHandler(c, env) {
 /** Lista os gestores cadastrados (para o pareamento na tela de Impressoras). */
 export async function listGestoresHandler(c, env) {
   const rows = await env.DB.prepare(
-    "SELECT id, nome, ip, ultima_conexao, ativo, '••••' || SUBSTR(token, -4) AS token_final FROM gestores ORDER BY nome"
+    "SELECT id, nome, ip, ultima_conexao, ativo, printers_json, '••••' || SUBSTR(token, -4) AS token_final FROM gestores ORDER BY nome"
   ).all();
-  return c.json(rows.results);
+  return c.json(rows.results.map((row) => ({ ...row, printers: JSON.parse(row.printers_json || '[]') })));
 }
 
 /**

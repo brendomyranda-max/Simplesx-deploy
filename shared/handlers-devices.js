@@ -38,6 +38,15 @@ function jsonLimit(value, maxBytes = 64 * 1024) {
   return serialized;
 }
 
+function printerList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 50).map((item) => ({
+    name: text(item?.name || item?.nome, 120, 'Nome da impressora', true),
+    connection: text(item?.connection || item?.conexao, 30, 'Conexão') || 'unknown',
+    width_mm: [58, 80].includes(num(item?.width_mm || item?.largura_mm)) ? num(item?.width_mm || item?.largura_mm) : 80,
+  }));
+}
+
 function rejectSensitivePaymentData(value, path = '') {
   if (!value || typeof value !== 'object') return;
   const forbidden = /^(card_?number|pan|cvv|cvc|pin|password|senha|track1|track2|magnetic_?stripe)$/i;
@@ -198,9 +207,10 @@ export async function heartbeatDeviceHandler(c, env) {
   const body = await c.req.json();
   const status = DEVICE_STATUSES.has(body?.status) ? body.status : 'online';
   const error = status === 'error' ? text(body?.error, 1000, 'Erro') : '';
+  const printers = printerList(body?.printers);
   await env.DB.prepare(
-    'UPDATE devices SET status=?, ultima_conexao=?, ultimo_erro=?, versao=COALESCE(?,versao), atualizado_em=? WHERE id=? AND estabelecimento_id=?'
-  ).bind(status, now(), error || null, text(body?.version, 40, 'Versão') || null, now(), device.id, device.estabelecimento_id).run();
+    'UPDATE devices SET status=?, ultima_conexao=?, ultimo_erro=?, versao=COALESCE(?,versao), printers_json=?, atualizado_em=? WHERE id=? AND estabelecimento_id=?'
+  ).bind(status, now(), error || null, text(body?.version, 40, 'Versão') || null, JSON.stringify(printers), now(), device.id, device.estabelecimento_id).run();
   return c.json({ ok: true, server_time: now(), token_expires_at: device.token_expira_em });
 }
 
@@ -367,10 +377,10 @@ export async function updateDeviceTaskStatusHandler(c, env) {
 
 export async function listDevicesHandler(c, env) {
   const rows = await env.DB.prepare(
-    `SELECT id, nome, plataforma, versao, status, ultima_conexao, ultimo_erro, token_expira_em, criado_em
+    `SELECT id, nome, plataforma, versao, status, ultima_conexao, ultimo_erro, token_expira_em, printers_json, criado_em
      FROM devices WHERE revogado_em IS NULL ORDER BY nome`
   ).all();
-  return c.json(rows.results);
+  return c.json(rows.results.map((row) => ({ ...row, printers: JSON.parse(row.printers_json || '[]') })));
 }
 
 export async function listDeviceTasksHandler(c, env) {

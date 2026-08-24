@@ -41,6 +41,12 @@ export function ImpressorasPage() {
   const [gerandoPairing, setGerandoPairing] = useState(false);
   const [gestorDeviceId, setGestorDeviceId] = useState('');
 
+  const servidores = [
+    ...devices.map((device) => ({ key: `android:${device.id}`, tipo: 'android', id: String(device.id), nome: device.nome, plataforma: 'Android', printers: device.printers || [], online: device.status === 'online' })),
+    ...gestores.map((gestor) => ({ key: `desktop:${gestor.id}`, tipo: 'desktop', id: String(gestor.id), nome: gestor.nome, plataforma: 'Windows/Linux', printers: gestor.printers || [], online: !!gestor.ultima_conexao && Date.now() - new Date(gestor.ultima_conexao).getTime() < 60_000 })),
+  ];
+  const servidorSelecionado = servidores.find((servidor) => servidor.tipo === form.servidor_tipo && servidor.id === String(form.servidor_id || ''));
+
   const mudarBobina = (mm: Bobina) => {
     setBobina(mm);
     setBobinaState(mm);
@@ -169,7 +175,9 @@ export function ImpressorasPage() {
     e.preventDefault();
     try {
       if (tab === 'agentes') {
-        if (!form.nome) return toast('error', 'Selecione ou informe a fila CUPS');
+        if (!form.nome) return toast('error', 'Informe o nome da rota');
+        if (!form.servidor_tipo || !form.servidor_id) return toast('error', 'Selecione o servidor de impressão');
+        if (!form.impressora_destino) return toast('error', 'Selecione a impressora dentro do servidor');
         const categoriasSelecionadas = (form.categorias || []).filter((id: number) => {
           const categoria = categorias.find((cat) => cat.id === id);
           return !categoria?.categoria_pai_id || !(form.categorias || []).includes(categoria.categoria_pai_id);
@@ -184,6 +192,9 @@ export function ImpressorasPage() {
           imprime_pedidos: form.imprime_pedidos !== false,
           imprime_conta: !!form.imprime_conta,
           largura_mm: Number(form.largura_mm) === 58 ? 58 : 80,
+          servidor_tipo: form.servidor_tipo || null,
+          servidor_id: form.servidor_id || null,
+          impressora_destino: form.impressora_destino || null,
         };
         if (editandoAgente) await impressoraApi.atualizarAgente(editandoAgente, payload);
         else await impressoraApi.criarAgente(payload);
@@ -204,7 +215,7 @@ export function ImpressorasPage() {
 
   const abrir = () => {
     setEditandoAgente(null);
-    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, largura_mm: '80', altura_mm: '40' });
+    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, largura_mm: '80', altura_mm: '40', servidor_tipo: '', servidor_id: '', impressora_destino: '' });
     setModal(true);
   };
 
@@ -511,7 +522,12 @@ export function ImpressorasPage() {
                                 : categorias.filter((c) => c.impressora_herdada_id === a.id).map((cat) => <Badge key={cat.id} color="blue">{cat.categoria_pai_id ? `↳ ${cat.nome}` : cat.nome}</Badge>)}
                             </div>
                           </td>
-                          <td className="td">{a.imprime_conta ? <Badge color="green">Imprime conta</Badge> : '—'}</td>
+                          <td className="td">
+                            <div className="space-y-1">
+                              {a.imprime_conta ? <Badge color="green">Imprime conta</Badge> : '—'}
+                              {a.servidor_tipo && <p className="text-xs text-slate-500">{a.servidor_tipo === 'android' ? 'Android' : 'Desktop'} → {a.impressora_destino || a.nome}</p>}
+                            </div>
+                          </td>
                           <td className="td">{a.largura_mm || 80}mm</td>
                           <td className="td text-right">
                             <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => editarAgente(a)}>Editar</Button>
@@ -551,14 +567,32 @@ export function ImpressorasPage() {
           )}
           {tab === 'agentes' && (
             <>
-              <Field label="Fila CUPS *">
-                <Select value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}>
-                  <option value="">Selecione a impressora</option>
-                  {form.nome && !cupsList.some((p) => p.name === form.nome) && <option value={form.nome}>{form.nome}</option>}
-                  {cupsList.map((p) => <option key={p.name} value={p.name}>{p.name}{p.raw ? ' (RAW/ESC-POS)' : ''}</option>)}
-                </Select>
+              <Field label="Nome da rota *">
+                <Input value={form.nome || ''} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex.: Cozinha, Bar ou Caixa" autoFocus />
               </Field>
-              {!cupsOnline && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">O gestor local está inacessível neste dispositivo. Abra esta tela no computador do gestor para listar as filas CUPS.</p>}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Servidor de impressão *">
+                  <Select value={form.servidor_tipo && form.servidor_id ? `${form.servidor_tipo}:${form.servidor_id}` : ''} onChange={(e) => {
+                    const [tipo, ...id] = e.target.value.split(':');
+                    setForm({ ...form, servidor_tipo: tipo || '', servidor_id: id.join(':'), impressora_destino: '' });
+                  }}>
+                    <option value="">Selecione o servidor</option>
+                    {servidores.map((servidor) => <option key={servidor.key} value={servidor.key}>{servidor.nome} · {servidor.plataforma} · {servidor.online ? 'online' : 'offline'}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Impressora dentro do servidor *">
+                  <Select value={form.impressora_destino || ''} disabled={!servidorSelecionado} onChange={(e) => {
+                    const printer = servidorSelecionado?.printers.find((item: any) => item.name === e.target.value);
+                    setForm({ ...form, impressora_destino: e.target.value, largura_mm: String(printer?.width_mm || form.largura_mm || 80) });
+                  }}>
+                    <option value="">Selecione a impressora</option>
+                    {form.impressora_destino && !servidorSelecionado?.printers.some((item: any) => item.name === form.impressora_destino) && <option value={form.impressora_destino}>{form.impressora_destino} (não sincronizada)</option>}
+                    {(servidorSelecionado?.printers || []).map((printer: any) => <option key={printer.name} value={printer.name}>{printer.displayName || printer.name}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              {servidores.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Nenhum servidor sincronizado. Abra o Gestor Android, Windows ou Linux e aguarde alguns segundos.</p>}
+              {servidorSelecionado && servidorSelecionado.printers.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Este servidor ainda não publicou impressoras. Abra o gestor, salve uma impressora e mantenha “Receber impressões” ativo.</p>}
               <Field label="Categorias que imprimem nesta impressora">
                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
                   {categorias.filter((cat) => !cat.categoria_pai_id).map((categoria) => (
