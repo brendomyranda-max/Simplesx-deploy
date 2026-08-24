@@ -317,6 +317,18 @@ export const gestorApi = {
   }) => api.post<{ ok: boolean; job_id?: number }>('/impressao/enviar', b),
 };
 
+export const deviceApi = {
+  pairingCode: () => api.post<{ pairing_id: string; code: string; expires_at: string }>('/devices/pairing-codes'),
+  list: () => api.get<Array<{ id: string; nome: string; plataforma: string; versao?: string; status: string; ultima_conexao?: string; ultimo_erro?: string }>>('/devices'),
+  test: (deviceId: string) => api.post<{ task: { id: string; status: string } }>('/device-tasks', {
+    device_id: deviceId,
+    type: 'TEST_PRINTER',
+    payload: { content: `SIMPLESX - TESTE ANDROID\n${new Date().toLocaleString('pt-BR')}\nConexao com a fila segura OK`, cut: true, feed: 3 },
+    idempotency_key: `android-test-${deviceId}-${crypto.randomUUID()}`,
+  }),
+  remove: (deviceId: string) => api.del<{ ok: boolean }>(`/devices/${encodeURIComponent(deviceId)}`),
+};
+
 export const tokenApi = {
   list: () => api.get<any[]>('/tokens'),
   create: (nome: string) => api.post<{ id: number; token: string; nome: string }>('/tokens', { nome }),

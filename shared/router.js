@@ -4,6 +4,7 @@ import * as ven from './handlers-vendas.js';
 import * as fin from './handlers-financeiro.js';
 import * as cad from './handlers-cadastros.js';
 import * as gestor from './handlers-gestor.js';
+import * as devices from './handlers-devices.js';
 import * as fiscal from './handlers-fiscal.js';
 import { TenantDb } from './tenant-db.js';
 
@@ -104,6 +105,19 @@ const routes = [
   { m: 'POST', p: '/api/gestor/jobs/:id/status', h: gestor.gestorJobStatusHandler, pub: true },
   { m: 'GET', p: '/api/gestores', h: gestor.listGestoresHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/impressao/enviar', h: gestor.enviarImpressaoHandler },
+
+  // gestor local v2: pareamento administrado e autenticação própria do dispositivo
+  { m: 'POST', p: '/api/devices/pairing-codes', h: devices.createPairingCodeHandler, mod: 'gestor' },
+  { m: 'POST', p: '/api/device/pair', h: devices.pairDeviceHandler, pub: true },
+  { m: 'POST', p: '/api/device/heartbeat', h: devices.heartbeatDeviceHandler, pub: true },
+  { m: 'POST', p: '/api/device/token/rotate', h: devices.rotateDeviceTokenHandler, pub: true },
+  { m: 'POST', p: '/api/device/tasks/pull', h: devices.pullDeviceTasksHandler, pub: true },
+  { m: 'POST', p: '/api/device/tasks/:id/status', h: devices.updateDeviceTaskStatusHandler, pub: true },
+  { m: 'GET', p: '/api/devices', h: devices.listDevicesHandler, mod: 'gestor' },
+  { m: 'DELETE', p: '/api/devices/:id', h: devices.revokeDeviceHandler, mod: 'gestor' },
+  { m: 'POST', p: '/api/device-tasks', h: devices.createDeviceTaskHandler },
+  { m: 'POST', p: '/api/device-tasks/:id/cancel', h: devices.cancelDeviceTaskHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/device-tasks', h: devices.listDeviceTasksHandler, mod: 'gestor' },
 
   // perdas
   { m: 'GET', p: '/api/perdas', h: fin.listPerdasHandler },

@@ -52,3 +52,26 @@ npx wrangler d1 migrations apply simplesx-db --remote
 Credenciais e certificados não devem ser gravados no D1. O banco armazena apenas
 o identificador da empresa no provedor; segredos globais pertencem aos secrets do
 Worker/Cloudflare.
+
+## Gestor Local v2
+
+O backend possui uma fila segura e idempotente para a evolução do Gestor Local.
+O gestor legado continua disponível durante a transição. Novas instalações devem
+ser vinculadas por um código temporário criado por um usuário com módulo Gestor;
+o código expira em dez minutos e só pode ser usado uma vez. O token devolvido ao
+dispositivo é mostrado apenas no pareamento e armazenado no banco somente como hash.
+
+As credenciais administrativas nunca devem ser copiadas para o gestor. Chamadas do
+dispositivo usam `Authorization: Bearer <device-token>` e `X-Device-Id` sobre HTTPS.
+O token do dispositivo expira em 90 dias e pode ser rotacionado pela rota autenticada
+do próprio dispositivo.
+
+Variáveis já usadas pelo projeto:
+
+- `SIMPLESX_DB`: caminho do SQLite no servidor local;
+- `PORT` e `HOST`: endereço do servidor local;
+- `TURNSTILE_SITE_KEY` e `TURNSTILE_SECRET_KEY`: proteção do login web.
+
+Em produção, `DB` e `AUTH_KV` continuam sendo bindings do Cloudflare. Nenhum token
+de dispositivo ou credencial de pagamento deve ser colocado em variável pública do
+Vite, no repositório ou no frontend.

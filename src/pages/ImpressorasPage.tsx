@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download } from 'lucide-react';
+import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
-import { impressoraApi, gestorApi, configApi, categoriaApi } from '@/lib/api';
+import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi } from '@/lib/api';
 import { getBobina, setBobina, type Bobina } from '@/lib/print';
 import {
   cupsHealth,
@@ -36,6 +36,10 @@ export function ImpressorasPage() {
   const [gestores, setGestores] = useState<any[]>([]);
   const [salvandoGestor, setSalvandoGestor] = useState(false);
   const [testandoGestor, setTestandoGestor] = useState(false);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [pairing, setPairing] = useState<{ pairing_id: string; code: string; expires_at: string } | null>(null);
+  const [gerandoPairing, setGerandoPairing] = useState(false);
+  const [gestorDeviceId, setGestorDeviceId] = useState('');
 
   const mudarBobina = (mm: Bobina) => {
     setBobina(mm);
@@ -69,17 +73,20 @@ export function ImpressorasPage() {
   const loadAll = async () => {
     setLoad(true);
     try {
-      const [a, e, cfg, g, cats] = await Promise.all([
+      const [a, e, cfg, g, cats, ds] = await Promise.all([
         impressoraApi.agentes(),
         impressoraApi.etiquetas(),
         configApi.get().catch(() => null),
         gestorApi.list().catch(() => []),
         categoriaApi.list(),
+        deviceApi.list().catch(() => []),
       ]);
       setAgentes(a);
       setEtiquetas(e);
       setGestores(g);
       setCategorias(cats.filter((cat: any) => cat.ativo !== 0));
+      setDevices(ds);
+      setGestorDeviceId(String((cfg as any)?.config?.gestor_device_id || ''));
       if (cfg?.config?.gestor_token && !gestorToken) {
         setGestorTokenState(cfg.config.gestor_token);
         setGestorToken(cfg.config.gestor_token);
@@ -88,6 +95,37 @@ export function ImpressorasPage() {
       toast('error', err?.error || 'Erro ao carregar');
     } finally {
       setLoad(false);
+    }
+  };
+
+  const gerarPareamento = async () => {
+    setGerandoPairing(true);
+    try {
+      setPairing(await deviceApi.pairingCode());
+      toast('success', 'Código criado — ele expira em dez minutos');
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível gerar o pareamento');
+    } finally {
+      setGerandoPairing(false);
+    }
+  };
+
+  const testarDevice = async (device: any) => {
+    try {
+      await deviceApi.test(device.id);
+      toast('success', `Teste enviado para ${device.nome}`);
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível enviar o teste');
+    }
+  };
+
+  const selecionarDevice = async (deviceId: string) => {
+    try {
+      await configApi.update({ gestor_device_id: deviceId });
+      setGestorDeviceId(deviceId);
+      toast('success', deviceId ? 'Gestor Android definido como destino das impressões' : 'Destino Android removido');
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível salvar o destino');
     }
   };
 
@@ -224,7 +262,73 @@ export function ImpressorasPage() {
           >
             Baixar para Linux (.AppImage)
           </a>
+          <a
+            className="inline-flex items-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+            href="/downloads/gestor-android"
+          >
+            Baixar para Android (.apk)
+          </a>
         </div>
+      </Card>
+
+      <Card className="mb-4 border-emerald-200 p-4">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-600 text-white">
+            <Smartphone className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-extrabold text-slate-800">Gestor Android</p>
+              <Badge color={devices.some((d) => d.status === 'online') ? 'green' : 'slate'}>
+                {devices.length ? `${devices.length} dispositivo(s)` : 'nenhum pareado'}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              Pareie o celular ou tablet para imprimir por rede ou Bluetooth. O código é válido por dez minutos e só pode ser usado uma vez.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={gerarPareamento} disabled={gerandoPairing}>
+            {gerandoPairing ? 'Gerando…' : 'Gerar pareamento'}
+          </Button>
+        </div>
+
+        {pairing && (
+          <div className="mt-4 grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase text-emerald-700">ID do pareamento</p>
+              <p className="break-all font-mono text-sm text-slate-800">{pairing.pairing_id}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase text-emerald-700">Código</p>
+              <p className="font-mono text-xl font-black tracking-wider text-slate-900">{pairing.code}</p>
+            </div>
+          </div>
+        )}
+
+        {devices.length > 0 && (
+          <div className="mt-4 space-y-3">
+            <Field label="Destino padrão das impressões">
+              <Select value={gestorDeviceId} onChange={(e) => selecionarDevice(e.target.value)}>
+                <option value="">Usar gestor Windows/Linux</option>
+                {devices.map((device) => <option key={device.id} value={device.id}>{device.nome} · {device.status}</option>)}
+              </Select>
+            </Field>
+            <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+            {devices.map((device) => (
+              <div key={device.id} className="flex flex-wrap items-center gap-3 p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-slate-800">{device.nome}</p>
+                  <p className="truncate text-xs text-slate-500">{device.plataforma} · {device.id}</p>
+                </div>
+                <Badge color={device.status === 'online' ? 'green' : device.status === 'error' ? 'red' : 'slate'}>{device.status}</Badge>
+                <Button size="sm" variant="secondary" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => testarDevice(device)}>
+                  Testar
+                </Button>
+              </div>
+            ))}
+            </div>
+          </div>
+        )}
       </Card>
 
       <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-2">

@@ -1,4 +1,5 @@
 import { now, num, gerarToken, getConfigValue } from './util.js';
+import { createDeviceTask } from './handlers-devices.js';
 
 // ============================ GESTOR LOCAL (conexão direta com o deploy) ============================
 
@@ -126,6 +127,25 @@ export async function enviarImpressaoHandler(c, env) {
   if (!conteudo.trim()) return c.json({ error: 'Informe o conteúdo da impressão' }, 400);
   if (b.tipo && b.tipo !== 'texto') {
     return c.json({ error: 'Somente conteúdo textual é aceito para impressão térmica RAW' }, 400);
+  }
+
+  const deviceId = (b.device_id && String(b.device_id).trim()) || (await getConfigValue(env, 'gestor_device_id', ''));
+  if (deviceId) {
+    const result = await createDeviceTask(env, c.user, {
+      device_id: deviceId,
+      type: 'PRINT_RECEIPT',
+      payload: {
+        content: conteudo,
+        printer: b.impressora ? String(b.impressora) : null,
+        width_mm: num(b.largura_mm) || 80,
+        copies: Math.max(1, num(b.copias) || 1),
+        cut: b.cortar === undefined || !!b.cortar,
+        feed: Math.max(0, num(b.alimentar) || 0),
+      },
+      idempotency_key: `print-${crypto.randomUUID()}`,
+      source_type: 'web_print',
+    });
+    return c.json({ ok: true, task_id: result.task.id }, 201);
   }
 
   const gestorToken = (b.gestor_token && String(b.gestor_token).trim()) || (await getConfigValue(env, 'gestor_token', ''));

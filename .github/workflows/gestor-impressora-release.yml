@@ -42,9 +42,32 @@ jobs:
           name: gestor-${{ runner.os }}
           path: gestor-impressora/release/SimplesX-Gestor-*
 
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gestor-android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compilar APK Android
+        run: gradle :app:assembleDebug
+      - name: Preparar APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk SimplesX-Gestor-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gestor-Android
+          path: gestor-android/SimplesX-Gestor-android.apk
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
