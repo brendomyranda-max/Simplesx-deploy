@@ -112,7 +112,7 @@ class PrintSyncService : Service() {
     }
 
     private fun notification(text: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_menu_print)
+        .setSmallIcon(android.R.drawable.ic_menu_info_details)
         .setContentTitle("SimplesX Gestor ativo")
         .setContentText(text)
         .setOngoing(true)
