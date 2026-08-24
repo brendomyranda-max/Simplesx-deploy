@@ -26,6 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -68,7 +69,9 @@ private fun GestorScreen() {
     var deviceName by remember { mutableStateOf(config.deviceName) }
     var pairingId by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
-    var printer by remember { mutableStateOf(config.printer) }
+    var printers by remember { mutableStateOf(config.printers) }
+    var selectedPrinterIndex by remember { mutableStateOf(0) }
+    var printer by remember { mutableStateOf(printers.first()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var message by remember { mutableStateOf(config.lastStatus) }
     var bluetoothPrinters by remember { mutableStateOf(PrinterTransport.pairedBluetooth(context)) }
@@ -125,6 +128,28 @@ private fun GestorScreen() {
             }
 
             Section("Impressora ESC/POS") {
+                Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado no SimplesX (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    printers.forEachIndexed { index, item ->
+                        OutlinedButton(onClick = { selectedPrinterIndex = index; printer = item }, modifier = Modifier.weight(1f)) {
+                            Text(item.name, maxLines = 1)
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        selectedPrinterIndex = -1
+                        printer = PrinterConfig(name = "Nova rota", connection = ConnectionType.BLUETOOTH, widthMm = 58)
+                    }, modifier = Modifier.weight(1f)) { Text("Adicionar") }
+                    if (printers.size > 1 && selectedPrinterIndex >= 0) {
+                        OutlinedButton(onClick = {
+                            printers = printers.filterIndexed { index, _ -> index != selectedPrinterIndex }
+                            config.printers = printers
+                            selectedPrinterIndex = 0
+                            printer = printers.first()
+                        }, modifier = Modifier.weight(1f)) { Text("Excluir") }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { printer = printer.copy(connection = ConnectionType.NETWORK) }, modifier = Modifier.weight(1f)) { Text("Rede") }
                     Button(onClick = {
@@ -132,7 +157,7 @@ private fun GestorScreen() {
                         requestPermissions(openBluetoothPicker = true)
                     }, modifier = Modifier.weight(1f)) { Text("Bluetooth") }
                 }
-                OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da impressora") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplesX") }, modifier = Modifier.fillMaxWidth())
                 if (printer.connection == ConnectionType.NETWORK) {
                     OutlinedTextField(printer.host, { printer = printer.copy(host = it) }, label = { Text("IP da impressora") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(printer.port.toString(), { printer = printer.copy(port = it.toIntOrNull() ?: 9100) }, label = { Text("Porta") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -156,7 +181,23 @@ private fun GestorScreen() {
                     Button(onClick = { printer = printer.copy(widthMm = 80) }, modifier = Modifier.weight(1f)) { Text("80 mm") }
                 }
                 Button(onClick = {
-                    config.printer = printer
+                    if (printer.name.isBlank()) {
+                        message = "Informe o nome da rota da impressora"
+                        return@Button
+                    }
+                    val updated = printers.toMutableList()
+                    val duplicate = updated.indices.firstOrNull { index ->
+                        index != selectedPrinterIndex && updated[index].name.equals(printer.name, ignoreCase = true)
+                    } ?: -1
+                    if (duplicate >= 0) {
+                        message = "Já existe uma rota com esse nome"
+                        return@Button
+                    }
+                    if (selectedPrinterIndex in updated.indices) updated[selectedPrinterIndex] = printer
+                    else { updated.add(printer); selectedPrinterIndex = updated.lastIndex }
+                    printers = updated
+                    config.printers = updated
+                    if (config.defaultPrinterName.isBlank()) config.defaultPrinterName = printer.name
                     val bluetoothAllowed = Build.VERSION.SDK_INT < 31 ||
                         context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
                     if (printer.connection == ConnectionType.BLUETOOTH && !bluetoothAllowed) {
@@ -165,14 +206,20 @@ private fun GestorScreen() {
                     } else {
                         background { PrinterTransport.send(context, printer, EscPos.ticket("SIMPLESX - TESTE DE IMPRESSAO\nRede/Bluetooth OK")); "Teste enviado com sucesso" }
                     }
-                }, modifier = Modifier.fillMaxWidth()) { Text("Salvar e imprimir teste") }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Salvar rota e imprimir teste") }
+                OutlinedButton(onClick = {
+                    config.defaultPrinterName = printer.name
+                    message = "${printer.name} definida como rota padrão"
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (config.defaultPrinterName.equals(printer.name, ignoreCase = true)) "Rota padrão" else "Definir como padrão")
+                }
             }
 
             Section("Serviço em segundo plano") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column { Text("Receber impressões"); Text("Mantém uma notificação ativa", style = MaterialTheme.typography.bodySmall) }
                     Switch(serviceEnabled, onCheckedChange = {
-                        requestPermissions(); config.deployUrl = deployUrl; config.deviceName = deviceName; config.printer = printer
+                        requestPermissions(); config.deployUrl = deployUrl; config.deviceName = deviceName; config.printers = printers
                         serviceEnabled = it
                         if (it) PrintSyncService.start(context) else PrintSyncService.stop(context)
                     })

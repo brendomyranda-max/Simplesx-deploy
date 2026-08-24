@@ -42,21 +42,61 @@ class AppConfig(context: Context) {
         get() = prefs.getString("last_job", "Nenhum")!!
         set(value) = prefs.edit().putString("last_job", value).apply()
 
-    var printer: PrinterConfig
+    var defaultPrinterName: String
+        get() = prefs.getString("default_printer_name", "")!!
+        set(value) = prefs.edit().putString("default_printer_name", value.trim()).apply()
+
+    var printers: List<PrinterConfig>
         get() {
-            val json = runCatching { JSONObject(prefs.getString("printer", "{}")!!) }.getOrDefault(JSONObject())
-            return PrinterConfig(
-                name = json.optString("name", "Impressora padrão"),
-                connection = runCatching { ConnectionType.valueOf(json.optString("connection", "NETWORK")) }.getOrDefault(ConnectionType.NETWORK),
-                host = json.optString("host"), port = json.optInt("port", 9100),
-                bluetoothAddress = json.optString("bluetoothAddress"), bluetoothName = json.optString("bluetoothName"),
-                widthMm = json.optInt("widthMm", 80),
-            )
+            val saved = prefs.getString("printers", null)
+            if (saved.isNullOrBlank()) return listOf(readLegacyPrinter())
+            return runCatching {
+                val array = org.json.JSONArray(saved)
+                (0 until array.length()).map { printerFromJson(array.getJSONObject(it)) }
+            }.getOrDefault(listOf(readLegacyPrinter())).ifEmpty { listOf(readLegacyPrinter()) }
         }
         set(value) {
-            val json = JSONObject().put("name", value.name).put("connection", value.connection.name)
-                .put("host", value.host).put("port", value.port).put("bluetoothAddress", value.bluetoothAddress)
-                .put("bluetoothName", value.bluetoothName).put("widthMm", value.widthMm)
-            prefs.edit().putString("printer", json.toString()).apply()
+            val normalized = value.distinctBy { it.name.trim().lowercase() }
+            val array = org.json.JSONArray()
+            normalized.forEach { array.put(printerToJson(it)) }
+            prefs.edit().putString("printers", array.toString()).apply()
+            if (normalized.none { it.name.equals(defaultPrinterName, ignoreCase = true) }) {
+                defaultPrinterName = normalized.firstOrNull()?.name.orEmpty()
+            }
         }
+
+    var printer: PrinterConfig
+        get() = printerFor(null)
+        set(value) {
+            val list = printers.toMutableList()
+            val index = list.indexOfFirst { it.name.equals(value.name, ignoreCase = true) }
+            if (index >= 0) list[index] = value else list.add(value)
+            printers = list
+            if (defaultPrinterName.isBlank()) defaultPrinterName = value.name
+        }
+
+    fun printerFor(route: String?): PrinterConfig {
+        val list = printers
+        val requested = route.orEmpty().trim()
+        return list.firstOrNull { requested.isNotBlank() && it.name.equals(requested, ignoreCase = true) }
+            ?: list.firstOrNull { it.name.equals(defaultPrinterName, ignoreCase = true) }
+            ?: list.first()
+    }
+
+    private fun readLegacyPrinter(): PrinterConfig = printerFromJson(
+        runCatching { JSONObject(prefs.getString("printer", "{}")!!) }.getOrDefault(JSONObject())
+    )
+
+    private fun printerFromJson(json: JSONObject) = PrinterConfig(
+        name = json.optString("name", "Impressora padrão"),
+        connection = runCatching { ConnectionType.valueOf(json.optString("connection", "NETWORK")) }.getOrDefault(ConnectionType.NETWORK),
+        host = json.optString("host"), port = json.optInt("port", 9100),
+        bluetoothAddress = json.optString("bluetoothAddress"), bluetoothName = json.optString("bluetoothName"),
+        widthMm = json.optInt("widthMm", 80),
+    )
+
+    private fun printerToJson(value: PrinterConfig) = JSONObject().put("name", value.name)
+        .put("connection", value.connection.name).put("host", value.host).put("port", value.port)
+        .put("bluetoothAddress", value.bluetoothAddress).put("bluetoothName", value.bluetoothName)
+        .put("widthMm", value.widthMm)
 }

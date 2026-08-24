@@ -68,10 +68,12 @@ class PrintSyncService : Service() {
         try {
             api.taskStatus(task, "processing")
             val bytes = taskBytes(task)
+            val route = task.payload.optStringAny("printer", "impressora")
+            val printer = config.printerFor(route)
             val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
-            repeat(copies) { PrinterTransport.send(this, config.printer, bytes) }
-            api.taskStatus(task, "success")
-            config.lastJob = "${task.type} · concluído"
+            repeat(copies) { PrinterTransport.send(this, printer, bytes) }
+            api.taskStatus(task, "success", resultPrinter = printer.name)
+            config.lastJob = "${task.type} → ${printer.name} · concluído"
         } catch (error: Exception) {
             val message = error.message ?: error.javaClass.simpleName
             runCatching { api.taskStatus(task, "failed", "PRINT_ERROR", message) }

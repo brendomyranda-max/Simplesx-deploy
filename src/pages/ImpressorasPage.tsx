@@ -248,7 +248,7 @@ export function ImpressorasPage() {
           </div>
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
-            <p className="text-sm text-slate-500">Baixe, abra o Gestor no computador das impressoras e copie o token exibido. Versão 1.0.5.</p>
+            <p className="text-sm text-slate-500">Baixe o gestor correspondente ao aparelho que fará a ponte com as impressoras. Android 1.1.0.</p>
           </div>
           <a
             className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
@@ -285,6 +285,9 @@ export function ImpressorasPage() {
             </div>
             <p className="mt-1 text-sm text-slate-500">
               Pareie o celular ou tablet para imprimir por rede ou Bluetooth. O código é válido por dez minutos e só pode ser usado uma vez.
+            </p>
+            <p className="mt-1 text-sm font-medium text-emerald-700">
+              Para várias impressoras, use no APK os mesmos nomes das rotas cadastradas abaixo (por exemplo: Cozinha, Bar e Caixa).
             </p>
           </div>
           <Button variant="secondary" onClick={gerarPareamento} disabled={gerandoPairing}>

@@ -42,13 +42,13 @@ class SimplesXApi(private val config: AppConfig) {
         val response = request("/device/pair", JSONObject()
             .put("pairing_id", pairingId.trim()).put("code", code.trim())
             .put("device_id", config.deviceId).put("name", config.deviceName)
-            .put("platform", "android").put("version", "1.0.0"), authenticated = false)
+            .put("platform", "android").put("version", "1.1.0"), authenticated = false)
         config.deviceToken = response.getString("device_token")
         config.tokenExpiresAt = response.optString("token_expires_at")
     }
 
     fun heartbeat(status: String = "online", error: String? = null) {
-        request("/device/heartbeat", JSONObject().put("status", status).put("version", "1.0.0").apply {
+        request("/device/heartbeat", JSONObject().put("status", status).put("version", "1.1.0").apply {
             if (error != null) put("error", error.take(1000))
         })
     }
@@ -61,11 +61,14 @@ class SimplesXApi(private val config: AppConfig) {
         }
     }
 
-    fun taskStatus(task: DeviceTask, status: String, code: String? = null, error: String? = null) {
+    fun taskStatus(task: DeviceTask, status: String, code: String? = null, error: String? = null, resultPrinter: String? = null) {
         request("/device/tasks/${task.id}/status", JSONObject().put("status", status).put("lease_id", task.leaseId).apply {
             if (code != null) put("error_code", code)
             if (error != null) put("error_message", error.take(2000))
-            if (status == "success") put("result", JSONObject().put("transport", config.printer.connection.name.lowercase()))
+            if (status == "success") put("result", JSONObject().apply {
+                put("printer", resultPrinter ?: config.printer.name)
+                put("transport", config.printerFor(resultPrinter).connection.name.lowercase())
+            })
         })
     }
 }

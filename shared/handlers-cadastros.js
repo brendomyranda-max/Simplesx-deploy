@@ -1,4 +1,5 @@
 import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE, sha256, gerarToken, estabelecimentoId, hashSenha, verificarSenha, cnpjValido, soDigitos, kvGet, kvPut } from './util.js';
+import { createDeviceTask } from './handlers-devices.js';
 
 const LOGIN_LIMIT = 8;
 const LOGIN_TTL = 15 * 60;
@@ -229,7 +230,7 @@ export async function listAgentesHandler(c, env) {
 
 export async function createAgenteHandler(c, env) {
   const b = await c.req.json();
-  if (!b.nome) return c.json({ error: 'Nome da fila CUPS obrigatório' }, 400);
+  if (!b.nome) return c.json({ error: 'Nome da rota de impressão obrigatório' }, 400);
   const r = await env.DB.prepare(
     `INSERT INTO impressora_agentes
       (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, largura_mm, ativo, criado_em)
@@ -247,7 +248,7 @@ export async function createAgenteHandler(c, env) {
 
 export async function updateAgenteHandler(c, env) {
   const b = await c.req.json();
-  if (!b.nome) return c.json({ error: 'Nome da fila CUPS obrigatório' }, 400);
+  if (!b.nome) return c.json({ error: 'Nome da rota de impressão obrigatório' }, 400);
   const atual = await env.DB.prepare('SELECT id FROM impressora_agentes WHERE id=?').bind(c.params.id).first();
   if (!atual) return c.json({ error: 'Impressora não encontrada' }, 404);
   await env.DB.prepare(
@@ -306,7 +307,18 @@ async function sincronizarCategoriasDaImpressora(env, impressoraId, categorias) 
   }
 }
 
-async function enqueueGestorJob(env, { conteudo, impressora, larguraMm = 80 }) {
+async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 80 }) {
+  const deviceId = await getConfigValue(env, 'gestor_device_id', '');
+  if (deviceId) {
+    const result = await createDeviceTask(env, user, {
+      device_id: deviceId,
+      type: 'PRINT_ORDER',
+      payload: { content: textoCompativelComEscPos(conteudo), printer: impressora, width_mm: larguraMm, copies: 1, cut: true, feed: larguraMm === 58 ? 3 : 0 },
+      idempotency_key: `order-print-${crypto.randomUUID()}`,
+      source_type: 'comanda',
+    });
+    return { ok: true, task_id: result.task.id };
+  }
   const gestorToken = await getConfigValue(env, 'gestor_token', '');
   if (!gestorToken) return { ok: false, error: 'Nenhum gestor configurado' };
   const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND ativo=1').bind(gestorToken).first();
@@ -410,7 +422,7 @@ export async function imprimirComandaHandler(c, env) {
     ).all();
     const jobs = [];
     for (const destino of destinos.results) {
-      const job = await enqueueGestorJob(env, { conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80 });
+      const job = await enqueueGestorJob(env, c.user, { conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80 });
       jobs.push({ impressora: destino.nome, ...job });
     }
     return c.json({ impressao: txt, itens: itens.results.length, setor, tipo, agente: b.agente || null, jobs });
@@ -431,7 +443,7 @@ export async function imprimirComandaHandler(c, env) {
     selecionados.forEach((item) => comRota.add(item.id));
     const txt = textoPedido({ empresa, cnpj, mesa, com, destino: rota.nome, itens: selecionados });
     if (!preview) preview = txt;
-    const job = await enqueueGestorJob(env, { conteudo: txt, impressora: rota.nome, larguraMm: num(rota.largura_mm) || 80 });
+    const job = await enqueueGestorJob(env, c.user, { conteudo: txt, impressora: rota.nome, larguraMm: num(rota.largura_mm) || 80 });
     jobs.push({ impressora: rota.nome, itens: selecionados.length, ...job });
     if (job.ok) selecionados.forEach((item) => enviados.add(item.id));
   }
