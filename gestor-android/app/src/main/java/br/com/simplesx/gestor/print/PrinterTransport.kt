@@ -47,7 +47,6 @@ object PrinterTransport {
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             ?: throw IllegalStateException("Bluetooth não disponível neste aparelho")
         check(adapter.isEnabled) { "Ative o Bluetooth" }
-        adapter.cancelDiscovery()
         val device = adapter.getRemoteDevice(config.bluetoothAddress)
         device.createRfcommSocketToServiceRecord(sppUuid).use { socket ->
             socket.connect()

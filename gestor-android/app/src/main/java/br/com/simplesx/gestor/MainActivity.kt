@@ -73,16 +73,31 @@ private fun GestorScreen() {
     var message by remember { mutableStateOf(config.lastStatus) }
     var bluetoothPrinters by remember { mutableStateOf(PrinterTransport.pairedBluetooth(context)) }
     var bluetoothExpanded by remember { mutableStateOf(false) }
+    var openBluetoothAfterPermission by remember { mutableStateOf(false) }
 
-    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val bluetoothAllowed = Build.VERSION.SDK_INT < 31 ||
+            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        if (bluetoothAllowed) {
+            bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
+            if (openBluetoothAfterPermission) bluetoothExpanded = true
+        } else {
+            message = "Permissão Bluetooth negada. Autorize Dispositivos próximos nas configurações do aplicativo."
+        }
+        openBluetoothAfterPermission = false
     }
-    fun requestPermissions() {
+    fun requestPermissions(openBluetoothPicker: Boolean = false) {
         val required = buildList {
             if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        if (required.isNotEmpty()) permissions.launch(required.toTypedArray())
+        if (required.isNotEmpty()) {
+            openBluetoothAfterPermission = openBluetoothPicker
+            permissions.launch(required.toTypedArray())
+        } else if (openBluetoothPicker) {
+            bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
+            bluetoothExpanded = true
+        }
     }
 
     fun background(block: () -> String) {
@@ -112,14 +127,19 @@ private fun GestorScreen() {
             Section("Impressora ESC/POS") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { printer = printer.copy(connection = ConnectionType.NETWORK) }, modifier = Modifier.weight(1f)) { Text("Rede") }
-                    Button(onClick = { requestPermissions(); printer = printer.copy(connection = ConnectionType.BLUETOOTH) }, modifier = Modifier.weight(1f)) { Text("Bluetooth") }
+                    Button(onClick = {
+                        printer = printer.copy(connection = ConnectionType.BLUETOOTH)
+                        requestPermissions(openBluetoothPicker = true)
+                    }, modifier = Modifier.weight(1f)) { Text("Bluetooth") }
                 }
                 OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da impressora") }, modifier = Modifier.fillMaxWidth())
                 if (printer.connection == ConnectionType.NETWORK) {
                     OutlinedTextField(printer.host, { printer = printer.copy(host = it) }, label = { Text("IP da impressora") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(printer.port.toString(), { printer = printer.copy(port = it.toIntOrNull() ?: 9100) }, label = { Text("Porta") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 } else {
-                    ExposedDropdownMenuBox(expanded = bluetoothExpanded, onExpandedChange = { requestPermissions(); bluetoothExpanded = it }) {
+                    ExposedDropdownMenuBox(expanded = bluetoothExpanded, onExpandedChange = { expand ->
+                        if (expand) requestPermissions(openBluetoothPicker = true) else bluetoothExpanded = false
+                    }) {
                         OutlinedTextField(printer.bluetoothName.ifBlank { "Selecione um dispositivo pareado" }, {}, readOnly = true,
                             label = { Text("Impressora Bluetooth") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(bluetoothExpanded) },
                             modifier = Modifier.menuAnchor().fillMaxWidth())
@@ -137,7 +157,14 @@ private fun GestorScreen() {
                 }
                 Button(onClick = {
                     config.printer = printer
-                    background { PrinterTransport.send(context, printer, EscPos.ticket("SIMPLESX - TESTE DE IMPRESSAO\nRede/Bluetooth OK")); "Teste enviado com sucesso" }
+                    val bluetoothAllowed = Build.VERSION.SDK_INT < 31 ||
+                        context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+                    if (printer.connection == ConnectionType.BLUETOOTH && !bluetoothAllowed) {
+                        message = "Autorize Dispositivos próximos para imprimir por Bluetooth"
+                        requestPermissions(openBluetoothPicker = true)
+                    } else {
+                        background { PrinterTransport.send(context, printer, EscPos.ticket("SIMPLESX - TESTE DE IMPRESSAO\nRede/Bluetooth OK")); "Teste enviado com sucesso" }
+                    }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Salvar e imprimir teste") }
             }
 
