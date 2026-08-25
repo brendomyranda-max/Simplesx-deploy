@@ -380,7 +380,10 @@ export async function listDevicesHandler(c, env) {
     `SELECT id, nome, plataforma, versao, status, ultima_conexao, ultimo_erro, token_expira_em, printers_json, criado_em
      FROM devices WHERE revogado_em IS NULL ORDER BY nome`
   ).all();
-  return c.json(rows.results.map((row) => ({ ...row, printers: JSON.parse(row.printers_json || '[]') })));
+  return c.json(rows.results.map((row) => {
+    const connected = row.ultima_conexao && Date.now() - new Date(row.ultima_conexao).getTime() < 20_000;
+    return { ...row, status: connected ? row.status : 'offline', printers: JSON.parse(row.printers_json || '[]') };
+  }));
 }
 
 export async function listDeviceTasksHandler(c, env) {

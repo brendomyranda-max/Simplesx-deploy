@@ -56,6 +56,8 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val config = AppConfig(this)
+        if (config.deviceToken.isNotBlank()) PrintSyncService.start(this)
         setContent { MaterialTheme { GestorScreen() } }
     }
 }
@@ -122,7 +124,11 @@ private fun GestorScreen() {
                     OutlinedTextField(pairingCode, { pairingCode = it.uppercase() }, label = { Text("Código de pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Button(onClick = {
                         config.deployUrl = deployUrl; config.deviceName = deviceName
-                        background { SimplesXApi(config).pair(pairingId, pairingCode); "Pareamento concluído" }
+                        background {
+                            SimplesXApi(config).pair(pairingId, pairingCode)
+                            PrintSyncService.start(context)
+                            "Pareamento concluído e recepção iniciada"
+                        }
                     }, modifier = Modifier.fillMaxWidth()) { Text("Parear aparelho") }
                 } else Text("Aparelho pareado · ${config.deviceId}", color = MaterialTheme.colorScheme.primary)
             }
