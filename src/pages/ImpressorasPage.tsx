@@ -177,7 +177,6 @@ export function ImpressorasPage() {
       if (tab === 'agentes') {
         if (!form.nome) return toast('error', 'Informe o nome da rota');
         if (!form.servidor_tipo || !form.servidor_id) return toast('error', 'Selecione o servidor de impressão');
-        if (!form.impressora_destino) return toast('error', 'Selecione a impressora dentro do servidor');
         const categoriasSelecionadas = (form.categorias || []).filter((id: number) => {
           const categoria = categorias.find((cat) => cat.id === id);
           return !categoria?.categoria_pai_id || !(form.categorias || []).includes(categoria.categoria_pai_id);
@@ -525,7 +524,7 @@ export function ImpressorasPage() {
                           <td className="td">
                             <div className="space-y-1">
                               {a.imprime_conta ? <Badge color="green">Imprime conta</Badge> : '—'}
-                              {a.servidor_tipo && <p className="text-xs text-slate-500">{a.servidor_tipo === 'android' ? 'Android' : 'Desktop'} → {a.impressora_destino || a.nome}</p>}
+                              {a.servidor_tipo && <p className="text-xs text-slate-500">{a.servidor_tipo === 'android' ? 'Android' : 'Desktop'} → {a.impressora_destino || 'padrão do servidor'}</p>}
                             </div>
                           </td>
                           <td className="td">{a.largura_mm || 80}mm</td>
@@ -580,19 +579,19 @@ export function ImpressorasPage() {
                     {servidores.map((servidor) => <option key={servidor.key} value={servidor.key}>{servidor.nome} · {servidor.plataforma} · {servidor.online ? 'online' : 'offline'}</option>)}
                   </Select>
                 </Field>
-                <Field label="Impressora dentro do servidor *">
+                <Field label="Impressora dentro do servidor (opcional)">
                   <Select value={form.impressora_destino || ''} disabled={!servidorSelecionado} onChange={(e) => {
                     const printer = servidorSelecionado?.printers.find((item: any) => item.name === e.target.value);
                     setForm({ ...form, impressora_destino: e.target.value, largura_mm: String(printer?.width_mm || form.largura_mm || 80) });
                   }}>
-                    <option value="">Selecione a impressora</option>
+                    <option value="">Usar a impressora padrão do servidor</option>
                     {form.impressora_destino && !servidorSelecionado?.printers.some((item: any) => item.name === form.impressora_destino) && <option value={form.impressora_destino}>{form.impressora_destino} (não sincronizada)</option>}
                     {(servidorSelecionado?.printers || []).map((printer: any) => <option key={printer.name} value={printer.name}>{printer.displayName || printer.name}</option>)}
                   </Select>
                 </Field>
               </div>
               {servidores.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Nenhum servidor sincronizado. Abra o Gestor Android, Windows ou Linux e aguarde alguns segundos.</p>}
-              {servidorSelecionado && servidorSelecionado.printers.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Este servidor ainda não publicou impressoras. Abra o gestor, salve uma impressora e mantenha “Receber impressões” ativo.</p>}
+              {servidorSelecionado && servidorSelecionado.printers.length === 0 && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">Nenhuma impressora foi publicada por este servidor. Você pode salvar assim mesmo; o gestor usará sua impressora padrão.</p>}
               <Field label="Categorias que imprimem nesta impressora">
                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
                   {categorias.filter((cat) => !cat.categoria_pai_id).map((categoria) => (
