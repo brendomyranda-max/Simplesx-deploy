@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Tags, Plus, Pencil, Trash2, Truck, Save, Printer, CornerDownRight } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
 import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
-import { categoriaApi, fornecedorApi, impressoraApi } from '@/lib/api';
+import { categoriaApi, fornecedorApi, impressoraApi, deviceApi, gestorApi } from '@/lib/api';
 import type { Categoria, Fornecedor } from '@/lib/types';
 
 const CORES = ['#6366f1', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
@@ -13,6 +13,7 @@ export function CategoriasPage() {
   const [cats, setCats] = useState<Categoria[]>([]);
   const [forns, setForns] = useState<Fornecedor[]>([]);
   const [impressoras, setImpressoras] = useState<any[]>([]);
+  const [servidores, setServidores] = useState<any[]>([]);
   const [load, setLoad] = useState(true);
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -20,6 +21,8 @@ export function CategoriasPage() {
   const [cor, setCor] = useState(CORES[0]);
   const [categoriaPaiId, setCategoriaPaiId] = useState<number | null>(null);
   const [impressoraId, setImpressoraId] = useState<number | null>(null);
+  const [servidorTipo, setServidorTipo] = useState('');
+  const [servidorId, setServidorId] = useState('');
   const [contato, setContato] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
@@ -27,10 +30,17 @@ export function CategoriasPage() {
   const loadAll = async () => {
     setLoad(true);
     try {
-      const [c, f, i] = await Promise.all([categoriaApi.list(), fornecedorApi.list(), impressoraApi.agentes()]);
+      const [c, f, i, devices, gestores] = await Promise.all([
+        categoriaApi.list(), fornecedorApi.list(), impressoraApi.agentes(),
+        deviceApi.list().catch(() => []), gestorApi.list().catch(() => []),
+      ]);
       setCats(c);
       setForns(f);
       setImpressoras(i.filter((x: any) => x.ativo !== 0));
+      setServidores([
+        ...devices.map((d: any) => ({ tipo: 'android', id: String(d.id), nome: d.nome, plataforma: 'Android', online: d.status === 'online' })),
+        ...gestores.map((g: any) => ({ tipo: 'desktop', id: String(g.id), nome: g.nome, plataforma: 'Windows/Linux', online: !!g.ultima_conexao && Date.now() - new Date(g.ultima_conexao).getTime() < 60_000 })),
+      ]);
     } catch {
       /* noop */
     } finally {
@@ -47,7 +57,25 @@ export function CategoriasPage() {
     if (!nome.trim()) return toast('error', 'Informe o nome');
     try {
       if (tab === 'categorias') {
-        const dados = { nome, cor, ativo: 1, categoria_pai_id: categoriaPaiId, impressora_agente_id: categoriaPaiId ? null : impressoraId };
+        let rotaId = impressoraId;
+        if (!categoriaPaiId && servidorTipo && servidorId) {
+          let rota = impressoras.find((item: any) => item.servidor_tipo === servidorTipo && String(item.servidor_id) === servidorId && !item.impressora_destino);
+          if (!rota) {
+            const servidor = servidores.find((item: any) => item.tipo === servidorTipo && item.id === servidorId);
+            rota = await impressoraApi.criarAgente({
+              nome: `Servidor ${servidor?.nome || servidorId}`,
+              servidor_tipo: servidorTipo,
+              servidor_id: servidorId,
+              impressora_destino: null,
+              categorias: [],
+              imprime_pedidos: true,
+              imprime_conta: false,
+              largura_mm: 80,
+            });
+          }
+          rotaId = rota.id;
+        }
+        const dados = { nome, cor, ativo: 1, categoria_pai_id: categoriaPaiId, impressora_agente_id: categoriaPaiId ? null : rotaId };
         if (editId) await categoriaApi.update(editId, dados);
         else await categoriaApi.create(dados);
         toast('success', editId ? 'Categoria atualizada' : 'Categoria criada');
@@ -71,6 +99,15 @@ export function CategoriasPage() {
     setCor(categoria?.cor || CORES[0]);
     setCategoriaPaiId(categoria?.categoria_pai_id || null);
     setImpressoraId(categoria?.impressora_agente_id || null);
+    const rotaAtual = impressoras.find((item: any) => item.id === categoria?.impressora_agente_id);
+    if (rotaAtual?.servidor_tipo && !rotaAtual?.impressora_destino) {
+      setServidorTipo(rotaAtual.servidor_tipo);
+      setServidorId(String(rotaAtual.servidor_id || ''));
+      setImpressoraId(null);
+    } else {
+      setServidorTipo('');
+      setServidorId('');
+    }
     setContato(fornecedor?.contato || '');
     setTelefone(fornecedor?.telefone || '');
     setEmail(fornecedor?.email || '');
@@ -200,7 +237,7 @@ export function CategoriasPage() {
           {tab === 'categorias' ? (
             <>
             <Field label="Tipo / categoria principal">
-              <Select value={categoriaPaiId || ''} onChange={(e) => { setCategoriaPaiId(e.target.value ? Number(e.target.value) : null); if (e.target.value) setImpressoraId(null); }}>
+              <Select value={categoriaPaiId || ''} onChange={(e) => { setCategoriaPaiId(e.target.value ? Number(e.target.value) : null); if (e.target.value) { setImpressoraId(null); setServidorTipo(''); setServidorId(''); } }}>
                 <option value="">Categoria principal</option>
                 {cats.filter((c) => !c.categoria_pai_id && c.id !== editId).map((c) => <option key={c.id} value={c.id}>Subcategoria de {c.nome}</option>)}
               </Select>
@@ -221,11 +258,21 @@ export function CategoriasPage() {
             {categoriaPaiId ? (
               <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-700">A subcategoria herdará automaticamente a impressora da categoria principal.</div>
             ) : (
-              <Field label="Impressora dos pedidos">
-                <Select value={impressoraId || ''} onChange={(e) => setImpressoraId(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">Sem impressora configurada</option>
-                  {impressoras.map((i) => <option key={i.id} value={i.id}>{i.nome} ({i.largura_mm || 80}mm)</option>)}
+              <Field label="Destino dos pedidos">
+                <Select value={servidorTipo && servidorId ? `server:${servidorTipo}:${servidorId}` : impressoraId ? `route:${impressoraId}` : ''} onChange={(e) => {
+                  const [kind, tipo, ...rest] = e.target.value.split(':');
+                  if (kind === 'server') { setServidorTipo(tipo); setServidorId(rest.join(':')); setImpressoraId(null); }
+                  else { setServidorTipo(''); setServidorId(''); setImpressoraId(kind === 'route' ? Number(tipo) : null); }
+                }}>
+                  <option value="">Sem destino configurado</option>
+                  <optgroup label="Usar somente o servidor">
+                    {servidores.map((s) => <option key={`${s.tipo}:${s.id}`} value={`server:${s.tipo}:${s.id}`}>{s.nome} · {s.plataforma} · {s.online ? 'online' : 'offline'}</option>)}
+                  </optgroup>
+                  <optgroup label="Usar uma rota/impressora específica">
+                    {impressoras.filter((i) => i.impressora_destino || !i.servidor_tipo).map((i) => <option key={i.id} value={`route:${i.id}`}>{i.nome} ({i.largura_mm || 80}mm)</option>)}
+                  </optgroup>
                 </Select>
+                <p className="mt-1 text-xs text-slate-500">Escolhendo somente o servidor, o gestor usará sua impressora padrão.</p>
               </Field>
             )}
             </>
