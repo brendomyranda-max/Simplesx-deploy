@@ -182,10 +182,25 @@ private fun GestorScreen() {
                     }
                     Text("A impressora deve estar pareada nas configurações do Android.", style = MaterialTheme.typography.bodySmall)
                 }
+                Text("⚙ Tamanho do papel", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { printer = printer.copy(widthMm = 58) }, modifier = Modifier.weight(1f)) { Text("58 mm") }
-                    Button(onClick = { printer = printer.copy(widthMm = 80) }, modifier = Modifier.weight(1f)) { Text("80 mm") }
+                    listOf(58, 76, 80).forEach { width ->
+                        OutlinedButton(onClick = { printer = printer.copy(widthMm = width) }, modifier = Modifier.weight(1f)) { Text("$width mm") }
+                    }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(100, 102).forEach { width ->
+                        OutlinedButton(onClick = { printer = printer.copy(widthMm = width) }, modifier = Modifier.weight(1f)) { Text("$width mm") }
+                    }
+                }
+                OutlinedTextField(
+                    value = printer.widthMm.toString(),
+                    onValueChange = { value -> value.toIntOrNull()?.takeIf { it in 20..320 }?.let { printer = printer.copy(widthMm = it) } },
+                    label = { Text("Largura personalizada (20 a 320 mm)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("O comprimento acompanha somente o conteúdo impresso.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = {
                     if (printer.name.isBlank()) {
                         message = "Informe o nome da rota da impressora"
@@ -210,7 +225,7 @@ private fun GestorScreen() {
                         message = "Autorize Dispositivos próximos para imprimir por Bluetooth"
                         requestPermissions(openBluetoothPicker = true)
                     } else {
-                        background { PrinterTransport.send(context, printer, EscPos.ticket("SIMPLESX - TESTE DE IMPRESSAO\nRede/Bluetooth OK")); "Teste enviado com sucesso" }
+                        background { PrinterTransport.send(context, printer, EscPos.ticket("SIMPLESX - TESTE DE IMPRESSAO\nRede/Bluetooth OK", widthMm = printer.widthMm)); "Teste enviado com sucesso" }
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Salvar rota e imprimir teste") }
                 OutlinedButton(onClick = {

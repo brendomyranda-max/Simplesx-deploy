@@ -22,6 +22,7 @@ import { comandaApi, mesaApi, produtoApi, impressoraApi, configApi } from '@/lib
 import type { Comanda, Produto, ComandaItem } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
+import { useBarcodeScanner } from '@/lib/useBarcodeScanner';
 
 const CORES = ['#6366f1', '#16a34a', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444'];
 
@@ -87,6 +88,7 @@ export function ComandaPage() {
   const ativos = itens.filter((i) => i.status !== 'cancelado');
   const itensNovos = ativos.filter((i) => i.status === 'novo');
   const subtotal = useMemo(() => ativos.reduce((s, i) => s + Number(i.quantidade) * Number(i.preco_unitario), 0), [ativos]);
+  const locked = comanda?.status !== 'aberta';
 
   const nomePessoaDe = (pessoaId: number | null) => {
     if (!pessoaId) return null;
@@ -152,9 +154,8 @@ export function ComandaPage() {
     }
   };
 
-  const adicionarCodigo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const c = codigo.trim();
+  const adicionarPorCodigo = async (valor: string) => {
+    const c = valor.trim();
     if (!c) return;
     try {
       const p = await produtoApi.buscar(c, 'restaurante');
@@ -166,6 +167,17 @@ export function ComandaPage() {
     setCodigo('');
     bipRef.current?.focus();
   };
+
+  const adicionarCodigo = (e: React.FormEvent) => {
+    e.preventDefault();
+    adicionarPorCodigo(codigo);
+  };
+
+  useBarcodeScanner(adicionarPorCodigo, { enabled: !load && !locked && !addProduto });
+
+  useEffect(() => {
+    if (!load && !locked && !addProduto) bipRef.current?.focus();
+  }, [load, locked, addProduto]);
 
   const mudarStatus = async (item: ComandaItem, status: string) => {
     if (status === 'cancelado') {
@@ -403,7 +415,6 @@ export function ComandaPage() {
   const itensDaPessoa = (pessoaId: number | null) =>
     ativos.filter((i) => (pessoaId === null ? i.pessoa_id === null : i.pessoa_id === pessoaId));
 
-  const locked = comanda.status !== 'aberta';
   const preFechada = comanda.status === 'pre_fechamento';
 
   return (

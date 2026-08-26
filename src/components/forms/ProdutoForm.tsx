@@ -302,9 +302,9 @@ export function ProdutoForm({
                   <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
                     <Select value={String(l.insumo_id)} onChange={(e) => setFicha(i, 'insumo_id', e.target.value ? Number(e.target.value) : '')} className="min-w-[180px] flex-1">
                       <option value="">Selecione o insumo...</option>
-                      {insumos.map((ins) => (
+                      {insumos.filter((ins) => ins.id !== produto?.id).map((ins) => (
                         <option key={ins.id} value={ins.id}>
-                          {ins.nome} ({ins.conteudo_quantidade ? `${ins.conteudo_quantidade} ${ins.conteudo_unidade}/${ins.unidade}` : ins.unidade})
+                          {ins.nome} ({ins.tipo === 'composto' ? 'produto composto' : ins.conteudo_quantidade ? `${ins.conteudo_quantidade} ${ins.conteudo_unidade}/${ins.unidade}` : ins.unidade})
                         </option>
                       ))}
                     </Select>
@@ -353,7 +353,7 @@ export function ProdutoForm({
                 icon={<Plus className="h-4 w-4" />}
                 onClick={() => set('ficha', [...form.ficha, { insumo_id: '', quantidade: '', unidade: form.unidade || 'UN' }])}
               >
-                Adicionar insumo
+                Adicionar insumo ou composto
               </Button>
             </div>
 
@@ -424,18 +424,20 @@ export function ProdutoForm({
 
         {form.tipo === 'insumo' && (
           <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3">
-            <p className="mb-3 text-sm font-bold text-slate-800">Conteúdo por unidade</p>
+            <p className="mb-3 text-sm font-bold text-slate-800">Conteúdo por unidade de estoque</p>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Gramatura ou volume *" hint={`Quantidade contida em cada ${form.unidade}`}>
-                <Input type="number" step="0.001" min="0.001" value={form.conteudo_quantidade} onChange={(e) => set('conteudo_quantidade', e.target.value)} placeholder="Ex.: 500" />
+              <Field label="Quantidade contida *" hint={`Quantidade contida em cada ${form.unidade}`}>
+                <Input type="number" step="0.001" min="0.001" value={form.conteudo_quantidade} onChange={(e) => set('conteudo_quantidade', e.target.value)} placeholder="Ex.: 60" />
               </Field>
               <Field label="Unidade do conteúdo *">
                 <Select value={form.conteudo_unidade} onChange={(e) => set('conteudo_unidade', e.target.value)}>
-                  {['G', 'KG', 'ML', 'L'].map((u) => <option key={u} value={u}>{u}</option>)}
+                  {['UN', 'G', 'KG', 'ML', 'L'].map((u) => <option key={u} value={u}>{u}</option>)}
                 </Select>
               </Field>
             </div>
-            <p className="mt-2 text-xs text-slate-500">O custo informado acima é por {form.unidade}. O estoque será lançado depois, pela entrada de mercadoria.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              Exemplo: para uma cartela com 60 ovos, escolha PCT ou CX como unidade de estoque, informe 60 e selecione UN. A ficha técnica poderá consumir os ovos individualmente.
+            </p>
           </div>
         )}
 

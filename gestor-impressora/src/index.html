@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
   <title>SimplesX Gestor</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="settings.css">
 </head>
 <body>
   <main>
@@ -24,7 +25,9 @@
     <section class="grid">
       <label>Nome do computador<input id="nome" autocomplete="off"></label>
       <label>Endereço do deploy<input id="deployUrl" type="url" autocomplete="off"></label>
-      <label class="full">Impressora padrão<select id="impressora"><option value="">Padrão do sistema</option></select></label>
+      <label class="full">Impressora padrão
+        <span class="printer-row"><select id="impressora"><option value="">Padrão do sistema</option></select><button id="tamanho" type="button" class="gear" title="Configurar tamanho da bobina" aria-label="Configurar tamanho da bobina">⚙ Bobina</button></span>
+      </label>
       <label class="check full"><input id="iniciar" type="checkbox"> Iniciar automaticamente com o computador</label>
     </section>
 
@@ -45,6 +48,15 @@
       <p id="erro" class="erro"></p>
     </section>
   </main>
+  <dialog id="tamanhoDialog">
+    <form method="dialog">
+      <h2>Tamanho da bobina</h2><p id="tamanhoImpressora"></p>
+      <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>
+      <label id="larguraCustomLabel">Largura personalizada (mm)<input id="larguraCustom" type="number" min="20" max="320" step="0.1"></label>
+      <small>O comprimento é automático e acompanha a quantidade de conteúdo impresso.</small>
+      <div class="dialog-actions"><button value="cancel" class="secondary">Cancelar</button><button id="salvarTamanho" value="default">Salvar</button></div>
+    </form>
+  </dialog>
   <div id="toast"></div>
   <script src="renderer.js"></script>
 </body>

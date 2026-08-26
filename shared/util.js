@@ -215,12 +215,8 @@ export async function getProdutoFull(env, id) {
   const ficha = p.tipo === 'composto' ? await getFichaCompleta(env, id) : [];
   let estoque_possivel = null;
   if (p.tipo === 'composto' && ficha.length) {
-    const possiveis = [];
-    for (const f of ficha) {
-      const conv = quantidadeEmUnidadesEstoque(f.quantidade, f.unidade, f.insumo_unidade, f.conteudo_quantidade, f.conteudo_unidade);
-      possiveis.push(conv === null || conv <= 0 ? 0 : Math.floor(num(f.insumo_estoque) / conv));
-    }
-    estoque_possivel = Math.min(...possiveis);
+    const baixas = await calcularBaixasProduto(env, id, 1);
+    estoque_possivel = Math.min(...baixas.map((b) => b.quantidade > 0 ? Math.floor(b.disponivel / b.quantidade) : 0));
   }
   return {
     ...p,
@@ -256,6 +252,38 @@ export async function calcularCmvFicha(env, ingredientes) {
   return arredondar(total);
 }
 
+// Expande uma receita em itens físicos de estoque. Produtos compostos usados
+// como ingredientes são abertos recursivamente até chegar aos insumos finais.
+export async function calcularBaixasProduto(env, produtoId, quantidade = 1, caminho = []) {
+  const id = num(produtoId);
+  if (caminho.includes(id)) throw httpError(400, 'Ficha técnica circular: um produto não pode depender dele mesmo');
+  const produto = await env.DB.prepare(
+    'SELECT id, nome, tipo, unidade, estoque_atual, custo, conteudo_quantidade, conteudo_unidade FROM produtos WHERE id=?'
+  ).bind(id).first();
+  if (!produto) throw httpError(400, 'Produto não encontrado na ficha técnica');
+  if (produto.tipo !== 'composto') {
+    return [{ produto_id: id, nome: produto.nome, quantidade: num(quantidade), disponivel: num(produto.estoque_atual), custo_unitario: num(produto.custo) }];
+  }
+  const ficha = await env.DB.prepare(
+    `SELECT f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade,
+            p.conteudo_quantidade, p.conteudo_unidade
+     FROM ficha_tecnica f JOIN produtos p ON p.id=f.insumo_id WHERE f.produto_id=?`
+  ).bind(id).all();
+  if (!ficha.results.length) throw httpError(400, `Produto composto sem ficha técnica: ${produto.nome}`);
+  const acumulado = new Map();
+  for (const ing of ficha.results) {
+    const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
+    if (conv === null) throw httpError(400, `Unidade incompatível na ficha de ${produto.nome}`);
+    const folhas = await calcularBaixasProduto(env, ing.insumo_id, conv * num(quantidade), [...caminho, id]);
+    for (const folha of folhas) {
+      const atual = acumulado.get(folha.produto_id) || { ...folha, quantidade: 0 };
+      atual.quantidade += folha.quantidade;
+      acumulado.set(folha.produto_id, atual);
+    }
+  }
+  return [...acumulado.values()];
+}
+
 export async function salvarFicha(env, produtoId, ingredientes) {
   const stmts = [env.DB.prepare('DELETE FROM ficha_tecnica WHERE produto_id=?').bind(produtoId)];
   for (const ing of ingredientes) {
@@ -273,18 +301,20 @@ export async function salvarFicha(env, produtoId, ingredientes) {
 }
 
 // Recalcula o CMV de todos os produtos compostos que usam um determinado insumo.
-export async function recalcularCmvDeInsumo(env, insumoId) {
+export async function recalcularCmvDeInsumo(env, insumoId, visitados = new Set()) {
+  const chave = num(insumoId);
+  if (visitados.has(chave)) return;
+  visitados.add(chave);
   const rows = await env.DB.prepare('SELECT DISTINCT produto_id FROM ficha_tecnica WHERE insumo_id=?')
     .bind(insumoId)
     .all();
-  const stmts = [];
   for (const r of rows.results) {
     const ficha = await getFichaCompleta(env, r.produto_id);
     const ing = ficha.map((x) => ({ insumo_id: x.insumo_id, quantidade: x.quantidade, unidade: x.unidade }));
     const cmv = await calcularCmvFicha(env, ing);
-    stmts.push(env.DB.prepare('UPDATE produtos SET custo=?, atualizado_em=? WHERE id=?').bind(cmv, now(), r.produto_id));
+    await env.DB.prepare('UPDATE produtos SET custo=?, atualizado_em=? WHERE id=?').bind(cmv, now(), r.produto_id).run();
+    await recalcularCmvDeInsumo(env, r.produto_id, visitados);
   }
-  if (stmts.length) await env.DB.batch(stmts);
 }
 
 export async function buscarProdutoPorCodigo(env, codigo) {

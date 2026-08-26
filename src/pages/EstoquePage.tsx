@@ -18,6 +18,7 @@ import { ProdutoForm } from '@/components/forms/ProdutoForm';
 import { produtoApi, estoqueApi, configApi } from '@/lib/api';
 import type { Produto, ConfigEmpresa, ProdutoTipo } from '@/lib/types';
 import { fmtBRL, fmtNum } from '@/lib/format';
+import { avisarEstoqueAtualizado } from '@/lib/estoqueSync';
 
 const TABS: { v: ProdutoTipo | 'todos'; label: string }[] = [
   { v: 'todos', label: 'Todos' },
@@ -38,6 +39,7 @@ export function EstoquePage() {
   const [tipo, setTipo] = useState<ProdutoTipo | 'todos'>('todos');
   const [load, setLoad] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
+  const [abrindoEdicao, setAbrindoEdicao] = useState<number | null>(null);
   const [edit, setEdit] = useState<Produto | null>(null);
   const [ajuste, setAjuste] = useState<Produto | null>(null);
   const [ajusteQtd, setAjusteQtd] = useState('');
@@ -78,6 +80,20 @@ export function EstoquePage() {
     );
   };
 
+  const editarProduto = async (p: Produto) => {
+    setAbrindoEdicao(p.id);
+    try {
+      // A listagem traz somente o resumo da ficha. A edição sempre precisa do
+      // cadastro completo para preservar e permitir alterar insumos/categorias.
+      setEdit(await produtoApi.get(p.id));
+      setFormOpen(true);
+    } catch (e: any) {
+      toast('error', e?.error || 'Erro ao carregar o produto para edição');
+    } finally {
+      setAbrindoEdicao(null);
+    }
+  };
+
   const salvarAjuste = async () => {
     if (!ajuste) return;
     try {
@@ -86,6 +102,7 @@ export function EstoquePage() {
         quantidade_nova: Number(ajusteQtd),
         motivo: ajusteMotivo,
       });
+      avisarEstoqueAtualizado();
       toast('success', 'Estoque ajustado');
       setAjuste(null);
       carregar();
@@ -187,7 +204,7 @@ export function EstoquePage() {
                           {p.tipo !== 'composto' && (
                             <IconButton label="Ajustar estoque" icon={<PackageMinus className="h-4 w-4" />} onClick={() => { setAjuste(p); setAjusteQtd(String(p.estoque_atual)); setAjusteMotivo(''); }} />
                           )}
-                          <IconButton label="Editar" icon={<Pencil className="h-4 w-4" />} onClick={() => { setEdit(p); setFormOpen(true); }} />
+                          <IconButton label={abrindoEdicao === p.id ? 'Carregando produto' : 'Editar'} icon={<Pencil className="h-4 w-4" />} onClick={() => editarProduto(p)} disabled={abrindoEdicao !== null} />
                           <IconButton label="Excluir" variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => remover(p)} />
                         </div>
                       </td>
@@ -200,7 +217,7 @@ export function EstoquePage() {
         </Card>
       )}
 
-      <ProdutoForm open={formOpen} onClose={() => setFormOpen(false)} produto={edit} onSaved={carregar} />
+      <ProdutoForm open={formOpen} onClose={() => setFormOpen(false)} produto={edit} onSaved={() => { avisarEstoqueAtualizado(); carregar(); }} />
 
       <Modal open={!!ajuste} onClose={() => setAjuste(null)} title={`Ajustar estoque: ${ajuste?.nome || ''}`}>
         <div className="space-y-4">

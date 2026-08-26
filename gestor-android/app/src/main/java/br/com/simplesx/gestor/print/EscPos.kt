@@ -4,8 +4,9 @@ import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 
 object EscPos {
-    fun ticket(text: String, feed: Int = 3, cut: Boolean = true): ByteArray {
-        val normalized = Normalizer.normalize(text.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD)
+    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58): ByteArray {
+        val wrapped = wrapToWidth(text, widthMm)
+        val normalized = Normalizer.normalize(wrapped.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD)
             .replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "")
             .replace('º', 'o').replace('ª', 'a').replace('–', '-').replace('—', '-')
             .replace(Regex("[^\\x09\\x0A\\x0D\\x20-\\x7E]"), "")
@@ -17,6 +18,21 @@ object EscPos {
             if (cut) out.write(byteArrayOf(0x1D, 0x56, 0x00))
             out.toByteArray()
         }
+    }
+
+    private fun wrapToWidth(text: String, widthMm: Int): String {
+        val columns = ((widthMm.coerceIn(20, 320) * 32) / 58).coerceAtLeast(8)
+        return text.replace("\r\n", "\n").replace('\r', '\n').lines().flatMap { source ->
+            if (source.isEmpty()) return@flatMap listOf("")
+            val parts = mutableListOf<String>()
+            var remaining = source
+            while (remaining.length > columns) {
+                val space = remaining.lastIndexOf(' ', columns).takeIf { it > 0 } ?: columns
+                parts += remaining.substring(0, space).trimEnd()
+                remaining = remaining.substring(space).trimStart()
+            }
+            parts + remaining
+        }.joinToString("\n")
     }
 
     fun openDrawer(): ByteArray = byteArrayOf(0x1B, 0x70, 0x00, 0x19, 0xFA.toByte())

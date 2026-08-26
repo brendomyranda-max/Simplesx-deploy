@@ -6,12 +6,14 @@ export function IconButton({
   onClick,
   variant = 'ghost',
   className = '',
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick?: () => void;
   variant?: 'ghost' | 'danger' | 'primary';
   className?: string;
+  disabled?: boolean;
 }) {
   const cls =
     variant === 'danger'
@@ -25,7 +27,8 @@ export function IconButton({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className={`rounded-lg p-1.5 transition-colors ${cls} ${className}`}
+      disabled={disabled}
+      className={`rounded-lg p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${cls} ${className}`}
     >
       {icon}
     </motion.button>

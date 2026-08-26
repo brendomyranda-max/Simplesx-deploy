@@ -89,6 +89,12 @@ export async function putConfigHandler(c, env) {
         await env.rawDB.prepare('UPDATE gestores SET estabelecimento_id=? WHERE token=?')
           .bind(estabelecimentoId(env), String(v)).run();
       }
+      if (k === 'gestor_device_id' && v) {
+        const device = await env.rawDB.prepare(
+          'SELECT id FROM devices WHERE id=? AND estabelecimento_id=? AND revogado_em IS NULL'
+        ).bind(String(v), estabelecimentoId(env)).first();
+        if (!device) return c.json({ error: 'Gestor Android não encontrado ou revogado' }, 400);
+      }
       await setConfig(env, k, v);
     }
   }
@@ -194,6 +200,8 @@ export async function listProdutosHandler(c, env) {
   if (local === 'mercado') where.push('p.exibir_mercado=1');
   if (tipo === 'insumo' || tipo === 'produto' || tipo === 'composto') {
     where.push(tipo === 'produto' ? "p.tipo='produto'" : `p.tipo='${tipo}'`);
+  } else if (tipo === 'ingrediente') {
+    where.push("p.tipo IN ('insumo','composto')");
   }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY p.nome';
@@ -212,7 +220,7 @@ export async function listProdutosHandler(c, env) {
     ).all(),
     env.DB.prepare(
       `SELECT f.produto_id, f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade, p.estoque_atual AS insumo_estoque,
-              p.conteudo_quantidade, p.conteudo_unidade
+              p.conteudo_quantidade, p.conteudo_unidade, p.tipo AS insumo_tipo, p.nome AS insumo_nome, p.custo AS insumo_custo
        FROM ficha_tecnica f JOIN produtos p ON p.id=f.insumo_id`
     ).all(),
   ]);
@@ -236,20 +244,52 @@ export async function listProdutosHandler(c, env) {
     if (!fichasBy.has(r.produto_id)) fichasBy.set(r.produto_id, []);
     fichasBy.get(r.produto_id).push(r);
   }
+
+  // Todas as fichas já estão em memória. Expandir os compostos aqui evita uma
+  // consulta D1 por ingrediente/produto e o limite de conexões simultâneas do Worker.
+  const calcularEstoquePossivel = (produtoId) => {
+    const ficha = fichasBy.get(produtoId) || [];
+    if (!ficha.length) return 0;
+    const quantidades = new Map();
+
+    const adicionarFolhas = (id, multiplicador, trilha) => {
+      const itens = fichasBy.get(id) || [];
+      if (!itens.length || trilha.has(id)) return false;
+      const novaTrilha = new Set(trilha);
+      novaTrilha.add(id);
+      for (const ing of itens) {
+        const conv = quantidadeEmUnidadesEstoque(
+          ing.quantidade,
+          ing.unidade,
+          ing.insumo_unidade,
+          ing.conteudo_quantidade,
+          ing.conteudo_unidade
+        );
+        if (conv === null || conv <= 0) return false;
+        const quantidade = conv * multiplicador;
+        if (ing.insumo_tipo === 'composto') {
+          if (!adicionarFolhas(ing.insumo_id, quantidade, novaTrilha)) return false;
+        } else {
+          const atual = quantidades.get(ing.insumo_id) || { quantidade: 0, disponivel: num(ing.insumo_estoque) };
+          atual.quantidade += quantidade;
+          quantidades.set(ing.insumo_id, atual);
+        }
+      }
+      return true;
+    };
+
+    if (!adicionarFolhas(produtoId, 1, new Set())) return 0;
+    const possiveis = [...quantidades.values()].map((item) =>
+      item.quantidade > 0 ? Math.floor(item.disponivel / item.quantidade) : 0
+    );
+    return possiveis.length ? Math.min(...possiveis) : 0;
+  };
+
   const listaFinal = lista.map((p) => {
     const ficha = fichasBy.get(p.id) || [];
     let estoque_possivel = null;
     if (p.tipo === 'composto' && ficha.length) {
-      const possiveis = [];
-      for (const f of ficha) {
-        const conv = quantidadeEmUnidadesEstoque(f.quantidade, f.unidade, f.insumo_unidade, f.conteudo_quantidade, f.conteudo_unidade);
-        if (conv === null || conv <= 0) {
-          possiveis.push(0);
-          continue;
-        }
-        possiveis.push(Math.floor(num(f.insumo_estoque) / conv));
-      }
-      estoque_possivel = Math.min(...possiveis);
+      estoque_possivel = calcularEstoquePossivel(p.id);
     }
     return {
       ...p,
@@ -345,6 +385,24 @@ function normalizarTipo(b, ingredientes) {
   if (b.tipo === 'insumo') return 'insumo';
   if (b.tipo === 'composto' || (Array.isArray(ingredientes) && ingredientes.length)) return 'composto';
   return 'produto';
+}
+
+async function validarFichaSemCiclo(env, produtoId, ingredientes) {
+  async function dependeDe(origemId, alvoId, visitados = new Set()) {
+    if (num(origemId) === num(alvoId)) return true;
+    if (visitados.has(num(origemId))) return false;
+    visitados.add(num(origemId));
+    const filhos = await env.DB.prepare('SELECT insumo_id FROM ficha_tecnica WHERE produto_id=?').bind(origemId).all();
+    for (const filho of filhos.results) {
+      if (await dependeDe(filho.insumo_id, alvoId, visitados)) return true;
+    }
+    return false;
+  }
+  for (const ing of ingredientes || []) {
+    if (await dependeDe(ing.insumo_id, produtoId)) {
+      throw httpError(400, 'Ficha técnica circular: um produto não pode depender dele mesmo');
+    }
+  }
 }
 
 export async function createProdutoHandler(c, env) {
@@ -501,6 +559,7 @@ export async function updateProdutoHandler(c, env) {
     }
     if (!fichaFonte.length) return c.json({ error: 'Produto composto precisa de pelo menos um insumo na ficha técnica' }, 400);
     custo = await calcularCmvFicha(env, fichaFonte);
+    await validarFichaSemCiclo(env, c.params.id, fichaFonte);
   }
 
   await env.DB.prepare(
@@ -588,7 +647,7 @@ export async function updateProdutoHandler(c, env) {
     }
   }
   if (stmts.length) await env.DB.batch(stmts);
-  if (tipo === 'insumo') await recalcularCmvDeInsumo(env, c.params.id);
+  await recalcularCmvDeInsumo(env, c.params.id);
   return c.json(await getProdutoFull(env, c.params.id));
 }
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, shell, Tray, Menu, nativeImage } = require('electron')
 const crypto = require('node:crypto')
 const { execFile } = require('node:child_process')
 const fs = require('node:fs/promises')
@@ -43,6 +43,7 @@ function configPadrao() {
     token: crypto.randomBytes(16).toString('hex'),
     nome: `Gestor ${os.hostname()}`,
     impressoraPadrao: '',
+    largurasImpressoras: {},
     iniciarComSistema: true,
   }
 }
@@ -57,12 +58,24 @@ async function carregarConfig() {
 }
 
 async function salvarConfig(novaConfig) {
+  const deployUrl = String(novaConfig.deployUrl || DEPLOY_PADRAO).trim().replace(/\/$/, '')
+  let deploy
+  try {
+    deploy = new URL(deployUrl)
+  } catch {
+    throw new Error('Endereço do deploy inválido')
+  }
+  const local = ['localhost', '127.0.0.1', '::1'].includes(deploy.hostname)
+  if (deploy.protocol !== 'https:' && !(local && deploy.protocol === 'http:')) {
+    throw new Error('O deploy deve usar HTTPS (HTTP é aceito apenas em localhost)')
+  }
   config = {
     ...config,
-    deployUrl: String(novaConfig.deployUrl || DEPLOY_PADRAO).trim().replace(/\/$/, ''),
+    deployUrl,
     token: String(novaConfig.token || config?.token || '').trim(),
     nome: String(novaConfig.nome || `Gestor ${os.hostname()}`).trim(),
     impressoraPadrao: String(novaConfig.impressoraPadrao || ''),
+    largurasImpressoras: normalizarLarguras(novaConfig.largurasImpressoras || config?.largurasImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
   }
   await fs.mkdir(path.dirname(arquivoConfig()), { recursive: true })
@@ -71,6 +84,16 @@ async function salvarConfig(novaConfig) {
   ultimoErro = ''
   notificarStatus()
   return statusAtual()
+}
+
+function normalizarLarguras(value) {
+  const result = {}
+  if (!value || typeof value !== 'object') return result
+  for (const [nome, largura] of Object.entries(value)) {
+    const numero = Number(largura)
+    if (nome && Number.isFinite(numero) && numero >= 20 && numero <= 320) result[nome] = numero
+  }
+  return result
 }
 
 function statusAtual() {
@@ -96,7 +119,11 @@ async function api(endpoint, body) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   })
-  const data = await resposta.json().catch(() => ({}))
+  const contentType = resposta.headers.get('content-type') || ''
+  const data = contentType.includes('application/json') ? await resposta.json().catch(() => ({})) : {}
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Endereço não é um servidor SimplesX (resposta ${resposta.status})`)
+  }
   if (!resposta.ok) throw new Error(data.error || `Servidor respondeu ${resposta.status}`)
   return data
 }
@@ -163,8 +190,25 @@ async function resolverImpressora(nomeSolicitado) {
   return printers.find((p) => p.isDefault) || printers[0]
 }
 
-function bytesEscPos(texto, { alimentar = 0, cortar = true } = {}) {
-  const normalizado = String(texto || '')
+function quebrarPorLargura(texto, larguraMm) {
+  const colunas = Math.max(8, Math.floor((Number(larguraMm) || 58) * 32 / 58))
+  return String(texto || '').replace(/\r\n?/g, '\n').split('\n').flatMap((linha) => {
+    if (!linha.length) return ['']
+    const partes = []
+    let restante = linha
+    while (restante.length > colunas) {
+      let corte = restante.lastIndexOf(' ', colunas)
+      if (corte <= 0) corte = colunas
+      partes.push(restante.slice(0, corte).trimEnd())
+      restante = restante.slice(corte).trimStart()
+    }
+    partes.push(restante)
+    return partes
+  }).join('\n')
+}
+
+function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58 } = {}) {
+  const normalizado = quebrarPorLargura(texto, larguraMm)
     .replace(/\r\n?/g, '\n')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -180,12 +224,28 @@ function bytesEscPos(texto, { alimentar = 0, cortar = true } = {}) {
 
 async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alimentar = 0 }) {
   const printer = await resolverImpressora(impressora)
-  const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.bin`)
-  await fs.writeFile(temporario, bytesEscPos(texto, { alimentar, cortar }))
+  const larguraMm = Number(config.largurasImpressoras?.[printer.name]) || 58
+  const filaRaw = /RAW$/i.test(printer.name)
+  const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
+  const textoAjustado = quebrarPorLargura(texto, larguraMm).trimEnd()
+  await fs.writeFile(temporario, filaRaw
+    ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm })
+    : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
     for (let copia = 0; copia < Math.max(1, Number(copias) || 1); copia += 1) {
       if (process.platform === 'linux') {
-        await executarArquivo('lp', ['-d', printer.name, '-o', 'raw', temporario], { timeout: 15000 })
+        if (filaRaw) {
+          await executarArquivo('lp', ['-d', printer.name, '-o', 'raw', temporario], { timeout: 15000 })
+        } else {
+          const linhas = Math.max(1, textoAjustado.split('\n').length)
+          const alturaMm = Math.max(10, (linhas + 1) * (25.4 / 6)).toFixed(2)
+          await executarArquivo('lp', [
+            '-d', printer.name,
+            '-o', `media=Custom.${larguraMm}x${alturaMm}mm`,
+            '-o', 'page-left=0', '-o', 'page-right=0', '-o', 'page-top=0', '-o', 'page-bottom=0',
+            '-o', 'cpi=10', '-o', 'lpi=6', temporario,
+          ], { timeout: 15000 })
+        }
       } else if (process.platform === 'win32') {
         await executarArquivo('powershell.exe', [
           '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
@@ -349,6 +409,13 @@ ipcMain.handle('testar-impressora', async (_e, impressora) => {
   await imprimirRaw({ texto: 'SIMPLESX - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
   return { ok: true }
 })
+ipcMain.handle('salvar-tamanho', async (_e, value) => {
+  const impressora = String(value?.impressora || '').trim()
+  const larguraMm = Number(value?.larguraMm)
+  if (!impressora) throw new Error('Selecione uma impressora')
+  if (!Number.isFinite(larguraMm) || larguraMm < 20 || larguraMm > 320) throw new Error('Largura deve estar entre 20 e 320 mm')
+  return salvarConfig({ ...config, largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm } })
+})
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))
 
 if (instanciaUnica) {
@@ -359,6 +426,9 @@ if (instanciaUnica) {
     iniciarServidorLocal()
     await sincronizar()
     timer = setInterval(sincronizar, INTERVALO_POLL)
+  }).catch((erro) => {
+    dialog.showErrorBox('Não foi possível abrir o SimplesX Gestor', erro?.message || String(erro))
+    app.quit()
   })
 }
 

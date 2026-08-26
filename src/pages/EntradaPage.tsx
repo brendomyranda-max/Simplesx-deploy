@@ -6,6 +6,7 @@ import { ProdutoForm } from '@/components/forms/ProdutoForm';
 import { produtoApi, estoqueApi, fornecedorApi, categoriaApi, configApi } from '@/lib/api';
 import type { Produto, Fornecedor, Categoria, ConfigEmpresa, MovimentacaoEstoque } from '@/lib/types';
 import { fmtBRL, fmtData, fmtNum, hojeLocal } from '@/lib/format';
+import { avisarEstoqueAtualizado } from '@/lib/estoqueSync';
 
 export function EntradaPage() {
   const toast = useToast();
@@ -105,6 +106,7 @@ export function EntradaPage() {
         responsavel: responsavel || undefined,
         codigo_barras: codigo.trim() || undefined,
       });
+      avisarEstoqueAtualizado();
       toast('success', `Entrada registrada. Novo estoque de ${produto.nome}: ${fmtNum(entrada.novo_saldo)} ${produto.unidade}`);
       const atualizado: Produto = {
         ...produto,

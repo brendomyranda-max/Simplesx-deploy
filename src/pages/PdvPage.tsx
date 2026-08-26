@@ -7,17 +7,34 @@ import { produtoApi, vendaApi, configApi } from '@/lib/api';
 import type { Produto, ConfigEmpresa, Venda } from '@/lib/types';
 import { fmtBRL, fmtNum, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
+import { observarEstoqueAtualizado } from '@/lib/estoqueSync';
+import { useBarcodeScanner } from '@/lib/useBarcodeScanner';
 
 interface CartItem {
   produto: Produto;
   qtd: number;
 }
 
+const PDV_CART_STORAGE = 'simplesx_pdv_cart';
+
+function carregarCarrinho(): CartItem[] {
+  try {
+    const salvo = JSON.parse(localStorage.getItem(PDV_CART_STORAGE) || '[]');
+    if (!Array.isArray(salvo)) return [];
+    return salvo.filter(
+      (item): item is CartItem =>
+        Boolean(item?.produto?.id) && Number.isFinite(Number(item?.qtd)) && Number(item.qtd) > 0
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function PdvPage() {
   const toast = useToast();
   const [config, setConfig] = useState<ConfigEmpresa | null>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(carregarCarrinho);
   const [codigo, setCodigo] = useState('');
   const [garcons, setGarcons] = useState<string[]>([]);
 
@@ -27,6 +44,32 @@ export function PdvPage() {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    if (cart.length) localStorage.setItem(PDV_CART_STORAGE, JSON.stringify(cart));
+    else localStorage.removeItem(PDV_CART_STORAGE);
+  }, [cart]);
+
+  useEffect(() => {
+    let ativo = true;
+    const atualizarProdutos = () => {
+      produtoApi.list(undefined, 'mercado').then((lista) => {
+        if (ativo) setProdutos(lista);
+      }).catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') atualizarProdutos();
+    };
+    const parar = observarEstoqueAtualizado(atualizarProdutos);
+    window.addEventListener('focus', atualizarProdutos);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      ativo = false;
+      parar();
+      window.removeEventListener('focus', atualizarProdutos);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
   const [filtro, setFiltro] = useState('');
   const [responsavel, setResponsavel] = useState('');
@@ -80,9 +123,8 @@ export function PdvPage() {
     });
   };
 
-  const adicionarCodigo = (e: React.FormEvent) => {
-    e.preventDefault();
-    const c = codigo.trim();
+  const adicionarPorCodigo = (valor: string) => {
+    const c = valor.trim();
     if (!c) return;
     (async () => {
       try {
@@ -98,6 +140,13 @@ export function PdvPage() {
       bipRef.current?.focus();
     })();
   };
+
+  const adicionarCodigo = (e: React.FormEvent) => {
+    e.preventDefault();
+    adicionarPorCodigo(codigo);
+  };
+
+  useBarcodeScanner(adicionarPorCodigo, { enabled: !pagar && !comprovante });
 
   const mudarQtd = (id: number, delta: number) => {
     const item = cart.find((i) => i.produto.id === id);

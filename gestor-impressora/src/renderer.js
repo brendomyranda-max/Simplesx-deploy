@@ -32,6 +32,8 @@ async function carregarImpressoras() {
   try {
     const lista = await window.simplesx.listarImpressoras()
     $('impressora').innerHTML = '<option value="">Padrão do sistema</option>'
+    const padrao = lista.find((p) => p.isDefault) || lista[0]
+    if (padrao) $('impressora').options[0].dataset.nome = padrao.name
     for (const p of lista) {
       const option = document.createElement('option')
       option.value = p.name
@@ -46,18 +48,59 @@ async function carregarImpressoras() {
   }
 }
 
+function impressoraSelecionada() {
+  const select = $('impressora')
+  return select.value || select.selectedOptions[0]?.dataset?.nome || ''
+}
+
+function larguraAtual(nome) {
+  return Number(estado?.largurasImpressoras?.[nome]) || 58
+}
+
+$('tamanho').onclick = () => {
+  const nome = impressoraSelecionada()
+  if (!nome) return toast('Selecione uma impressora primeiro')
+  const largura = larguraAtual(nome)
+  const comuns = [58, 76, 80, 100, 102]
+  $('tamanhoImpressora').textContent = nome
+  $('larguraPreset').value = comuns.includes(largura) ? String(largura) : 'custom'
+  $('larguraCustom').value = largura
+  $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
+  $('tamanhoDialog').showModal()
+}
+$('larguraPreset').onchange = () => { $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom' }
+$('salvarTamanho').onclick = async (event) => {
+  event.preventDefault()
+  const nome = impressoraSelecionada()
+  const largura = $('larguraPreset').value === 'custom' ? Number($('larguraCustom').value) : Number($('larguraPreset').value)
+  if (!Number.isFinite(largura) || largura < 20 || largura > 320) return toast('Informe uma largura entre 20 e 320 mm')
+  try {
+    const status = await window.simplesx.salvarTamanho(nome, largura)
+    render(status)
+    $('tamanhoDialog').close()
+    toast(`${nome}: ${largura} mm`)
+  } catch (e) { toast(`Erro: ${e.message}`) }
+}
+
 $('copiar').onclick = async () => { await navigator.clipboard.writeText($('token').textContent); toast('Token copiado') }
 $('atualizar').onclick = async () => { await carregarImpressoras(); toast('Impressoras atualizadas') }
 $('salvar').onclick = async () => {
-  const status = await window.simplesx.salvar({
-    ...estado,
-    nome: $('nome').value,
-    deployUrl: $('deployUrl').value,
-    impressoraPadrao: $('impressora').value,
-    iniciarComSistema: $('iniciar').checked,
-  })
-  render(status)
-  toast('Configuração salva')
+  $('salvar').disabled = true
+  try {
+    const status = await window.simplesx.salvar({
+      ...estado,
+      nome: $('nome').value,
+      deployUrl: $('deployUrl').value,
+      impressoraPadrao: $('impressora').value,
+      iniciarComSistema: $('iniciar').checked,
+    })
+    render(status)
+    toast('Configuração salva')
+  } catch (e) {
+    toast(`Erro: ${e.message}`)
+  } finally {
+    $('salvar').disabled = false
+  }
 }
 $('testar').onclick = async () => {
   $('testar').disabled = true

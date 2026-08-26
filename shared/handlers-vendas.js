@@ -15,6 +15,7 @@ import {
   criarPerda,
   gerarNumeroVenda,
   httpError,
+  calcularBaixasProduto,
 } from './util.js';
 import { quantidadeEmUnidadesEstoque } from './units.js';
 import { emitirNfceVenda } from './handlers-fiscal.js';
@@ -148,27 +149,21 @@ export async function criarVendaHandler(c, env) {
       return c.json({ error: `Produto sem preço: ${p.nome}` }, 400);
     }
     const preco = num(p.preco) || 0;
-    let composto = false;
-    if (p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length) {
-      // Valida o estoque dos insumos da ficha técnica
-      for (const ing of p.ficha) {
-        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
-        if (conv === null) {
-          return c.json({ error: `Unidade incompatível na ficha de ${p.nome} (${ing.insumo_nome})` }, 400);
-        }
-        const needed = conv * qtd;
-        if (num(ing.insumo_estoque) < needed - 0.0001) {
+    const composto = p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length;
+    const baixas = composto ? await calcularBaixasProduto(env, p.id, qtd) : [];
+    if (composto) {
+      for (const baixa of baixas) {
+        if (baixa.disponivel < baixa.quantidade - 0.0001) {
           return c.json(
-            { error: `Estoque insuficiente de ${ing.insumo_nome} para ${qtd}x ${p.nome} (${num(ing.insumo_estoque)} disponível)` },
+            { error: `Estoque insuficiente de ${baixa.nome} para ${qtd}x ${p.nome} (${baixa.disponivel} disponível)` },
             400
           );
         }
       }
-      composto = true;
     } else if (num(p.estoque_atual) < qtd) {
       return c.json({ error: `Estoque insuficiente para ${p.nome} (${num(p.estoque_atual)} disponível)` }, 400);
     }
-    itensNorm.push({ produto: p, qtd, preco, total: preco * qtd, composto });
+    itensNorm.push({ produto: p, qtd, preco, total: preco * qtd, composto, baixas });
     subtotal += preco * qtd;
   }
 
@@ -213,11 +208,9 @@ export async function criarVendaHandler(c, env) {
       ).bind(vendId, it.produto.id, it.produto.nome, it.qtd, num(it.produto.custo), it.preco, it.total)
     );
     if (it.composto) {
-      for (const ing of it.produto.ficha) {
-        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
-        const needed = conv * it.qtd;
+      for (const baixa of it.baixas) {
         stmts.push(
-          env.DB.prepare('UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE id=?').bind(needed, ing.insumo_id)
+          env.DB.prepare('UPDATE produtos SET estoque_atual = estoque_atual - ? WHERE id=?').bind(baixa.quantidade, baixa.produto_id)
         );
       }
     } else {
@@ -239,16 +232,14 @@ export async function criarVendaHandler(c, env) {
 
   for (const it of itensNorm) {
     if (it.composto) {
-      for (const ing of it.produto.ficha) {
-        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
-        const needed = conv * it.qtd;
-        const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(ing.insumo_id).first();
+      for (const baixa of it.baixas) {
+        const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(baixa.produto_id).first();
         await registrarMovimentacao(env, {
-          produto_id: ing.insumo_id,
+          produto_id: baixa.produto_id,
           tipo: 'saida',
-          quantidade: needed,
+          quantidade: baixa.quantidade,
           saldo_apos: num(saldo.estoque_atual),
-          custo_unitario: num(ing.insumo_custo),
+          custo_unitario: baixa.custo_unitario,
           origem: 'venda',
           ref_id: vendId,
           responsavel,
@@ -350,16 +341,14 @@ export async function reabrirVendaPdvHandler(c, env) {
 
 async function movimentarItemPdv(env, produto, quantidade, entrada, venda, responsavel) {
   if (produto.tipo === 'composto' && Array.isArray(produto.ficha) && produto.ficha.length) {
-    for (const ing of produto.ficha) {
-      const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
-      if (conv === null) throw new Error(`Unidade incompatível na ficha de ${produto.nome}`);
-      const qtd = conv * quantidade;
-      if (!entrada && num(ing.insumo_estoque) < qtd - 0.0001) throw new Error(`Estoque insuficiente de ${ing.insumo_nome}`);
-      await env.DB.prepare(`UPDATE produtos SET estoque_atual=estoque_atual ${entrada ? '+' : '-'} ? WHERE id=?`).bind(qtd, ing.insumo_id).run();
-      const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(ing.insumo_id).first();
+    const baixas = await calcularBaixasProduto(env, produto.id, quantidade);
+    for (const baixa of baixas) {
+      if (!entrada && baixa.disponivel < baixa.quantidade - 0.0001) throw new Error(`Estoque insuficiente de ${baixa.nome}`);
+      await env.DB.prepare(`UPDATE produtos SET estoque_atual=estoque_atual ${entrada ? '+' : '-'} ? WHERE id=?`).bind(baixa.quantidade, baixa.produto_id).run();
+      const saldo = await env.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(baixa.produto_id).first();
       await registrarMovimentacao(env, {
-        produto_id: ing.insumo_id, tipo: entrada ? 'entrada' : 'saida', quantidade: qtd,
-        saldo_apos: num(saldo.estoque_atual), custo_unitario: num(ing.insumo_custo),
+        produto_id: baixa.produto_id, tipo: entrada ? 'entrada' : 'saida', quantidade: baixa.quantidade,
+        saldo_apos: num(saldo.estoque_atual), custo_unitario: baixa.custo_unitario,
         origem: entrada ? 'ajuste_venda' : 'venda', ref_id: venda.id, responsavel,
         observacoes: `Ajuste da venda ${venda.numero} · ${quantidade}x ${produto.nome}`,
       });
@@ -422,12 +411,11 @@ export async function ajustarVendaPdvHandler(c, env) {
     const delta = novo.qtd - num(antigo?.quantidade);
     if (delta <= 0) continue;
     if (novo.produto.tipo === 'composto' && Array.isArray(novo.produto.ficha) && novo.produto.ficha.length) {
-      for (const ing of novo.produto.ficha) {
-        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
-        if (conv === null) return c.json({ error: `Unidade incompatível na ficha de ${novo.produto.nome}` }, 400);
-        const atual = necessidades.get(ing.insumo_id) || { nome: ing.insumo_nome, disponivel: num(ing.insumo_estoque), qtd: 0 };
-        atual.qtd += conv * delta;
-        necessidades.set(ing.insumo_id, atual);
+      const baixas = await calcularBaixasProduto(env, novo.produto.id, delta);
+      for (const baixa of baixas) {
+        const atual = necessidades.get(baixa.produto_id) || { nome: baixa.nome, disponivel: baixa.disponivel, qtd: 0 };
+        atual.qtd += baixa.quantidade;
+        necessidades.set(baixa.produto_id, atual);
       }
     } else {
       const atual = necessidades.get(produtoId) || { nome: novo.produto.nome, disponivel: num(novo.produto.estoque_atual), qtd: 0 };
@@ -1099,19 +1087,15 @@ async function criarVendaInterna(env, o) {
     const p = it.produto_id ? await getProd(it.produto_id) : null;
     const baixas = [];
     if (p && p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length) {
-      for (const ing of p.ficha) {
-        const conv = quantidadeEmUnidadesEstoque(ing.quantidade, ing.unidade, ing.insumo_unidade, ing.conteudo_quantidade, ing.conteudo_unidade);
-        if (conv === null) {
-          throw httpError(400, `Unidade incompatível na ficha de ${p.nome} (${ing.insumo_nome})`);
-        }
-        const needed = conv * num(it.quantidade);
-        if (num(ing.insumo_estoque) < needed - 0.0001) {
+      const folhas = await calcularBaixasProduto(env, p.id, num(it.quantidade));
+      for (const folha of folhas) {
+        if (folha.disponivel < folha.quantidade - 0.0001) {
           throw httpError(
             400,
-            `Estoque insuficiente de ${ing.insumo_nome} para ${num(it.quantidade)}x ${p.nome} (${num(ing.insumo_estoque)} disponível)`
+            `Estoque insuficiente de ${folha.nome} para ${num(it.quantidade)}x ${p.nome} (${folha.disponivel} disponível)`
           );
         }
-        baixas.push({ insumo_id: ing.insumo_id, quantidade: needed, custo_unitario: num(ing.insumo_custo), nome: p.nome });
+        baixas.push({ insumo_id: folha.produto_id, quantidade: folha.quantidade, custo_unitario: folha.custo_unitario, nome: p.nome });
       }
     } else if (p) {
       baixas.push({ insumo_id: it.produto_id, quantidade: num(it.quantidade), custo_unitario: num(p.custo ?? 0) });

@@ -67,9 +67,9 @@ class PrintSyncService : Service() {
     private fun executeTask(api: SimplesXApi, task: DeviceTask) {
         try {
             api.taskStatus(task, "processing")
-            val bytes = taskBytes(task)
             val route = task.payload.optStringAny("printer", "impressora")
             val printer = config.printerFor(route)
+            val bytes = taskBytes(task, printer.widthMm)
             val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
             repeat(copies) { PrinterTransport.send(this, printer, bytes) }
             api.taskStatus(task, "success", resultPrinter = printer.name)
@@ -81,7 +81,7 @@ class PrintSyncService : Service() {
         }
     }
 
-    private fun taskBytes(task: DeviceTask): ByteArray {
+    private fun taskBytes(task: DeviceTask, widthMm: Int): ByteArray {
         if (task.type == "OPEN_CASH_DRAWER") return EscPos.openDrawer()
         val payload = task.payload
         val content = payload.optStringAny("content", "conteudo", "text", "texto")
@@ -89,7 +89,7 @@ class PrintSyncService : Service() {
         require(content.isNotBlank() || fallback.isNotBlank()) { "Trabalho sem conteúdo de impressão" }
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
         val feed = payload.optIntAny("feed", "alimentar", default = 3)
-        return EscPos.ticket(content.ifBlank { fallback }, feed, cut)
+        return EscPos.ticket(content.ifBlank { fallback }, feed, cut, widthMm)
     }
 
     private fun JSONObject.optStringAny(vararg keys: String): String {

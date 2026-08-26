@@ -112,7 +112,7 @@ export const fornecedorApi = {
 export const produtoApi = {
   list: (q?: string, local?: 'restaurante' | 'mercado', tipo?: string) =>
     api.get<Produto[]>(`/produtos?busca=${encodeURIComponent(q || '')}${local ? `&local=${local}` : ''}${tipo ? `&tipo=${tipo}` : ''}`),
-  insumos: (q?: string) => api.get<Produto[]>(`/produtos?busca=${encodeURIComponent(q || '')}&tipo=insumo`),
+  insumos: (q?: string) => api.get<Produto[]>(`/produtos?busca=${encodeURIComponent(q || '')}&tipo=ingrediente`),
   get: (id: number) => api.get<Produto>(`/produtos/${id}`),
   create: (b: Partial<Produto> & { nome: string; codigos_barras?: { codigo: string; principal?: number }[]; categoria_ids?: number[] }) =>
     api.post<Produto>('/produtos', b),

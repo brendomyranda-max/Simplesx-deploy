@@ -18,6 +18,8 @@ export function ValidadePage() {
   const [abrir, setAbrir] = useState(false);
   const [produto, setProduto] = useState<Produto | null>(null);
   const [codigo, setCodigo] = useState('');
+  const [resultadosBusca, setResultadosBusca] = useState<Produto[]>([]);
+  const [buscandoProduto, setBuscandoProduto] = useState(false);
   const [nEncontrado, setNEncontrado] = useState(false);
   const [qtd, setQtd] = useState('1');
   const [dataAbertura, setDataAbertura] = useState(hojeLocal());
@@ -61,16 +63,28 @@ export function ValidadePage() {
   const buscar = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!codigo.trim()) return;
+    setBuscandoProduto(true);
     try {
-      const p = await produtoApi.buscar(codigo.trim());
-      setProduto(p);
-      setNEncontrado(false);
-      setDiasAberto(p.validade_aberto_dias ? String(p.validade_aberto_dias) : '');
-      setTemperatura(p.temperatura || '');
+      const produtos = await produtoApi.insumos(codigo.trim());
+      setResultadosBusca(produtos);
+      setNEncontrado(produtos.length === 0);
+      if (produtos.length === 1) selecionarProduto(produtos[0]);
     } catch {
       setProduto(null);
+      setResultadosBusca([]);
       setNEncontrado(true);
+    } finally {
+      setBuscandoProduto(false);
     }
+  };
+
+  const selecionarProduto = (p: Produto) => {
+    setProduto(p);
+    setCodigo(p.nome);
+    setResultadosBusca([]);
+    setNEncontrado(false);
+    setDiasAberto(p.validade_aberto_dias ? String(p.validade_aberto_dias) : '');
+    setTemperatura(p.temperatura || '');
   };
 
   const criar = async (e: React.FormEvent) => {
@@ -96,6 +110,7 @@ export function ValidadePage() {
       setDataVencimento('');
       setQtd('1');
       loadList();
+      await imprimir(novo.id);
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao registrar');
     }
@@ -271,19 +286,47 @@ export function ValidadePage() {
         </Card>
       )}
 
-      <Modal open={abrir} onClose={() => setAbrir(false)} title="Nova validade (produto aberto)" width="max-w-xl">
+      <Modal open={abrir} onClose={() => setAbrir(false)} title="Nova validade (insumo ou composto)" width="max-w-xl">
         <form onSubmit={buscar}>
-          <Field label="Passe o código de barras ou busque">
+          <Field label="Procure pelo nome ou código">
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <ScanBarcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input className="pl-9 font-mono" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="código..." />
+                <Input
+                  className="pl-9"
+                  value={codigo}
+                  onChange={(e) => {
+                    setCodigo(e.target.value);
+                    setProduto(null);
+                    setResultadosBusca([]);
+                    setNEncontrado(false);
+                  }}
+                  placeholder="Ex.: queijo, molho ou código..."
+                />
               </div>
-              <Button type="submit" icon={<Search className="h-4 w-4" />}>Buscar</Button>
+              <Button type="submit" loading={buscandoProduto} icon={<Search className="h-4 w-4" />}>Buscar</Button>
             </div>
           </Field>
         </form>
-        {nEncontrado && <p className="mt-2 text-sm text-amber-600">Produto não encontrado.</p>}
+        {nEncontrado && <p className="mt-2 text-sm text-amber-600">Nenhum insumo ou produto composto encontrado.</p>}
+        {resultadosBusca.length > 1 && (
+          <div className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-1">
+            {resultadosBusca.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selecionarProduto(p)}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-slate-800">{p.nome}</span>
+                  <span className="block text-xs text-slate-400">{p.codigo_interno || 'Sem código'} · estoque {fmtNum(p.estoque_atual)} {p.unidade}</span>
+                </span>
+                <Badge color={p.tipo === 'insumo' ? 'amber' : 'purple'}>{p.tipo === 'insumo' ? 'Insumo' : 'Composto'}</Badge>
+              </button>
+            ))}
+          </div>
+        )}
         {produto && (
           <form onSubmit={criar} className="mt-4 space-y-3">
             <div className="rounded-xl bg-slate-50 p-3 text-sm">
