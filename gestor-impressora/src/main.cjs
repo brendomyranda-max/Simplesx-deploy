@@ -44,6 +44,7 @@ function configPadrao() {
     nome: `Gestor ${os.hostname()}`,
     impressoraPadrao: '',
     largurasImpressoras: {},
+    dpisImpressoras: {},
     protocolosImpressoras: {},
     iniciarComSistema: true,
   }
@@ -77,6 +78,7 @@ async function salvarConfig(novaConfig) {
     nome: String(novaConfig.nome || `Gestor ${os.hostname()}`).trim(),
     impressoraPadrao: String(novaConfig.impressoraPadrao || ''),
     largurasImpressoras: normalizarLarguras(novaConfig.largurasImpressoras || config?.largurasImpressoras),
+    dpisImpressoras: normalizarDpis(novaConfig.dpisImpressoras || config?.dpisImpressoras),
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
   }
@@ -105,6 +107,16 @@ function normalizarProtocolos(value) {
   for (const [nome, protocolo] of Object.entries(value)) {
     const normalizado = String(protocolo || '').toUpperCase()
     if (nome && permitidos.has(normalizado)) result[nome] = normalizado
+  }
+  return result
+}
+
+function normalizarDpis(value) {
+  const result = {}
+  if (!value || typeof value !== 'object') return result
+  for (const [nome, dpi] of Object.entries(value)) {
+    const numero = Number(dpi)
+    if (nome && Number.isInteger(numero) && numero >= 100 && numero <= 1200) result[nome] = numero
   }
   return result
 }
@@ -247,29 +259,33 @@ function linhasEtiqueta(texto, larguraMm) {
   return quebrarPorLargura(textoAscii(texto), larguraMm).split('\n')
 }
 
-function mmDots(mm) { return Math.max(0, Math.round(Number(mm || 0) * 8)) }
+function mmDots(mm, dpi = 203) { return Math.max(0, Math.round(Number(mm || 0) * Number(dpi || 203) / 25.4)) }
 
-function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58 } = {}) {
+function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203 } = {}) {
   const linhas = linhasEtiqueta(texto, larguraMm)
-  const largura = mmDots(larguraMm)
-  const altura = Math.max(80, 32 + linhas.length * 28)
+  const escala = dpi / 203
+  const margem = Math.max(8, Math.round(16 * escala))
+  const alturaLinha = Math.max(14, Math.round(28 * escala))
+  const fonte = Math.max(12, Math.round(24 * escala))
+  const largura = mmDots(larguraMm, dpi)
+  const altura = Math.max(80, Math.round((32 + linhas.length * 28) * escala))
   const quantidade = Math.min(20, Math.max(1, Number(copias) || 1))
   let comandos
   if (protocolo === 'TSPL') {
-    comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / 8)} mm\r\nGAP 0 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n`
-    comandos += linhas.map((linha, i) => `TEXT 8,${16 + i * 28},"0",0,1,1,"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
+    comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / (dpi / 25.4))} mm\r\nGAP 0 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n`
+    comandos += linhas.map((linha, i) => `TEXT ${Math.round(8 * escala)},${margem + i * alturaLinha},"0",0,1,1,"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
     comandos += `\r\nPRINT ${quantidade},1\r\n`
   } else if (protocolo === 'ZPL') {
     comandos = `^XA\n^PW${largura}\n^LL${altura}\n^LH0,0\n`
-    comandos += linhas.map((linha, i) => `^FO16,${16 + i * 28}^A0N,24,24^FD${linha.replace(/[\^~]/g, ' ')}^FS`).join('\n')
+    comandos += linhas.map((linha, i) => `^FO${margem},${margem + i * alturaLinha}^A0N,${fonte},${fonte}^FD${linha.replace(/[\^~]/g, ' ')}^FS`).join('\n')
     comandos += `\n^PQ${quantidade}\n^XZ\n`
   } else if (protocolo === 'CPCL') {
     comandos = `! 0 200 200 ${altura} ${quantidade}\r\nPW ${largura}\r\n`
-    comandos += linhas.map((linha, i) => `TEXT 0 2 16 ${16 + i * 28} ${linha}`).join('\r\n')
+    comandos += linhas.map((linha, i) => `TEXT 0 2 ${margem} ${margem + i * alturaLinha} ${linha}`).join('\r\n')
     comandos += '\r\nFORM\r\nPRINT\r\n'
   } else if (protocolo === 'EPL') {
     comandos = `N\nq${largura}\nQ${altura},0\n`
-    comandos += linhas.map((linha, i) => `A16,${16 + i * 28},0,3,1,1,N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
+    comandos += linhas.map((linha, i) => `A${margem},${margem + i * alturaLinha},0,3,1,1,N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
     comandos += `\nP${quantidade}\n`
   } else {
     return bytesEscPos(texto, { larguraMm })
@@ -280,6 +296,7 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58 } = {}) {
 async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alimentar = 0 }) {
   const printer = await resolverImpressora(impressora)
   const larguraMm = Number(config.largurasImpressoras?.[printer.name]) || 58
+  const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
   const protocolo = config.protocolosImpressoras?.[printer.name] || (/RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
   const filaRaw = protocolo !== 'DRIVER'
   const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
@@ -287,7 +304,7 @@ async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alime
   await fs.writeFile(temporario, filaRaw
     ? (protocolo === 'ESC_POS'
         ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm })
-        : bytesEtiqueta(protocolo, textoAjustado, { copias, larguraMm }))
+        : bytesEtiqueta(protocolo, textoAjustado, { copias, larguraMm, dpi }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
     const repeticoes = filaRaw && protocolo !== 'ESC_POS' ? 1 : Math.max(1, Number(copias) || 1)
@@ -473,13 +490,16 @@ ipcMain.handle('testar-impressora', async (_e, impressora) => {
 ipcMain.handle('salvar-impressora', async (_e, value) => {
   const impressora = String(value?.impressora || '').trim()
   const larguraMm = Number(value?.larguraMm)
+  const dpi = Number(value?.dpi)
   const protocolo = String(value?.protocolo || 'DRIVER').toUpperCase()
   if (!impressora) throw new Error('Selecione uma impressora')
   if (!Number.isFinite(larguraMm) || larguraMm < 20 || larguraMm > 320) throw new Error('Largura deve estar entre 20 e 320 mm')
+  if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) throw new Error('DPI deve estar entre 100 e 1200')
   if (!['DRIVER', 'ESC_POS', 'TSPL', 'ZPL', 'CPCL', 'EPL'].includes(protocolo)) throw new Error('Protocolo inválido')
   return salvarConfig({
     ...config,
     largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm },
+    dpisImpressoras: { ...config.dpisImpressoras, [impressora]: dpi },
     protocolosImpressoras: { ...config.protocolosImpressoras, [impressora]: protocolo },
   })
 })

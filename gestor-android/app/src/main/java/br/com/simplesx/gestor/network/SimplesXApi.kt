@@ -10,7 +10,7 @@ data class DeviceTask(val id: String, val type: String, val leaseId: String, val
 data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
 
 class SimplesXApi(private val config: AppConfig) {
-    private val appVersion = "1.4.2"
+    private val appVersion = "1.5.0"
     private fun request(path: String, body: JSONObject, authenticated: Boolean = true): JSONObject {
         val base = config.deployUrl.trimEnd('/')
         val parsed = URL(base)
@@ -56,7 +56,7 @@ class SimplesXApi(private val config: AppConfig) {
                 config.printers.forEach { printer -> put(JSONObject()
                     .put("name", printer.name).put("connection", printer.connection.name.lowercase())
                     .put("protocol", printer.protocol.name.lowercase())
-                    .put("width_mm", printer.widthMm)) }
+                    .put("width_mm", printer.widthMm).put("dpi", printer.dpi)) }
             })
         })
     }

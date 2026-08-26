@@ -27,10 +27,12 @@ Gradle e use **Build → Build APK(s)**. O APK de desenvolvimento será criado e
 2. Digite no aplicativo o ID e o código exibidos (expiram em dez minutos).
 3. Escolha o protocolo indicado no autoteste: **ESC/POS**, **TSPL**, **ZPL**,
    **CPCL** ou **EPL**.
-4. Escolha **Rede** e informe IP/porta, ou pareie a impressora nas configurações
+4. Configure o DPI indicado no autoteste ou na etiqueta da impressora. Os valores
+   mais comuns são **203**, **300** e **600 DPI**.
+5. Escolha **Rede** e informe IP/porta, ou pareie a impressora nas configurações
    do Android e escolha **Bluetooth**.
-5. Toque em **Salvar rota e imprimir teste**.
-6. Ative **Receber impressões** e permita notificações/Bluetooth.
+6. Toque em **Salvar rota e imprimir teste**.
+7. Ative **Receber impressões** e permita notificações/Bluetooth.
 
 Em rotas de etiqueta, escolha o tipo de papel: **Contínuo** usa altura automática e
 avança somente o conteúdo; **Etiqueta** usa o espaço (GAP) e a altura física da

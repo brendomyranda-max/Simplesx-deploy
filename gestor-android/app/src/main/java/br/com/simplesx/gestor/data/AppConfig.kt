@@ -19,6 +19,7 @@ data class PrinterConfig(
     val usbVendorId: Int = 0,
     val usbProductId: Int = 0,
     val widthMm: Int = 80,
+    val dpi: Int = 203,
     val protocol: PrinterProtocol = PrinterProtocol.ESC_POS,
     val tsplPaperMode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
     val labelHeightMm: Int = 30,
@@ -105,6 +106,7 @@ class AppConfig(context: Context) {
         usbDeviceName = json.optString("usbDeviceName"), usbVendorId = json.optInt("usbVendorId"),
         usbProductId = json.optInt("usbProductId"),
         widthMm = json.optInt("widthMm", 80),
+        dpi = json.optInt("dpi", 203).coerceIn(100, 1200),
         protocol = runCatching { PrinterProtocol.valueOf(json.optString("protocol", "ESC_POS")) }.getOrDefault(PrinterProtocol.ESC_POS),
         tsplPaperMode = runCatching { TsplPaperMode.valueOf(json.optString("tsplPaperMode", "CONTINUOUS")) }.getOrDefault(TsplPaperMode.CONTINUOUS),
         labelHeightMm = json.optInt("labelHeightMm", 30).coerceIn(10, 500),
@@ -118,7 +120,7 @@ class AppConfig(context: Context) {
         .put("connection", value.connection.name).put("host", value.host).put("port", value.port)
         .put("bluetoothAddress", value.bluetoothAddress).put("bluetoothName", value.bluetoothName)
         .put("usbDeviceName", value.usbDeviceName).put("usbVendorId", value.usbVendorId).put("usbProductId", value.usbProductId)
-        .put("widthMm", value.widthMm).put("protocol", value.protocol.name)
+        .put("widthMm", value.widthMm).put("dpi", value.dpi).put("protocol", value.protocol.name)
         .put("tsplPaperMode", value.tsplPaperMode.name).put("labelHeightMm", value.labelHeightMm).put("gapMm", value.gapMm)
         .put("categoryIds", org.json.JSONArray(value.categoryIds))
 }

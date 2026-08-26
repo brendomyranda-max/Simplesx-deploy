@@ -315,6 +315,23 @@ private fun GestorScreen() {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text("Resolução da cabeça", fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(203, 300, 600).forEach { dpi ->
+                        if (printer.dpi == dpi) {
+                            Button(onClick = { printer = printer.copy(dpi = dpi) }, modifier = Modifier.weight(1f)) { Text("$dpi DPI") }
+                        } else {
+                            OutlinedButton(onClick = { printer = printer.copy(dpi = dpi) }, modifier = Modifier.weight(1f)) { Text("$dpi DPI") }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = printer.dpi.toString(),
+                    onValueChange = { value -> value.toIntOrNull()?.takeIf { it in 100..1200 }?.let { printer = printer.copy(dpi = it) } },
+                    label = { Text("DPI personalizado (100 a 1200)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Text("O comprimento acompanha somente o conteúdo impresso.", style = MaterialTheme.typography.bodySmall)
                 if (config.deviceToken.isNotBlank()) {
                     Text("Categorias do deploy", fontWeight = FontWeight.Bold)
@@ -367,7 +384,7 @@ private fun GestorScreen() {
                     } else {
                         background {
                             if (config.deviceToken.isNotBlank()) SimplesXApi(config).updatePrinterCategories(printer)
-                            val test = "SIMPLESX - TESTE DE IMPRESSAO\n${printer.protocol.name} · Rede/Bluetooth OK"
+                            val test = "SIMPLESX - TESTE DE IMPRESSAO\n${printer.protocol.name} · ${printer.dpi} DPI\nRede/Bluetooth OK"
                             val bytes = PrinterCommands.document(test, printer)
                             PrinterTransport.send(context, printer, bytes)
                             "Teste ${printer.protocol.name} enviado com sucesso"

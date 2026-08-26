@@ -7,14 +7,16 @@ object Tspl {
     fun label(
         text: String, widthMm: Int = 58, copies: Int = 1,
         paperMode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
-        configuredHeightMm: Int = 30, gapMm: Int = 2,
+        configuredHeightMm: Int = 30, gapMm: Int = 2, dpi: Int = 203,
     ): ByteArray {
         val width = widthMm.coerceIn(20, 320)
         val columns = ((width * 32) / 58).coerceAtLeast(8)
         val lines = normalize(text).lines().flatMap { wrap(it, columns) }.ifEmpty { listOf("") }
-        val lineHeightDots = 28
-        val topMarginDots = 16
-        val contentHeightMm = (((topMarginDots * 2 + lines.size * lineHeightDots) / 8.0).toInt() + 1).coerceAtLeast(10)
+        val scale = dpi.coerceIn(100, 1200) / 203.0
+        val lineHeightDots = (28 * scale).toInt().coerceAtLeast(14)
+        val topMarginDots = (16 * scale).toInt().coerceAtLeast(8)
+        val dotsPerMm = dpi.coerceIn(100, 1200) / 25.4
+        val contentHeightMm = (((topMarginDots * 2 + lines.size * lineHeightDots) / dotsPerMm).toInt() + 1).coerceAtLeast(10)
         val heightMm = if (paperMode == TsplPaperMode.CONTINUOUS) contentHeightMm else configuredHeightMm.coerceIn(10, 500)
         val commands = buildString {
             append("SIZE $width mm,$heightMm mm\r\n")
@@ -26,7 +28,7 @@ object Tspl {
             append("DIRECTION 1\r\n")
             append("CLS\r\n")
             lines.forEachIndexed { index, line ->
-                append("TEXT 8,${topMarginDots + index * lineHeightDots},\"0\",0,1,1,\"")
+                append("TEXT ${(8 * scale).toInt()},${topMarginDots + index * lineHeightDots},\"0\",0,1,1,\"")
                 append(line.replace("\\", "\\\\").replace("\"", "\\\""))
                 append("\"\r\n")
             }

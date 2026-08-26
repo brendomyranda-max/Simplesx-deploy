@@ -66,6 +66,10 @@ function protocoloAtual(nome) {
   return estado?.protocolosImpressoras?.[nome] || 'DRIVER'
 }
 
+function dpiAtual(nome) {
+  return Number(estado?.dpisImpressoras?.[nome]) || 203
+}
+
 $('tamanho').onclick = () => {
   const nome = impressoraSelecionada()
   if (!nome) return toast('Selecione uma impressora primeiro')
@@ -75,6 +79,7 @@ $('tamanho').onclick = () => {
   $('larguraPreset').value = comuns.includes(largura) ? String(largura) : 'custom'
   $('larguraCustom').value = largura
   $('protocolo').value = protocoloAtual(nome)
+  $('dpi').value = dpiAtual(nome)
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
   $('tamanhoDialog').showModal()
 }
@@ -85,10 +90,12 @@ $('salvarTamanho').onclick = async (event) => {
   const largura = $('larguraPreset').value === 'custom' ? Number($('larguraCustom').value) : Number($('larguraPreset').value)
   if (!Number.isFinite(largura) || largura < 20 || largura > 320) return toast('Informe uma largura entre 20 e 320 mm')
   try {
-    const status = await window.simplesx.salvarImpressora(nome, largura, $('protocolo').value)
+    const dpi = Number($('dpi').value)
+    if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) return toast('Informe um DPI entre 100 e 1200')
+    const status = await window.simplesx.salvarImpressora(nome, largura, $('protocolo').value, dpi)
     render(status)
     $('tamanhoDialog').close()
-    toast(`${nome}: ${largura} mm · ${$('protocolo').value.replace('_', '/')}`)
+    toast(`${nome}: ${largura} mm · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
   } catch (e) { toast(`Erro: ${e.message}`) }
 }
 

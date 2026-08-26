@@ -54,6 +54,7 @@
     <form method="dialog">
       <h2>Configurar impressora</h2><p id="tamanhoImpressora"></p>
       <label>Protocolo<select id="protocolo"><option value="DRIVER">Driver do Windows/Linux</option><option value="ESC_POS">ESC/POS (cupons)</option><option value="TSPL">TSPL/TSPL2 (etiquetas)</option><option value="ZPL">ZPL (Zebra)</option><option value="CPCL">CPCL (portáteis)</option><option value="EPL">EPL/EPL2 (etiquetas antigas)</option></select></label>
+      <label>Resolução da cabeça (DPI)<input id="dpi" type="number" min="100" max="1200" step="1" list="dpiComuns"><datalist id="dpiComuns"><option value="203"><option value="300"><option value="600"></datalist></label>
       <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>
       <label id="larguraCustomLabel">Largura personalizada (mm)<input id="larguraCustom" type="number" min="20" max="320" step="0.1"></label>
       <small>O comprimento é automático e acompanha a quantidade de conteúdo impresso.</small>

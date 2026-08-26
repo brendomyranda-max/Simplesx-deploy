@@ -16,7 +16,8 @@ No Linux, as impressoras devem estar cadastradas no CUPS. No Windows, devem esta
 Selecione a impressora e use **⚙ Configurar** para escolher o protocolo Driver,
 ESC/POS, TSPL/TSPL2, ZPL, CPCL ou EPL/EPL2 e a largura do papel. Use **Driver**
 para filas comuns do Windows/Linux e a linguagem indicada no autoteste para filas
-RAW. A escolha é salva individualmente para cada impressora.
+RAW. Configure também a resolução indicada pela impressora (normalmente 203, 300
+ou 600 DPI). As escolhas são salvas individualmente para cada impressora.
 
 Se o Linux mostrar `CUPS indisponível`, inicie o serviço antes de atualizar a
 lista de impressoras (normalmente `sudo systemctl enable --now cups`). O endereço
