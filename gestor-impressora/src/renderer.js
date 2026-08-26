@@ -21,6 +21,7 @@ function render(status) {
   $('contato').textContent = dataHora(status.ultimoContato)
   $('porta').textContent = `127.0.0.1:${status.portaLocal}`
   $('erro').textContent = status.ultimoErro || ''
+  $('versao').textContent = `Versão ${status.version || '—'}`
   $('estado').textContent = status.online ? 'Online' : 'Offline'
   $('estado').className = `badge ${status.online ? 'online' : 'offline'}`
   const j = status.ultimoJob
@@ -37,13 +38,17 @@ async function carregarImpressoras() {
     for (const p of lista) {
       const option = document.createElement('option')
       option.value = p.name
-      option.textContent = `${p.displayName || p.name}${p.isDefault ? ' (padrão)' : ''}`
+      option.textContent = `${p.displayName || p.name}${p.isDefault ? ' (padrão)' : ''}${p.enabled === false ? ' — indisponível' : ''}`
+      option.disabled = p.enabled === false
       $('impressora').appendChild(option)
     }
+    const disponiveis = lista.filter((p) => p.enabled !== false).length
+    $('scanResultado').textContent = `${lista.length} encontrada(s), ${disponiveis} disponível(is)`
     $('impressora').value = lista.some((p) => p.name === atual) ? atual : ''
     if (atual && !$('impressora').value) toast(`A impressora ${atual} não está mais disponível`)
   } catch (e) {
     $('impressora').innerHTML = '<option value="">Nenhuma impressora disponível</option>'
+    $('scanResultado').textContent = 'Falha ao buscar impressoras'
     toast(`Erro: ${e.message}`)
   }
 }
@@ -83,7 +88,12 @@ $('salvarTamanho').onclick = async (event) => {
 }
 
 $('copiar').onclick = async () => { await navigator.clipboard.writeText($('token').textContent); toast('Token copiado') }
-$('atualizar').onclick = async () => { await carregarImpressoras(); toast('Impressoras atualizadas') }
+$('atualizar').onclick = async () => {
+  $('atualizar').disabled = true
+  $('scanResultado').textContent = 'Buscando impressoras…'
+  try { await carregarImpressoras(); toast('Busca de impressoras concluída') }
+  finally { $('atualizar').disabled = false }
+}
 $('salvar').onclick = async () => {
   $('salvar').disabled = true
   try {

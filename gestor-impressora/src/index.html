@@ -26,13 +26,14 @@
       <label>Nome do computador<input id="nome" autocomplete="off"></label>
       <label>Endereço do deploy<input id="deployUrl" type="url" autocomplete="off"></label>
       <label class="full">Impressora padrão
-        <span class="printer-row"><select id="impressora"><option value="">Padrão do sistema</option></select><button id="tamanho" type="button" class="gear" title="Configurar tamanho da bobina" aria-label="Configurar tamanho da bobina">⚙ Bobina</button></span>
+        <span class="printer-row"><select id="impressora"><option value="">Padrão do sistema</option></select><button id="tamanho" type="button" class="gear" title="Configurar tamanho da impressão" aria-label="Configurar tamanho da impressão">⚙ Configurar tamanho</button></span>
+        <small id="scanResultado" class="scan-result">Buscando impressoras…</small>
       </label>
       <label class="check full"><input id="iniciar" type="checkbox"> Iniciar automaticamente com o computador</label>
     </section>
 
     <div class="actions">
-      <button id="atualizar" class="secondary">Atualizar impressoras</button>
+      <button id="atualizar" class="secondary">⌕ Buscar impressoras</button>
       <button id="testar" class="secondary">Imprimir teste</button>
       <button id="salvar">Salvar e conectar</button>
     </div>
@@ -46,6 +47,7 @@
         <div><dt>Servidor local</dt><dd id="porta">127.0.0.1:8410</dd></div>
       </dl>
       <p id="erro" class="erro"></p>
+      <small id="versao" class="version"></small>
     </section>
   </main>
   <dialog id="tamanhoDialog">

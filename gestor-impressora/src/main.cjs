@@ -99,6 +99,7 @@ function normalizarLarguras(value) {
 function statusAtual() {
   return {
     ...config,
+    version: app.getVersion(),
     online: !!ultimoContato && Date.now() - new Date(ultimoContato).getTime() < 15000,
     ultimoContato,
     ultimoJob,
@@ -298,15 +299,17 @@ async function sincronizar() {
 }
 
 async function listarImpressoras() {
-  const printers = await impressorasInstaladas()
+  if (!janela || janela.isDestroyed()) return []
+  const printers = await janela.webContents.getPrintersAsync()
+  const cups = await filasCupsDisponiveis()
   return printers.map((p) => ({
     name: p.name,
     displayName: p.displayName,
     description: p.description,
     status: p.status,
-    state: 'disponivel',
-    enabled: true,
-    accepting: true,
+    state: !cups || cups.has(p.name) ? 'disponivel' : 'indisponivel',
+    enabled: !cups || cups.has(p.name),
+    accepting: !cups || cups.has(p.name),
     isDefault: p.isDefault,
   }))
 }
