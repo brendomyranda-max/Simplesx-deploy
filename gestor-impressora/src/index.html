@@ -26,7 +26,7 @@
       <label>Nome do computador<input id="nome" autocomplete="off"></label>
       <label>Endereço do deploy<input id="deployUrl" type="url" autocomplete="off"></label>
       <label class="full">Impressora padrão
-        <span class="printer-row"><select id="impressora"><option value="">Padrão do sistema</option></select><button id="tamanho" type="button" class="gear" title="Configurar tamanho da impressão" aria-label="Configurar tamanho da impressão">⚙ Configurar tamanho</button></span>
+        <span class="printer-row"><select id="impressora"><option value="">Padrão do sistema</option></select><button id="tamanho" type="button" class="gear" title="Configurar impressora" aria-label="Configurar impressora">⚙ Configurar</button></span>
         <small id="scanResultado" class="scan-result">Buscando impressoras…</small>
       </label>
       <label class="check full"><input id="iniciar" type="checkbox"> Iniciar automaticamente com o computador</label>
@@ -52,10 +52,12 @@
   </main>
   <dialog id="tamanhoDialog">
     <form method="dialog">
-      <h2>Tamanho da bobina</h2><p id="tamanhoImpressora"></p>
+      <h2>Configurar impressora</h2><p id="tamanhoImpressora"></p>
+      <label>Protocolo<select id="protocolo"><option value="DRIVER">Driver do Windows/Linux</option><option value="ESC_POS">ESC/POS (cupons)</option><option value="TSPL">TSPL/TSPL2 (etiquetas)</option><option value="ZPL">ZPL (Zebra)</option><option value="CPCL">CPCL (portáteis)</option><option value="EPL">EPL/EPL2 (etiquetas antigas)</option></select></label>
       <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>
       <label id="larguraCustomLabel">Largura personalizada (mm)<input id="larguraCustom" type="number" min="20" max="320" step="0.1"></label>
       <small>O comprimento é automático e acompanha a quantidade de conteúdo impresso.</small>
+      <small>Use Driver para impressoras comuns instaladas no sistema. Para filas RAW, escolha a linguagem indicada no autoteste da impressora.</small>
       <div class="dialog-actions"><button value="cancel" class="secondary">Cancelar</button><button id="salvarTamanho" value="default">Salvar</button></div>
     </form>
   </dialog>

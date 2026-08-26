@@ -5,7 +5,7 @@ import android.provider.Settings
 import org.json.JSONObject
 
 enum class ConnectionType { NETWORK, BLUETOOTH, USB }
-enum class PrinterProtocol { ESC_POS, TSPL }
+enum class PrinterProtocol { ESC_POS, TSPL, ZPL, CPCL, EPL }
 enum class TsplPaperMode { CONTINUOUS, GAP, BLACK_MARK }
 
 data class PrinterConfig(

@@ -50,9 +50,8 @@ import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
 import br.com.simplesx.gestor.network.SimplesXApi
 import br.com.simplesx.gestor.network.DeviceCategory
-import br.com.simplesx.gestor.print.EscPos
+import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
-import br.com.simplesx.gestor.print.Tspl
 import br.com.simplesx.gestor.print.UsbPrinter
 import br.com.simplesx.gestor.sync.PrintSyncService
 import kotlinx.coroutines.CoroutineScope
@@ -200,13 +199,27 @@ private fun GestorScreen() {
                 }
                 OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplesX") }, modifier = Modifier.fillMaxWidth())
                 Text("Protocolo", fontWeight = FontWeight.Bold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { printer = printer.copy(protocol = PrinterProtocol.ESC_POS) }, modifier = Modifier.weight(1f)) { Text("ESC/POS") }
-                    Button(onClick = { printer = printer.copy(protocol = PrinterProtocol.TSPL) }, modifier = Modifier.weight(1f)) { Text("TSPL") }
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PrinterProtocol.entries.chunked(2).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { protocol ->
+                                if (printer.protocol == protocol) {
+                                    Button(onClick = { printer = printer.copy(protocol = protocol) }, modifier = Modifier.weight(1f)) {
+                                        Text(protocol.name.replace('_', '/'))
+                                    }
+                                } else {
+                                    OutlinedButton(onClick = { printer = printer.copy(protocol = protocol) }, modifier = Modifier.weight(1f)) {
+                                        Text(protocol.name.replace('_', '/'))
+                                    }
+                                }
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
-                Text("Selecionado: ${if (printer.protocol == PrinterProtocol.TSPL) "TSPL (etiquetas)" else "ESC/POS (cupons)"}", style = MaterialTheme.typography.bodySmall)
-                if (printer.protocol == PrinterProtocol.TSPL) {
-                    Text("Tipo de papel TSPL", fontWeight = FontWeight.Bold)
+                Text("Selecionado: ${PrinterCommands.displayName(printer.protocol)}", style = MaterialTheme.typography.bodySmall)
+                if (printer.protocol != PrinterProtocol.ESC_POS) {
+                    Text("Tipo de papel/etiqueta", fontWeight = FontWeight.Bold)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         OutlinedButton(onClick = { printer = printer.copy(tsplPaperMode = TsplPaperMode.CONTINUOUS) }, modifier = Modifier.weight(1f)) { Text("Contínuo") }
                         OutlinedButton(onClick = { printer = printer.copy(tsplPaperMode = TsplPaperMode.GAP) }, modifier = Modifier.weight(1f)) { Text("Etiqueta") }
@@ -355,10 +368,7 @@ private fun GestorScreen() {
                         background {
                             if (config.deviceToken.isNotBlank()) SimplesXApi(config).updatePrinterCategories(printer)
                             val test = "SIMPLESX - TESTE DE IMPRESSAO\n${printer.protocol.name} · Rede/Bluetooth OK"
-                            val bytes = if (printer.protocol == PrinterProtocol.TSPL) Tspl.label(
-                                test, printer.widthMm, paperMode = printer.tsplPaperMode,
-                                configuredHeightMm = printer.labelHeightMm, gapMm = printer.gapMm,
-                            ) else EscPos.ticket(test, widthMm = printer.widthMm)
+                            val bytes = PrinterCommands.document(test, printer)
                             PrinterTransport.send(context, printer, bytes)
                             "Teste ${printer.protocol.name} enviado com sucesso"
                         }

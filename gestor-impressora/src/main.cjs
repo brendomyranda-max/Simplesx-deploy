@@ -44,6 +44,7 @@ function configPadrao() {
     nome: `Gestor ${os.hostname()}`,
     impressoraPadrao: '',
     largurasImpressoras: {},
+    protocolosImpressoras: {},
     iniciarComSistema: true,
   }
 }
@@ -76,6 +77,7 @@ async function salvarConfig(novaConfig) {
     nome: String(novaConfig.nome || `Gestor ${os.hostname()}`).trim(),
     impressoraPadrao: String(novaConfig.impressoraPadrao || ''),
     largurasImpressoras: normalizarLarguras(novaConfig.largurasImpressoras || config?.largurasImpressoras),
+    protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
   }
   await fs.mkdir(path.dirname(arquivoConfig()), { recursive: true })
@@ -92,6 +94,17 @@ function normalizarLarguras(value) {
   for (const [nome, largura] of Object.entries(value)) {
     const numero = Number(largura)
     if (nome && Number.isFinite(numero) && numero >= 20 && numero <= 320) result[nome] = numero
+  }
+  return result
+}
+
+function normalizarProtocolos(value) {
+  const permitidos = new Set(['DRIVER', 'ESC_POS', 'TSPL', 'ZPL', 'CPCL', 'EPL'])
+  const result = {}
+  if (!value || typeof value !== 'object') return result
+  for (const [nome, protocolo] of Object.entries(value)) {
+    const normalizado = String(protocolo || '').toUpperCase()
+    if (nome && permitidos.has(normalizado)) result[nome] = normalizado
   }
   return result
 }
@@ -223,17 +236,62 @@ function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58 } = {
   return Buffer.concat(partes)
 }
 
+function textoAscii(texto) {
+  return String(texto || '').replace(/\r\n?/g, '\n').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replaceAll('º', 'o').replaceAll('ª', 'a')
+    .replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+    .replace(/[^\x09\x0A\x20-\x7E]/g, '').trimEnd()
+}
+
+function linhasEtiqueta(texto, larguraMm) {
+  return quebrarPorLargura(textoAscii(texto), larguraMm).split('\n')
+}
+
+function mmDots(mm) { return Math.max(0, Math.round(Number(mm || 0) * 8)) }
+
+function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58 } = {}) {
+  const linhas = linhasEtiqueta(texto, larguraMm)
+  const largura = mmDots(larguraMm)
+  const altura = Math.max(80, 32 + linhas.length * 28)
+  const quantidade = Math.min(20, Math.max(1, Number(copias) || 1))
+  let comandos
+  if (protocolo === 'TSPL') {
+    comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / 8)} mm\r\nGAP 0 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n`
+    comandos += linhas.map((linha, i) => `TEXT 8,${16 + i * 28},"0",0,1,1,"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
+    comandos += `\r\nPRINT ${quantidade},1\r\n`
+  } else if (protocolo === 'ZPL') {
+    comandos = `^XA\n^PW${largura}\n^LL${altura}\n^LH0,0\n`
+    comandos += linhas.map((linha, i) => `^FO16,${16 + i * 28}^A0N,24,24^FD${linha.replace(/[\^~]/g, ' ')}^FS`).join('\n')
+    comandos += `\n^PQ${quantidade}\n^XZ\n`
+  } else if (protocolo === 'CPCL') {
+    comandos = `! 0 200 200 ${altura} ${quantidade}\r\nPW ${largura}\r\n`
+    comandos += linhas.map((linha, i) => `TEXT 0 2 16 ${16 + i * 28} ${linha}`).join('\r\n')
+    comandos += '\r\nFORM\r\nPRINT\r\n'
+  } else if (protocolo === 'EPL') {
+    comandos = `N\nq${largura}\nQ${altura},0\n`
+    comandos += linhas.map((linha, i) => `A16,${16 + i * 28},0,3,1,1,N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
+    comandos += `\nP${quantidade}\n`
+  } else {
+    return bytesEscPos(texto, { larguraMm })
+  }
+  return Buffer.from(comandos, 'ascii')
+}
+
 async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alimentar = 0 }) {
   const printer = await resolverImpressora(impressora)
   const larguraMm = Number(config.largurasImpressoras?.[printer.name]) || 58
-  const filaRaw = /RAW$/i.test(printer.name)
+  const protocolo = config.protocolosImpressoras?.[printer.name] || (/RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
+  const filaRaw = protocolo !== 'DRIVER'
   const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
   const textoAjustado = quebrarPorLargura(texto, larguraMm).trimEnd()
   await fs.writeFile(temporario, filaRaw
-    ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm })
+    ? (protocolo === 'ESC_POS'
+        ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm })
+        : bytesEtiqueta(protocolo, textoAjustado, { copias, larguraMm }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
-    for (let copia = 0; copia < Math.max(1, Number(copias) || 1); copia += 1) {
+    const repeticoes = filaRaw && protocolo !== 'ESC_POS' ? 1 : Math.max(1, Number(copias) || 1)
+    for (let copia = 0; copia < repeticoes; copia += 1) {
       if (process.platform === 'linux') {
         if (filaRaw) {
           await executarArquivo('lp', ['-d', printer.name, '-o', 'raw', temporario], { timeout: 15000 })
@@ -412,12 +470,18 @@ ipcMain.handle('testar-impressora', async (_e, impressora) => {
   await imprimirRaw({ texto: 'SIMPLESX - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
   return { ok: true }
 })
-ipcMain.handle('salvar-tamanho', async (_e, value) => {
+ipcMain.handle('salvar-impressora', async (_e, value) => {
   const impressora = String(value?.impressora || '').trim()
   const larguraMm = Number(value?.larguraMm)
+  const protocolo = String(value?.protocolo || 'DRIVER').toUpperCase()
   if (!impressora) throw new Error('Selecione uma impressora')
   if (!Number.isFinite(larguraMm) || larguraMm < 20 || larguraMm > 320) throw new Error('Largura deve estar entre 20 e 320 mm')
-  return salvarConfig({ ...config, largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm } })
+  if (!['DRIVER', 'ESC_POS', 'TSPL', 'ZPL', 'CPCL', 'EPL'].includes(protocolo)) throw new Error('Protocolo inválido')
+  return salvarConfig({
+    ...config,
+    largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm },
+    protocolosImpressoras: { ...config.protocolosImpressoras, [impressora]: protocolo },
+  })
 })
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))
 

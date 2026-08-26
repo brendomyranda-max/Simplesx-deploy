@@ -15,8 +15,8 @@ import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.network.DeviceTask
 import br.com.simplesx.gestor.network.SimplesXApi
 import br.com.simplesx.gestor.print.EscPos
+import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
-import br.com.simplesx.gestor.print.Tspl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,8 +74,8 @@ class PrintSyncService : Service() {
             val printer = config.printerFor(route)
             val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
             val bytes = taskBytes(task, printer, copies)
-            if (printer.protocol == PrinterProtocol.TSPL) PrinterTransport.send(this, printer, bytes)
-            else repeat(copies) { PrinterTransport.send(this, printer, bytes) }
+            if (printer.protocol == PrinterProtocol.ESC_POS) repeat(copies) { PrinterTransport.send(this, printer, bytes) }
+            else PrinterTransport.send(this, printer, bytes)
             api.taskStatus(task, "success", resultPrinter = printer.name)
             config.lastJob = "${task.type} → ${printer.name} · concluído"
         } catch (error: Exception) {
@@ -97,10 +97,7 @@ class PrintSyncService : Service() {
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
         val feed = payload.optIntAny("feed", "alimentar", default = 3)
         val text = content.ifBlank { fallback }
-        return if (printer.protocol == PrinterProtocol.TSPL) Tspl.label(
-            text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm,
-        )
-        else EscPos.ticket(text, feed, cut, printer.widthMm)
+        return PrinterCommands.document(text, printer, copies, feed, cut)
     }
 
     private fun JSONObject.optStringAny(vararg keys: String): String {
