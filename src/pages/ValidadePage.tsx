@@ -121,6 +121,8 @@ export function ValidadePage() {
     try {
       const r = await impressoraApi.imprimirEtiqueta(id);
       setEtiqueta(r);
+      if (r.jobs?.length) toast('success', `Etiqueta enviada para ${r.jobs.length} impressora(s)`);
+      else toast('info', 'Nenhuma impressora configurada para Controle de validade');
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao gerar etiqueta');
     } finally {

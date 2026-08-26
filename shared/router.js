@@ -97,7 +97,8 @@ const routes = [
   // impressão
   { m: 'POST', p: '/api/impressao/comanda', h: cad.imprimirComandaHandler },
   { m: 'POST', p: '/api/impressao/pessoa', h: cad.imprimirPessoaComandaHandler },
-  { m: 'GET', p: '/api/impressao/etiqueta/:id', h: cad.imprimirEtiquetaHandler },
+  { m: 'POST', p: '/api/impressao/etiqueta/:id', h: cad.imprimirEtiquetaHandler },
+  { m: 'POST', p: '/api/impressao/venda/:id', h: cad.imprimirVendaHandler },
 
   // gestor local (conexão direta com o deploy)
   { m: 'POST', p: '/api/gestor/register', h: gestor.registerGestorHandler, pub: true },
@@ -110,6 +111,8 @@ const routes = [
   { m: 'POST', p: '/api/devices/pairing-codes', h: devices.createPairingCodeHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/device/pair', h: devices.pairDeviceHandler, pub: true },
   { m: 'POST', p: '/api/device/heartbeat', h: devices.heartbeatDeviceHandler, pub: true },
+  { m: 'POST', p: '/api/device/print-config', h: devices.devicePrintConfigHandler, pub: true },
+  { m: 'POST', p: '/api/device/printer-categories', h: devices.updateDevicePrinterCategoriesHandler, pub: true },
   { m: 'POST', p: '/api/device/token/rotate', h: devices.rotateDeviceTokenHandler, pub: true },
   { m: 'POST', p: '/api/device/tasks/pull', h: devices.pullDeviceTasksHandler, pub: true },
   { m: 'POST', p: '/api/device/tasks/:id/status', h: devices.updateDeviceTaskStatusHandler, pub: true },

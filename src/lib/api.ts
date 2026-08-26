@@ -187,6 +187,7 @@ export const vendaApi = {
   cancelar: (id: number, b: { justificativa: string; destino: 'devolver_estoque' | 'perda'; responsavel?: string }) =>
     api.post<{ ok: boolean }>(`/vendas/${id}/cancelar`, b),
   emitirNfce: (id: number) => api.post<any>(`/vendas/${id}/nfce`),
+  imprimir: (id: number) => api.post<{ impressao: string; venda_id: number; jobs: any[] }>(`/impressao/venda/${id}`),
 };
 
 export const fiscalApi = {
@@ -291,15 +292,15 @@ export const impressoraApi = {
   setores: () => api.get<any[]>('/setores-impressao'),
   criarSetor: (b: { nome: string; padrao_impressora?: string }) => api.post<any>('/setores-impressao', b),
   agentes: () => api.get<any[]>('/impressora-agentes'),
-  criarAgente: (b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null }) => api.post<any>('/impressora-agentes', b),
-  atualizarAgente: (id: number, b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null; ativo?: boolean }) => api.put<{ ok: boolean }>(`/impressora-agentes/${id}`, b),
+  criarAgente: (b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null }) => api.post<any>('/impressora-agentes', b),
+  atualizarAgente: (id: number, b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null; ativo?: boolean }) => api.put<{ ok: boolean }>(`/impressora-agentes/${id}`, b),
   etiquetas: () => api.get<any[]>('/impressora-etiquetas'),
   criarEtiqueta: (b: { nome: string; largura_mm?: number; altura_mm?: number }) => api.post<any>('/impressora-etiquetas', b),
   imprimirComanda: (comanda_id: number, b?: { setor?: string; agente?: string; tipo?: 'cozinha' | 'conta' }) =>
     api.post<{ impressao: string; itens: number; setor: string; tipo?: string; jobs?: any[]; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] }>(`/impressao/comanda?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, ...b }),
   imprimirPessoa: (comanda_id: number, pessoa_id: number) =>
     api.post<{ impressao: string; pessoa: ComandaPessoa; total: number }>(`/impressao/pessoa?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, pessoa_id }),
-  imprimirEtiqueta: (id: number) => api.get<{ impressao: string; etiqueta: any }>(`/impressao/etiqueta/${id}`),
+  imprimirEtiqueta: (id: number) => api.post<{ impressao: string; etiqueta: any; jobs: any[] }>(`/impressao/etiqueta/${id}`),
 };
 
 export const gestorApi = {

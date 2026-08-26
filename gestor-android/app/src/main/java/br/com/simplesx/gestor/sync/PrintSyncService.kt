@@ -10,10 +10,13 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import br.com.simplesx.gestor.MainActivity
 import br.com.simplesx.gestor.data.AppConfig
+import br.com.simplesx.gestor.data.PrinterConfig
+import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.network.DeviceTask
 import br.com.simplesx.gestor.network.SimplesXApi
 import br.com.simplesx.gestor.print.EscPos
 import br.com.simplesx.gestor.print.PrinterTransport
+import br.com.simplesx.gestor.print.Tspl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,9 +72,10 @@ class PrintSyncService : Service() {
             api.taskStatus(task, "processing")
             val route = task.payload.optStringAny("printer", "impressora")
             val printer = config.printerFor(route)
-            val bytes = taskBytes(task, printer.widthMm)
             val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
-            repeat(copies) { PrinterTransport.send(this, printer, bytes) }
+            val bytes = taskBytes(task, printer, copies)
+            if (printer.protocol == PrinterProtocol.TSPL) PrinterTransport.send(this, printer, bytes)
+            else repeat(copies) { PrinterTransport.send(this, printer, bytes) }
             api.taskStatus(task, "success", resultPrinter = printer.name)
             config.lastJob = "${task.type} → ${printer.name} · concluído"
         } catch (error: Exception) {
@@ -81,15 +85,22 @@ class PrintSyncService : Service() {
         }
     }
 
-    private fun taskBytes(task: DeviceTask, widthMm: Int): ByteArray {
-        if (task.type == "OPEN_CASH_DRAWER") return EscPos.openDrawer()
+    private fun taskBytes(task: DeviceTask, printer: PrinterConfig, copies: Int): ByteArray {
+        if (task.type == "OPEN_CASH_DRAWER") {
+            require(printer.protocol == PrinterProtocol.ESC_POS) { "Abertura de gaveta requer uma rota ESC/POS" }
+            return EscPos.openDrawer()
+        }
         val payload = task.payload
         val content = payload.optStringAny("content", "conteudo", "text", "texto")
         val fallback = if (task.type == "TEST_PRINTER") "SIMPLESX - TESTE DE IMPRESSAO\nConexao com o Gestor Android OK" else ""
         require(content.isNotBlank() || fallback.isNotBlank()) { "Trabalho sem conteúdo de impressão" }
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
         val feed = payload.optIntAny("feed", "alimentar", default = 3)
-        return EscPos.ticket(content.ifBlank { fallback }, feed, cut, widthMm)
+        val text = content.ifBlank { fallback }
+        return if (printer.protocol == PrinterProtocol.TSPL) Tspl.label(
+            text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm,
+        )
+        else EscPos.ticket(text, feed, cut, printer.widthMm)
     }
 
     private fun JSONObject.optStringAny(vararg keys: String): String {

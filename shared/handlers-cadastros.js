@@ -225,6 +225,8 @@ export async function listAgentesHandler(c, env) {
     categorias: parseIds(a.categorias),
     imprime_pedidos: a.imprime_pedidos !== 0,
     imprime_conta: a.imprime_conta === 1,
+    imprime_venda: a.imprime_venda === 1,
+    imprime_validade: a.imprime_validade === 1,
   })));
 }
 
@@ -233,14 +235,15 @@ export async function createAgenteHandler(c, env) {
   if (!b.nome) return c.json({ error: 'Nome da rota de impressão obrigatório' }, 400);
   const r = await env.DB.prepare(
     `INSERT INTO impressora_agentes
-      (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, largura_mm,
+      (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, imprime_venda, imprime_validade, largura_mm,
        servidor_tipo, servidor_id, impressora_destino, ativo, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
   )
     .bind(
       String(b.nome).trim(), b.ip || '', num(b.porta) || 9100, b.tipo || 'impressora', b.protocolo || 'cups',
       JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
-      b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80,
+      b.imprime_conta ? 1 : 0, b.imprime_venda ? 1 : 0, b.imprime_validade ? 1 : 0,
+      num(b.largura_mm) >= 20 && num(b.largura_mm) <= 320 ? num(b.largura_mm) : 80,
       b.servidor_tipo || null, b.servidor_id ? String(b.servidor_id) : null,
       b.impressora_destino ? String(b.impressora_destino).trim() : null, now()
     )
@@ -256,12 +259,13 @@ export async function updateAgenteHandler(c, env) {
   if (!atual) return c.json({ error: 'Impressora não encontrada' }, 404);
   await env.DB.prepare(
     `UPDATE impressora_agentes SET nome=?, ip=?, porta=?, tipo=?, protocolo=?, categorias=?,
-      imprime_pedidos=?, imprime_conta=?, largura_mm=?, servidor_tipo=?, servidor_id=?,
+      imprime_pedidos=?, imprime_conta=?, imprime_venda=?, imprime_validade=?, largura_mm=?, servidor_tipo=?, servidor_id=?,
       impressora_destino=?, ativo=? WHERE id=?`
   ).bind(
     String(b.nome).trim(), b.ip || '', num(b.porta) || 9100, b.tipo || 'impressora', b.protocolo || 'cups',
     JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
-    b.imprime_conta ? 1 : 0, num(b.largura_mm) === 58 ? 58 : 80,
+    b.imprime_conta ? 1 : 0, b.imprime_venda ? 1 : 0, b.imprime_validade ? 1 : 0,
+    num(b.largura_mm) >= 20 && num(b.largura_mm) <= 320 ? num(b.largura_mm) : 80,
     b.servidor_tipo || null, b.servidor_id ? String(b.servidor_id) : null,
     b.impressora_destino ? String(b.impressora_destino).trim() : null,
     b.ativo === false ? 0 : 1, c.params.id
@@ -314,7 +318,7 @@ async function sincronizarCategoriasDaImpressora(env, impressoraId, categorias) 
   }
 }
 
-async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 80, servidorTipo, servidorId, impressoraDestino }) {
+async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 80, servidorTipo, servidorId, impressoraDestino, taskType = 'PRINT_ORDER' }) {
   const destino = impressoraDestino || impressora;
   const deviceId = servidorTipo === 'android'
     ? String(servidorId || '')
@@ -322,7 +326,7 @@ async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 8
   if (deviceId) {
     const result = await createDeviceTask(env, user, {
       device_id: deviceId,
-      type: 'PRINT_ORDER',
+      type: taskType,
       payload: { content: textoCompativelComEscPos(conteudo), printer: destino, width_mm: larguraMm, copies: 1, cut: true, feed: larguraMm === 58 ? 3 : 0 },
       idempotency_key: `order-print-${crypto.randomUUID()}`,
       source_type: 'comanda',
@@ -442,6 +446,7 @@ export async function imprimirComandaHandler(c, env) {
       const job = await enqueueGestorJob(env, c.user, {
         conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
         servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id, impressoraDestino: destino.impressora_destino,
+        taskType: 'PRINT_RECEIPT',
       });
       jobs.push({ impressora: destino.nome, ...job });
     }
@@ -567,5 +572,50 @@ export async function imprimirEtiquetaHandler(c, env) {
   ]
     .filter((l) => l !== '')
     .join('\n');
-  return c.json({ impressao: txt, etiqueta: v });
+  const destinos = await env.DB.prepare(
+    `SELECT nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
+     FROM impressora_agentes WHERE ativo=1 AND imprime_validade=1 ORDER BY id`
+  ).all();
+  const jobs = [];
+  for (const destino of destinos.results) {
+    const job = await enqueueGestorJob(env, c.user, {
+      conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
+      servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id,
+      impressoraDestino: destino.impressora_destino, taskType: 'PRINT_LABEL',
+    });
+    jobs.push({ impressora: destino.nome, ...job });
+  }
+  return c.json({ impressao: txt, etiqueta: v, jobs });
+}
+
+export async function imprimirVendaHandler(c, env) {
+  const venda = await env.DB.prepare("SELECT * FROM vendas WHERE id=? AND tipo='pdv'").bind(c.params.id).first();
+  if (!venda) return c.json({ error: 'Venda não encontrada' }, 404);
+  const itens = await env.DB.prepare('SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id').bind(venda.id).all();
+  const pagamentos = await env.DB.prepare('SELECT * FROM pagamentos WHERE venda_id=? ORDER BY id').bind(venda.id).all();
+  const config = await getConfig(env);
+  const txt = [
+    linha(), String(config.empresa_nome || 'MEU NEGÓCIO').toUpperCase(), 'CUPOM NAO FISCAL', linha(),
+    `VENDA: ${venda.numero}`, `EMISSAO: ${new Date(venda.criado_em).toLocaleString('pt-BR')}`, linha('-'),
+    ...itens.results.flatMap((item) => [item.nome, `${num(item.quantidade)} x ${fmtBRL(num(item.preco_unitario))}  ${fmtBRL(num(item.total))}`]),
+    linha('-'), `SUBTOTAL: ${fmtBRL(num(venda.subtotal))}`,
+    num(venda.desconto) > 0 ? `DESCONTO: -${fmtBRL(num(venda.desconto))}` : '',
+    `TOTAL: ${fmtBRL(num(venda.total))}`,
+    ...pagamentos.results.map((pg) => `${String(pg.forma).toUpperCase()}: ${fmtBRL(num(pg.valor))}`),
+    linha(), 'OBRIGADO PELA PREFERENCIA!', linha(),
+  ].filter(Boolean).join('\n');
+  const destinos = await env.DB.prepare(
+    `SELECT nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
+     FROM impressora_agentes WHERE ativo=1 AND imprime_venda=1 ORDER BY id`
+  ).all();
+  const jobs = [];
+  for (const destino of destinos.results) {
+    const job = await enqueueGestorJob(env, c.user, {
+      conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
+      servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id,
+      impressoraDestino: destino.impressora_destino, taskType: 'PRINT_RECEIPT',
+    });
+    jobs.push({ impressora: destino.nome, ...job });
+  }
+  return c.json({ impressao: txt, venda_id: venda.id, jobs });
 }

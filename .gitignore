@@ -1,5 +1,8 @@
 node_modules
 gestor-impressora/release
+gestor-android/.gradle/
+gestor-android/.kotlin/
+gestor-android/app/build/
 data/
 .wrangler/
 dist/

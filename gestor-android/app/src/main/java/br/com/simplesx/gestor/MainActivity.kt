@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -33,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,9 +46,14 @@ import androidx.compose.ui.unit.dp
 import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.ConnectionType
 import br.com.simplesx.gestor.data.PrinterConfig
+import br.com.simplesx.gestor.data.PrinterProtocol
+import br.com.simplesx.gestor.data.TsplPaperMode
 import br.com.simplesx.gestor.network.SimplesXApi
+import br.com.simplesx.gestor.network.DeviceCategory
 import br.com.simplesx.gestor.print.EscPos
 import br.com.simplesx.gestor.print.PrinterTransport
+import br.com.simplesx.gestor.print.Tspl
+import br.com.simplesx.gestor.print.UsbPrinter
 import br.com.simplesx.gestor.sync.PrintSyncService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +85,9 @@ private fun GestorScreen() {
     var message by remember { mutableStateOf(config.lastStatus) }
     var bluetoothPrinters by remember { mutableStateOf(PrinterTransport.pairedBluetooth(context)) }
     var bluetoothExpanded by remember { mutableStateOf(false) }
+    var usbPrinters by remember { mutableStateOf(PrinterTransport.connectedUsb(context)) }
+    var usbExpanded by remember { mutableStateOf(false) }
+    var deployCategories by remember { mutableStateOf<List<DeviceCategory>>(emptyList()) }
     var openBluetoothAfterPermission by remember { mutableStateOf(false) }
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -112,6 +122,26 @@ private fun GestorScreen() {
         }
     }
 
+    fun refreshCategories() {
+        if (config.deviceToken.isBlank()) return
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = runCatching { SimplesXApi(config).printCategories() }
+            withContext(Dispatchers.Main) {
+                result.fold({ categories ->
+                    deployCategories = categories
+                    val synced = printers.map { saved ->
+                        saved.copy(categoryIds = categories.filter { it.printer.equals(saved.name, ignoreCase = true) }.map { it.id })
+                    }
+                    printers = synced
+                    config.printers = synced
+                    if (selectedPrinterIndex in synced.indices) printer = synced[selectedPrinterIndex]
+                }, { message = "Erro ao carregar categorias: ${it.message}" })
+            }
+        }
+    }
+
+    LaunchedEffect(config.deviceToken) { refreshCategories() }
+
     Scaffold(topBar = { TopAppBar(title = { Text("SimplesX Gestor") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusCard(serviceEnabled, config.deviceToken.isNotBlank(), message, config.lastJob)
@@ -133,7 +163,7 @@ private fun GestorScreen() {
                 } else Text("Aparelho pareado · ${config.deviceId}", color = MaterialTheme.colorScheme.primary)
             }
 
-            Section("Impressora ESC/POS") {
+            Section("Impressoras") {
                 Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado no SimplesX (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     printers.forEachIndexed { index, item ->
@@ -156,18 +186,57 @@ private fun GestorScreen() {
                         }, modifier = Modifier.weight(1f)) { Text("Excluir") }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { printer = printer.copy(connection = ConnectionType.NETWORK) }, modifier = Modifier.weight(1f)) { Text("Rede") }
                     Button(onClick = {
                         printer = printer.copy(connection = ConnectionType.BLUETOOTH)
                         requestPermissions(openBluetoothPicker = true)
                     }, modifier = Modifier.weight(1f)) { Text("Bluetooth") }
+                    Button(onClick = {
+                        printer = printer.copy(connection = ConnectionType.USB)
+                        usbPrinters = PrinterTransport.connectedUsb(context)
+                        usbExpanded = true
+                    }, modifier = Modifier.weight(1f)) { Text("USB") }
                 }
                 OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplesX") }, modifier = Modifier.fillMaxWidth())
+                Text("Protocolo", fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { printer = printer.copy(protocol = PrinterProtocol.ESC_POS) }, modifier = Modifier.weight(1f)) { Text("ESC/POS") }
+                    Button(onClick = { printer = printer.copy(protocol = PrinterProtocol.TSPL) }, modifier = Modifier.weight(1f)) { Text("TSPL") }
+                }
+                Text("Selecionado: ${if (printer.protocol == PrinterProtocol.TSPL) "TSPL (etiquetas)" else "ESC/POS (cupons)"}", style = MaterialTheme.typography.bodySmall)
+                if (printer.protocol == PrinterProtocol.TSPL) {
+                    Text("Tipo de papel TSPL", fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = { printer = printer.copy(tsplPaperMode = TsplPaperMode.CONTINUOUS) }, modifier = Modifier.weight(1f)) { Text("Contínuo") }
+                        OutlinedButton(onClick = { printer = printer.copy(tsplPaperMode = TsplPaperMode.GAP) }, modifier = Modifier.weight(1f)) { Text("Etiqueta") }
+                        OutlinedButton(onClick = { printer = printer.copy(tsplPaperMode = TsplPaperMode.BLACK_MARK) }, modifier = Modifier.weight(1f)) { Text("Marca") }
+                    }
+                    Text(
+                        when (printer.tsplPaperMode) {
+                            TsplPaperMode.CONTINUOUS -> "Contínuo selecionado: a altura acompanha somente o conteúdo."
+                            TsplPaperMode.GAP -> "Etiqueta com espaço selecionada: informe a altura física e o espaço."
+                            TsplPaperMode.BLACK_MARK -> "Papel com marca preta selecionado: informe a altura e o tamanho da marca."
+                        }, style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (printer.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
+                        OutlinedTextField(
+                            printer.labelHeightMm.toString(),
+                            { value -> value.toIntOrNull()?.takeIf { it in 10..500 }?.let { printer = printer.copy(labelHeightMm = it) } },
+                            label = { Text("Altura da etiqueta (mm)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            printer.gapMm.toString(),
+                            { value -> value.toIntOrNull()?.takeIf { it in 1..20 }?.let { printer = printer.copy(gapMm = it) } },
+                            label = { Text(if (printer.tsplPaperMode == TsplPaperMode.GAP) "Espaço entre etiquetas (mm)" else "Tamanho da marca preta (mm)") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
                 if (printer.connection == ConnectionType.NETWORK) {
                     OutlinedTextField(printer.host, { printer = printer.copy(host = it) }, label = { Text("IP da impressora") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(printer.port.toString(), { printer = printer.copy(port = it.toIntOrNull() ?: 9100) }, label = { Text("Porta") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                } else {
+                } else if (printer.connection == ConnectionType.BLUETOOTH) {
                     ExposedDropdownMenuBox(expanded = bluetoothExpanded, onExpandedChange = { expand ->
                         if (expand) requestPermissions(openBluetoothPicker = true) else bluetoothExpanded = false
                     }) {
@@ -181,6 +250,39 @@ private fun GestorScreen() {
                         }
                     }
                     Text("A impressora deve estar pareada nas configurações do Android.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    ExposedDropdownMenuBox(expanded = usbExpanded, onExpandedChange = { expand ->
+                        usbPrinters = PrinterTransport.connectedUsb(context)
+                        usbExpanded = expand
+                    }) {
+                        OutlinedTextField(
+                            printer.usbDeviceName.ifBlank { "Selecione uma impressora USB" }, {}, readOnly = true,
+                            label = { Text("Impressora USB conectada") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(usbExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        )
+                        ExposedDropdownMenu(usbExpanded, { usbExpanded = false }) {
+                            usbPrinters.forEach { item: UsbPrinter -> DropdownMenuItem(
+                                text = { Text("${item.name} · ${item.vendorId}:${item.productId}") },
+                                onClick = {
+                                    printer = printer.copy(
+                                        usbDeviceName = item.deviceName,
+                                        usbVendorId = item.vendorId,
+                                        usbProductId = item.productId,
+                                    )
+                                    usbExpanded = false
+                                    runCatching { PrinterTransport.requestUsbPermission(context, printer) }
+                                        .onFailure { message = "Erro: ${it.message}" }
+                                },
+                            ) }
+                        }
+                    }
+                    OutlinedButton(onClick = {
+                        usbPrinters = PrinterTransport.connectedUsb(context)
+                        runCatching { PrinterTransport.requestUsbPermission(context, printer) }
+                            .fold({ message = "Confirme a autorização USB do Android" }, { message = "Erro: ${it.message}" })
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Autorizar impressora USB") }
+                    Text("Use um adaptador USB OTG. O Android solicitará autorização para acessar a impressora.", style = MaterialTheme.typography.bodySmall)
                 }
                 Text("⚙ Tamanho do papel", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -201,6 +303,29 @@ private fun GestorScreen() {
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text("O comprimento acompanha somente o conteúdo impresso.", style = MaterialTheme.typography.bodySmall)
+                if (config.deviceToken.isNotBlank()) {
+                    Text("Categorias do deploy", fontWeight = FontWeight.Bold)
+                    Text("Os produtos destas categorias serão enviados para esta impressora.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { refreshCategories() }, modifier = Modifier.fillMaxWidth()) { Text("Atualizar categorias do deploy") }
+                    if (deployCategories.isEmpty()) {
+                        Text("Nenhuma categoria carregada.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Column(Modifier.fillMaxWidth()) {
+                            deployCategories.forEach { category ->
+                                Row(Modifier.fillMaxWidth().padding(start = if (category.parentId == null) 0.dp else 20.dp)) {
+                                    Checkbox(
+                                        checked = category.id in printer.categoryIds,
+                                        onCheckedChange = { checked ->
+                                            val ids = if (checked) printer.categoryIds + category.id else printer.categoryIds - category.id
+                                            printer = printer.copy(categoryIds = ids.distinct())
+                                        },
+                                    )
+                                    Text(if (category.parentId == null) category.name else "↳ ${category.name}", modifier = Modifier.padding(top = 12.dp))
+                                }
+                            }
+                        }
+                    }
+                }
                 Button(onClick = {
                     if (printer.name.isBlank()) {
                         message = "Informe o nome da rota da impressora"
@@ -224,8 +349,19 @@ private fun GestorScreen() {
                     if (printer.connection == ConnectionType.BLUETOOTH && !bluetoothAllowed) {
                         message = "Autorize Dispositivos próximos para imprimir por Bluetooth"
                         requestPermissions(openBluetoothPicker = true)
+                    } else if (printer.connection == ConnectionType.USB && printer.usbDeviceName.isBlank()) {
+                        message = "Selecione e autorize uma impressora USB"
                     } else {
-                        background { PrinterTransport.send(context, printer, EscPos.ticket("SIMPLESX - TESTE DE IMPRESSAO\nRede/Bluetooth OK", widthMm = printer.widthMm)); "Teste enviado com sucesso" }
+                        background {
+                            if (config.deviceToken.isNotBlank()) SimplesXApi(config).updatePrinterCategories(printer)
+                            val test = "SIMPLESX - TESTE DE IMPRESSAO\n${printer.protocol.name} · Rede/Bluetooth OK"
+                            val bytes = if (printer.protocol == PrinterProtocol.TSPL) Tspl.label(
+                                test, printer.widthMm, paperMode = printer.tsplPaperMode,
+                                configuredHeightMm = printer.labelHeightMm, gapMm = printer.gapMm,
+                            ) else EscPos.ticket(test, widthMm = printer.widthMm)
+                            PrinterTransport.send(context, printer, bytes)
+                            "Teste ${printer.protocol.name} enviado com sucesso"
+                        }
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Salvar rota e imprimir teste") }
                 OutlinedButton(onClick = {

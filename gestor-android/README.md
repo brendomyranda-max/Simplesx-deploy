@@ -1,16 +1,18 @@
 # SimplesX Gestor para Android
 
 Aplicativo Android que recebe trabalhos da fila segura do SimplesX e imprime em
-impressoras térmicas ESC/POS por:
+impressoras térmicas ESC/POS e impressoras de etiquetas TSPL por:
 
 - rede TCP/IP (porta `9100` por padrão);
-- Bluetooth clássico SPP/RFCOMM.
+- Bluetooth clássico SPP/RFCOMM;
+- USB Host/OTG com envio direto à interface da impressora.
 
 ## Requisitos
 
 - Android 8.0 ou superior;
 - Android Studio com JDK 17 e Android SDK 35;
-- impressora ESC/POS de rede ou Bluetooth clássico (não apenas BLE).
+- impressora ESC/POS ou TSPL de rede ou Bluetooth clássico (não apenas BLE).
+- para USB no Android, adaptador OTG e aparelho com suporte a USB Host.
 
 ## Compilar
 
@@ -22,10 +24,16 @@ Gradle e use **Build → Build APK(s)**. O APK de desenvolvimento será criado e
 
 1. No SimplesX, abra **Impressoras → Gestor Android** e gere o pareamento.
 2. Digite no aplicativo o ID e o código exibidos (expiram em dez minutos).
-3. Escolha **Rede** e informe IP/porta, ou pareie a impressora nas configurações
+3. Escolha o protocolo **ESC/POS** (cupom) ou **TSPL** (etiqueta).
+4. Escolha **Rede** e informe IP/porta, ou pareie a impressora nas configurações
    do Android e escolha **Bluetooth**.
-4. Toque em **Salvar e imprimir teste**.
-5. Ative **Receber impressões** e permita notificações/Bluetooth.
+5. Toque em **Salvar rota e imprimir teste**.
+6. Ative **Receber impressões** e permita notificações/Bluetooth.
+
+Em rotas TSPL, escolha o tipo de papel: **Contínuo** usa altura automática e
+avança somente o conteúdo; **Etiqueta** usa o espaço (GAP) e a altura física da
+etiqueta; **Marca** usa o sensor de marca preta. Uma escolha incorreta pode fazer
+a impressora avançar várias etiquetas procurando o próximo espaço ou marca.
 
 O serviço mostra uma notificação permanente porque o Android pode suspender
 aplicativos em segundo plano. Em aparelhos com otimização agressiva de bateria,

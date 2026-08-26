@@ -99,6 +99,20 @@ export function PdvPage() {
   const total = Math.max(0, subtotal - descValor);
   const totalItens = useMemo(() => cart.reduce((s, i) => s + i.qtd, 0), [cart]);
 
+  const imprimirComprovante = async () => {
+    if (!comprovante?.venda_id) return printReceipt(comprovanteRef.current);
+    try {
+      const result = await vendaApi.imprimir(comprovante.venda_id);
+      if (result.jobs?.length) toast('success', `Cupom enviado para ${result.jobs.length} impressora(s)`);
+      else {
+        toast('info', 'Nenhuma impressora configurada para Cupom de venda; abrindo impressão local');
+        printReceipt(comprovanteRef.current);
+      }
+    } catch (error: any) {
+      toast('error', error?.error || 'Não foi possível enviar o cupom ao gestor');
+    }
+  };
+
   const disponivel = (p: Produto) => (p.tipo === 'composto' ? (p.estoque_possivel ?? 0) : p.estoque_atual);
 
   const adicionar = (p: Produto) => {
@@ -592,7 +606,7 @@ export function PdvPage() {
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setComprovante(null)}>Fechar</Button>
               <Button variant="secondary" loading={salvando} icon={<RotateCcw className="h-4 w-4" />} onClick={reabrirVenda}>Reabrir venda</Button>
-              <Button icon={<Printer className="h-4 w-4" />} onClick={() => printReceipt(comprovanteRef.current)}>Imprimir</Button>
+              <Button icon={<Printer className="h-4 w-4" />} onClick={imprimirComprovante}>Imprimir</Button>
             </div>
           </div>
         )}

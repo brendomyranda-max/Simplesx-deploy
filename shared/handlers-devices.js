@@ -40,11 +40,15 @@ function jsonLimit(value, maxBytes = 64 * 1024) {
 
 function printerList(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 50).map((item) => ({
-    name: text(item?.name || item?.nome, 120, 'Nome da impressora', true),
-    connection: text(item?.connection || item?.conexao, 30, 'Conexão') || 'unknown',
-    width_mm: [58, 80].includes(num(item?.width_mm || item?.largura_mm)) ? num(item?.width_mm || item?.largura_mm) : 80,
-  }));
+  return value.slice(0, 50).map((item) => {
+    const width = num(item?.width_mm || item?.largura_mm);
+    return {
+      name: text(item?.name || item?.nome, 120, 'Nome da impressora', true),
+      connection: text(item?.connection || item?.conexao, 30, 'Conexão') || 'unknown',
+      protocol: text(item?.protocol || item?.protocolo, 30, 'Protocolo') || 'unknown',
+      width_mm: width >= 20 && width <= 320 ? width : 80,
+    };
+  });
 }
 
 function rejectSensitivePaymentData(value, path = '') {
@@ -214,6 +218,61 @@ export async function heartbeatDeviceHandler(c, env) {
   return c.json({ ok: true, server_time: now(), token_expires_at: device.token_expira_em });
 }
 
+export async function devicePrintConfigHandler(c, env) {
+  const device = await authenticateDevice(c, env);
+  const categories = await env.DB.prepare(
+    `SELECT c.id, c.nome, c.categoria_pai_id, c.ativo, c.impressora_agente_id,
+            ia.impressora_destino, ia.servidor_id
+     FROM categorias c
+     LEFT JOIN impressora_agentes ia ON ia.id=c.impressora_agente_id
+     WHERE c.estabelecimento_id=? AND c.ativo=1
+     ORDER BY COALESCE(c.categoria_pai_id,c.id), c.categoria_pai_id IS NOT NULL, c.nome`
+  ).bind(device.estabelecimento_id).all();
+  return c.json({
+    categories: categories.results.map((row) => ({
+      id: row.id, name: row.nome, parent_id: row.categoria_pai_id,
+      printer: String(row.servidor_id || '') === String(device.id) ? row.impressora_destino : null,
+    })),
+  });
+}
+
+export async function updateDevicePrinterCategoriesHandler(c, env) {
+  const device = await authenticateDevice(c, env);
+  const body = await c.req.json();
+  const printerName = text(body?.printer || body?.impressora, 120, 'Impressora', true);
+  const categoryIds = [...new Set((Array.isArray(body?.category_ids) ? body.category_ids : [])
+    .map(num).filter((id) => id > 0))].slice(0, 500);
+  const current = now();
+  let route = await env.DB.prepare(
+    `SELECT id FROM impressora_agentes WHERE estabelecimento_id=? AND servidor_tipo='android'
+     AND servidor_id=? AND lower(impressora_destino)=lower(?) LIMIT 1`
+  ).bind(device.estabelecimento_id, device.id, printerName).first();
+  if (!route) {
+    const created = await env.DB.prepare(
+      `INSERT INTO impressora_agentes
+       (estabelecimento_id,nome,ip,porta,tipo,protocolo,categorias,imprime_pedidos,imprime_conta,largura_mm,
+        servidor_tipo,servidor_id,impressora_destino,ativo,criado_em)
+       VALUES (?,?, '',9100,'impressora','raw','[]',1,0,?,'android',?,?,1,?)`
+    ).bind(device.estabelecimento_id, printerName, num(body?.width_mm) || 80, device.id, printerName, current).run();
+    route = { id: created.meta.last_row_id };
+  }
+  const valid = categoryIds.length ? await env.DB.prepare(
+    `SELECT id FROM categorias WHERE estabelecimento_id=? AND ativo=1 AND id IN (${categoryIds.map(() => '?').join(',')})`
+  ).bind(device.estabelecimento_id, ...categoryIds).all() : { results: [] };
+  const validIds = valid.results.map((row) => num(row.id));
+  await env.DB.prepare('UPDATE categorias SET impressora_agente_id=NULL WHERE estabelecimento_id=? AND impressora_agente_id=?')
+    .bind(device.estabelecimento_id, route.id).run();
+  for (const categoryId of validIds) {
+    await env.DB.prepare('UPDATE categorias SET impressora_agente_id=? WHERE estabelecimento_id=? AND id=?')
+      .bind(route.id, device.estabelecimento_id, categoryId).run();
+  }
+  await env.DB.prepare('UPDATE impressora_agentes SET categorias=?,largura_mm=?,ativo=1 WHERE id=? AND estabelecimento_id=?')
+    .bind(JSON.stringify(validIds), num(body?.width_mm) || 80, route.id, device.estabelecimento_id).run();
+  await deviceAudit(env.DB, device.estabelecimento_id, device.id, 'printer_categories_updated', 'device', device.id,
+    { printer: printerName, category_ids: validIds });
+  return c.json({ ok: true, route_id: route.id, category_ids: validIds });
+}
+
 export async function createDeviceTask(env, user, body) {
   const tenantId = estabelecimentoId(env);
   const deviceId = text(body?.device_id, 100, 'deviceId', true);
@@ -381,7 +440,7 @@ export async function listDevicesHandler(c, env) {
      FROM devices WHERE revogado_em IS NULL ORDER BY nome`
   ).all();
   return c.json(rows.results.map((row) => {
-    const connected = row.ultima_conexao && Date.now() - new Date(row.ultima_conexao).getTime() < 20_000;
+    const connected = row.ultima_conexao && Date.now() - new Date(row.ultima_conexao).getTime() < 90_000;
     return { ...row, status: connected ? row.status : 'offline', printers: JSON.parse(row.printers_json || '[]') };
   }));
 }

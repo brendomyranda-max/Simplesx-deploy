@@ -7,8 +7,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 data class DeviceTask(val id: String, val type: String, val leaseId: String, val payload: JSONObject)
+data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
 
 class SimplesXApi(private val config: AppConfig) {
+    private val appVersion = "1.3.0"
     private fun request(path: String, body: JSONObject, authenticated: Boolean = true): JSONObject {
         val base = config.deployUrl.trimEnd('/')
         val parsed = URL(base)
@@ -42,17 +44,18 @@ class SimplesXApi(private val config: AppConfig) {
         val response = request("/device/pair", JSONObject()
             .put("pairing_id", pairingId.trim()).put("code", code.trim())
             .put("device_id", config.deviceId).put("name", config.deviceName)
-            .put("platform", "android").put("version", "1.1.2"), authenticated = false)
+            .put("platform", "android").put("version", appVersion), authenticated = false)
         config.deviceToken = response.getString("device_token")
         config.tokenExpiresAt = response.optString("token_expires_at")
     }
 
     fun heartbeat(status: String = "online", error: String? = null) {
-        request("/device/heartbeat", JSONObject().put("status", status).put("version", "1.1.2").apply {
+        request("/device/heartbeat", JSONObject().put("status", status).put("version", appVersion).apply {
             if (error != null) put("error", error.take(1000))
             put("printers", JSONArray().apply {
                 config.printers.forEach { printer -> put(JSONObject()
                     .put("name", printer.name).put("connection", printer.connection.name.lowercase())
+                    .put("protocol", printer.protocol.name.lowercase())
                     .put("width_mm", printer.widthMm)) }
             })
         })
@@ -64,6 +67,23 @@ class SimplesXApi(private val config: AppConfig) {
             val item = tasks.getJSONObject(index)
             DeviceTask(item.getString("id"), item.getString("tipo"), item.getString("lease_id"), item.optJSONObject("payload") ?: JSONObject())
         }
+    }
+
+    fun printCategories(): List<DeviceCategory> {
+        val categories = request("/device/print-config", JSONObject()).optJSONArray("categories") ?: JSONArray()
+        return (0 until categories.length()).map { index ->
+            val item = categories.getJSONObject(index)
+            DeviceCategory(
+                item.getInt("id"), item.getString("name"), item.optInt("parent_id").takeIf { it > 0 },
+                item.optString("printer").takeIf { it.isNotBlank() },
+            )
+        }
+    }
+
+    fun updatePrinterCategories(printer: br.com.simplesx.gestor.data.PrinterConfig) {
+        request("/device/printer-categories", JSONObject()
+            .put("printer", printer.name).put("width_mm", printer.widthMm)
+            .put("category_ids", JSONArray(printer.categoryIds)))
     }
 
     fun taskStatus(task: DeviceTask, status: String, code: String? = null, error: String? = null, resultPrinter: String? = null) {

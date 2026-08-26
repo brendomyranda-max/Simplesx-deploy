@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone } from 'lucide-react';
+import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone, Trash2 } from 'lucide-react';
 import { AnimatedPage } from '@/components/anim';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
 import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi } from '@/lib/api';
@@ -125,6 +125,21 @@ export function ImpressorasPage() {
     }
   };
 
+  const removerDevice = async (device: any) => {
+    if (!window.confirm(`Excluir o gestor Android "${device.nome}"? O aplicativo precisará ser pareado novamente.`)) return;
+    try {
+      await deviceApi.remove(device.id);
+      if (gestorDeviceId === device.id) {
+        await configApi.update({ gestor_device_id: '' });
+        setGestorDeviceId('');
+      }
+      setDevices((current) => current.filter((item) => item.id !== device.id));
+      toast('success', 'Gestor Android excluído');
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível excluir o gestor Android');
+    }
+  };
+
   const selecionarDevice = async (deviceId: string) => {
     try {
       await configApi.update({ gestor_device_id: deviceId });
@@ -133,6 +148,33 @@ export function ImpressorasPage() {
     } catch (err: any) {
       toast('error', err?.error || 'Não foi possível salvar o destino');
     }
+  };
+
+  const selecionarFinalidade = async (campo: 'imprime_conta' | 'imprime_venda' | 'imprime_validade', routeId: string) => {
+    const selecionado = Number(routeId) || 0;
+    const rotasAfetadas = agentes.filter((agente) => agente[campo] || agente.id === selecionado);
+    try {
+      await Promise.all(rotasAfetadas.map((agente) => impressoraApi.atualizarAgente(agente.id, {
+        ...agente,
+        categorias: agente.categorias || [],
+        [campo]: agente.id === selecionado,
+      })));
+      setAgentes((atuais) => atuais.map((agente) => ({ ...agente, [campo]: agente.id === selecionado })));
+      const nomes = {
+        imprime_conta: 'Fechamento de conta',
+        imprime_venda: 'Cupom de venda',
+        imprime_validade: 'Controle de validade',
+      };
+      toast('success', selecionado ? `${nomes[campo]} configurado` : `${nomes[campo]} sem impressão automática`);
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível salvar o destino de impressão');
+      loadAll();
+    }
+  };
+
+  const finalidadeSelecionada = (campo: 'imprime_conta' | 'imprime_venda' | 'imprime_validade') => {
+    const selecionadas = agentes.filter((agente) => agente[campo]);
+    return selecionadas.length === 1 ? String(selecionadas[0].id) : '';
   };
 
   const salvarGestor = async () => {
@@ -169,6 +211,10 @@ export function ImpressorasPage() {
 
   useEffect(() => {
     loadAll();
+    const timer = window.setInterval(() => {
+      deviceApi.list().then(setDevices).catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const salvar = async (e: React.FormEvent) => {
@@ -190,6 +236,8 @@ export function ImpressorasPage() {
           categorias: categoriasSelecionadas,
           imprime_pedidos: form.imprime_pedidos !== false,
           imprime_conta: !!form.imprime_conta,
+          imprime_venda: !!form.imprime_venda,
+          imprime_validade: !!form.imprime_validade,
           largura_mm: Number(form.largura_mm) === 58 ? 58 : 80,
           servidor_tipo: form.servidor_tipo || null,
           servidor_id: form.servidor_id || null,
@@ -214,7 +262,7 @@ export function ImpressorasPage() {
 
   const abrir = () => {
     setEditandoAgente(null);
-    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, largura_mm: '80', altura_mm: '40', servidor_tipo: '', servidor_id: '', impressora_destino: '' });
+    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, imprime_venda: false, imprime_validade: false, largura_mm: '80', altura_mm: '40', servidor_tipo: '', servidor_id: '', impressora_destino: '' });
     setModal(true);
   };
 
@@ -226,6 +274,8 @@ export function ImpressorasPage() {
       categorias: categorias.filter((cat) => cat.impressora_herdada_id === a.id).map((cat) => cat.id),
       imprime_pedidos: a.imprime_pedidos !== false,
       imprime_conta: !!a.imprime_conta,
+      imprime_venda: !!a.imprime_venda,
+      imprime_validade: !!a.imprime_validade,
       largura_mm: String(a.largura_mm || 80),
     });
     setModal(true);
@@ -258,7 +308,7 @@ export function ImpressorasPage() {
           </div>
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
-            <p className="text-sm text-slate-500">Baixe o gestor correspondente ao aparelho que fará a ponte com as impressoras. Android 1.1.0.</p>
+            <p className="text-sm text-slate-500">Baixe o gestor correspondente ao aparelho que fará a ponte com as impressoras. Android 1.3.0.</p>
           </div>
           <a
             className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
@@ -332,16 +382,52 @@ export function ImpressorasPage() {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-slate-800">{device.nome}</p>
                   <p className="truncate text-xs text-slate-500">{device.plataforma} · {device.id}</p>
+                  <p className="text-xs text-slate-400">
+                    {device.ultima_conexao ? `Última conexão: ${new Date(device.ultima_conexao).toLocaleString('pt-BR')}` : 'Nunca conectou'}
+                  </p>
                 </div>
                 <Badge color={device.status === 'online' ? 'green' : device.status === 'error' ? 'red' : 'slate'}>{device.status}</Badge>
                 <Button size="sm" variant="secondary" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => testarDevice(device)}>
                   Testar
+                </Button>
+                <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerDevice(device)}>
+                  Excluir
                 </Button>
               </div>
             ))}
             </div>
           </div>
         )}
+      </Card>
+
+      <Card className="mb-4 border-violet-200 p-4">
+        <div className="mb-4">
+          <p className="font-extrabold text-slate-800">Destinos por finalidade</p>
+          <p className="mt-1 text-sm text-slate-500">Escolha diretamente qual impressora recebe cada tipo de documento.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {([
+            ['imprime_conta', 'Fechamento de conta', 'Conta das mesas e comandas'],
+            ['imprime_venda', 'Cupom de venda', 'Comprovante das vendas do PDV'],
+            ['imprime_validade', 'Controle de validade', 'Etiquetas de abertura e vencimento'],
+          ] as const).map(([campo, titulo, descricao]) => {
+            const quantidade = agentes.filter((agente) => agente[campo]).length;
+            return (
+              <Field key={campo} label={titulo}>
+                <Select value={finalidadeSelecionada(campo)} onChange={(e) => selecionarFinalidade(campo, e.target.value)}>
+                  <option value="">Não imprimir automaticamente</option>
+                  {agentes.filter((agente) => agente.ativo !== 0).map((agente) => (
+                    <option key={agente.id} value={agente.id}>
+                      {agente.nome}{agente.impressora_destino ? ` → ${agente.impressora_destino}` : ''}
+                    </option>
+                  ))}
+                </Select>
+                <p className="mt-1 text-xs text-slate-400">{descricao}</p>
+                {quantidade > 1 && <p className="mt-1 text-xs font-semibold text-amber-600">Há {quantidade} rotas antigas selecionadas. Escolha uma para corrigir.</p>}
+              </Field>
+            );
+          })}
+        </div>
       </Card>
 
       <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -524,6 +610,8 @@ export function ImpressorasPage() {
                           <td className="td">
                             <div className="space-y-1">
                               {a.imprime_conta ? <Badge color="green">Imprime conta</Badge> : '—'}
+                              {a.imprime_venda && <Badge color="blue">Cupom de venda</Badge>}
+                              {a.imprime_validade && <Badge color="amber">Controle de validade</Badge>}
                               {a.servidor_tipo && <p className="text-xs text-slate-500">{a.servidor_tipo === 'android' ? 'Android' : 'Desktop'} → {a.impressora_destino || 'padrão do servidor'}</p>}
                             </div>
                           </td>
@@ -627,6 +715,8 @@ export function ImpressorasPage() {
                 <div className="space-y-2 pt-6">
                   <Toggle checked={form.imprime_pedidos !== false} onChange={(v) => setForm({ ...form, imprime_pedidos: v })} label="Receber pedidos das categorias" />
                   <Toggle checked={!!form.imprime_conta} onChange={(v) => setForm({ ...form, imprime_conta: v })} label="Imprimir fechamento de conta" />
+                  <Toggle checked={!!form.imprime_venda} onChange={(v) => setForm({ ...form, imprime_venda: v })} label="Imprimir cupom de venda (PDV)" />
+                  <Toggle checked={!!form.imprime_validade} onChange={(v) => setForm({ ...form, imprime_validade: v })} label="Imprimir controle de validade" />
                 </div>
               </div>
             </>
