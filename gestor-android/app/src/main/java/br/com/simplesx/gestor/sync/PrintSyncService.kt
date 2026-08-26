@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import br.com.simplesx.gestor.MainActivity
 import br.com.simplesx.gestor.data.AppConfig
@@ -32,10 +33,14 @@ class PrintSyncService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
     private lateinit var config: AppConfig
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         config = AppConfig(this)
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SimplesX:PrintSync")
+            .apply { acquire() }
         createChannel()
         startForeground(NOTIFICATION_ID, notification("Conectando ao SimplesX…"))
     }
@@ -133,7 +138,13 @@ class PrintSyncService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
     }
 
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    override fun onDestroy() {
+        PrinterTransport.closeConnections()
+        wakeLock?.takeIf { it.isHeld }?.release()
+        wakeLock = null
+        scope.cancel()
+        super.onDestroy()
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {

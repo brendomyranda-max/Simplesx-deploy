@@ -308,7 +308,7 @@ export function ImpressorasPage() {
           </div>
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
-            <p className="text-sm text-slate-500">Baixe o gestor correspondente ao aparelho que fará a ponte com as impressoras. Gestores 1.4.0 com ESC/POS, TSPL, ZPL, CPCL e EPL.</p>
+            <p className="text-sm text-slate-500">Baixe o gestor correspondente ao aparelho que fará a ponte com as impressoras. Gestores 1.4.1 com ESC/POS, TSPL, ZPL, CPCL e EPL.</p>
           </div>
           <a
             className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"

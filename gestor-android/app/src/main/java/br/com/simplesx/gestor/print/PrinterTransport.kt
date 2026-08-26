@@ -3,6 +3,7 @@ package br.com.simplesx.gestor.print
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.app.PendingIntent
 import android.content.Intent
@@ -22,6 +23,9 @@ data class UsbPrinter(val name: String, val deviceName: String, val vendorId: In
 
 object PrinterTransport {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+    private val bluetoothLock = Any()
+    private var bluetoothSocket: BluetoothSocket? = null
+    private var bluetoothAddress: String? = null
 
     fun pairedBluetooth(context: Context): List<PairedPrinter> {
         if (Build.VERSION.SDK_INT >= 31 && context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return emptyList()
@@ -77,11 +81,39 @@ object PrinterTransport {
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             ?: throw IllegalStateException("Bluetooth não disponível neste aparelho")
         check(adapter.isEnabled) { "Ative o Bluetooth" }
-        val device = adapter.getRemoteDevice(config.bluetoothAddress)
-        device.createRfcommSocketToServiceRecord(sppUuid).use { socket ->
-            socket.connect()
-            socket.outputStream.use { it.write(bytes); it.flush() }
+        val address = config.bluetoothAddress.uppercase()
+        val device = adapter.getRemoteDevice(address)
+        synchronized(bluetoothLock) {
+            var lastError: Exception? = null
+            repeat(3) { attempt ->
+                try {
+                    if (bluetoothAddress != address || bluetoothSocket?.isConnected != true) {
+                        closeBluetoothLocked()
+                        adapter.cancelDiscovery()
+                        bluetoothSocket = if (attempt < 2) device.createRfcommSocketToServiceRecord(sppUuid)
+                        else device.createInsecureRfcommSocketToServiceRecord(sppUuid)
+                        bluetoothSocket!!.connect()
+                        bluetoothAddress = address
+                    }
+                    bluetoothSocket!!.outputStream.apply { write(bytes); flush() }
+                    Thread.sleep(150)
+                    return
+                } catch (error: Exception) {
+                    lastError = error
+                    closeBluetoothLocked()
+                    if (attempt < 2) Thread.sleep(350L * (attempt + 1))
+                }
+            }
+            throw IllegalStateException("Bluetooth desconectado após 3 tentativas: ${lastError?.message ?: "falha desconhecida"}", lastError)
         }
+    }
+
+    fun closeConnections() = synchronized(bluetoothLock) { closeBluetoothLocked() }
+
+    private fun closeBluetoothLocked() {
+        runCatching { bluetoothSocket?.close() }
+        bluetoothSocket = null
+        bluetoothAddress = null
     }
 
     private fun sendUsb(context: Context, config: PrinterConfig, bytes: ByteArray) {
