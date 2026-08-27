@@ -374,8 +374,8 @@ export function ValidadePage() {
         <div className="mb-4 rounded-xl bg-slate-50 p-3 text-center">
           <p className="text-xs text-slate-400">Impressão térmica · largura da bobina configurada em Impressoras</p>
         </div>
-        <div ref={printRef} className="mx-auto w-60 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4">
-          <pre className="whitespace-pre-wrap text-slate-800">{etiqueta?.impressao}</pre>
+        <div ref={printRef} data-print-layout="validity-label" className="mx-auto flex w-full max-w-60 justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center font-mono text-[clamp(10px,2.5vw,13px)] leading-[1.35]">
+          <pre className="m-0 w-full whitespace-pre-wrap text-center text-slate-800">{etiqueta?.impressao}</pre>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setEtiqueta(null)}>Fechar</Button>

@@ -44,7 +44,7 @@ function setPageSize(width: Bobina) {
     s.id = PAGE_STYLE_ID;
     document.head.appendChild(s);
   }
-  s.textContent = `@media print { @page { size: ${width === '58' ? '48mm' : '72mm'} auto; margin: 0; } }`;
+  s.textContent = `@media print { @page { size: ${width}mm auto; margin: 0; } }`;
 }
 
 /**
@@ -81,6 +81,12 @@ export async function printReceipt(
 
   setPageSize(width);
   document.body.classList.toggle('print-58', width === '58');
+  const paperMm = Number(width);
+  clone.style.setProperty('--print-paper-width', `${paperMm}mm`);
+  clone.style.setProperty('--print-content-width', `${paperMm - 4}mm`);
+  clone.style.setProperty('--print-padding', `${Math.max(2, paperMm * 0.04).toFixed(1)}mm`);
+  clone.style.setProperty('--print-font-size', `${Math.max(10, Math.min(14, paperMm * 0.17)).toFixed(1)}px`);
+  document.body.appendChild(clone);
 
   const cleanup = () => {
     clone.remove();

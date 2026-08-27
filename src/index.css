@@ -96,14 +96,16 @@ input[type='number']::-webkit-inner-spin-button {
 
   body > .print-area {
     position: absolute;
-    left: 0;
+    left: 50%;
     top: 0;
-    margin: 0 !important;
+    transform: translateX(-50%);
+    margin: 0 auto !important;
     box-sizing: border-box;
-    width: 72mm !important;
-    padding: 3mm;
+    width: var(--print-content-width, 76mm) !important;
+    max-width: var(--print-paper-width, 80mm) !important;
+    padding: var(--print-padding, 3mm);
     font-family: 'Courier New', Consolas, monospace !important;
-    font-size: 12px !important;
+    font-size: var(--print-font-size, 13.6px) !important;
     line-height: 1.4;
     color: #000 !important;
     background: #fff !important;
@@ -112,8 +114,7 @@ input[type='number']::-webkit-inner-spin-button {
   }
 
   body.print-58 > .print-area {
-    width: 48mm !important;
-    font-size: 10px !important;
+    width: var(--print-content-width, 54mm) !important;
   }
 
   body > .print-area * {
@@ -136,5 +137,15 @@ input[type='number']::-webkit-inner-spin-button {
   body > .print-area pre * {
     white-space: pre-wrap !important;
     overflow: visible !important;
+  }
+
+  body > .print-area[data-print-layout='validity-label'],
+  body > .print-area[data-print-layout='validity-label'] pre {
+    text-align: center !important;
+  }
+
+  body > .print-area[data-print-layout='validity-label'] pre {
+    width: 100% !important;
+    margin: 0 auto !important;
   }
 }
