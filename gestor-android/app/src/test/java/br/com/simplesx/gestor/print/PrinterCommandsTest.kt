@@ -66,4 +66,20 @@ class PrinterCommandsTest {
         }
         assertEquals("ESC/POS (cupons)", PrinterCommands.displayName(PrinterProtocol.ESC_POS))
     }
+
+    @Test fun centeredEscPosAddsAndRestoresAlignment() {
+        val bytes = PrinterCommands.document("Validade", config(PrinterProtocol.ESC_POS), centered = true)
+        assertTrue(bytes.indexOfSubsequence(byteArrayOf(0x1B, 0x61, 0x01)) >= 0)
+        assertTrue(bytes.indexOfSubsequence(byteArrayOf(0x1B, 0x61, 0x00)) >= 0)
+    }
+
+    @Test fun centeredLabelProtocolsUseCenteredCoordinates() {
+        assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.TSPL), centered = true).toString(Charsets.US_ASCII).contains("TEXT 213,"))
+        assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.ZPL), centered = true).toString(Charsets.US_ASCII).contains("^FB463,1,0,C,0"))
+        assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.CPCL), centered = true).toString(Charsets.US_ASCII).contains("TEXT 0 2 213 "))
+        assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.EPL), centered = true).toString(Charsets.US_ASCII).contains("A213,"))
+    }
+
+    private fun ByteArray.indexOfSubsequence(value: ByteArray): Int =
+        indices.firstOrNull { start -> start + value.size <= size && value.indices.all { this[start + it] == value[it] } } ?: -1
 }

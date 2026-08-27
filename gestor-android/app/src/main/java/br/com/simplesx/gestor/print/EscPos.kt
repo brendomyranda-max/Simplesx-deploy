@@ -4,7 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 
 object EscPos {
-    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58): ByteArray {
+    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false): ByteArray {
         val wrapped = wrapToWidth(text, widthMm)
         val normalized = Normalizer.normalize(wrapped.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD)
             .replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "")
@@ -13,7 +13,9 @@ object EscPos {
             .trimEnd()
         return ByteArrayOutputStream().use { out ->
             out.write(byteArrayOf(0x1B, 0x40))
+            if (centered) out.write(byteArrayOf(0x1B, 0x61, 0x01))
             out.write((normalized + "\n").toByteArray(Charsets.US_ASCII))
+            if (centered) out.write(byteArrayOf(0x1B, 0x61, 0x00))
             if (feed > 0) out.write(byteArrayOf(0x1B, 0x64, feed.coerceIn(0, 255).toByte()))
             if (cut) out.write(byteArrayOf(0x1D, 0x56, 0x00))
             out.toByteArray()

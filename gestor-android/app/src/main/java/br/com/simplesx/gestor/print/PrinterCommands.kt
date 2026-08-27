@@ -5,15 +5,15 @@ import br.com.simplesx.gestor.data.PrinterProtocol
 import java.text.Normalizer
 
 object PrinterCommands {
-    fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = 3, cut: Boolean = true): ByteArray =
+    fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = 3, cut: Boolean = true, centered: Boolean = false): ByteArray =
         when (printer.protocol) {
-            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm)
+            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered)
             PrinterProtocol.TSPL -> Tspl.label(
-                text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi,
+                text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered,
             )
-            PrinterProtocol.ZPL -> zpl(text, printer, copies)
-            PrinterProtocol.CPCL -> cpcl(text, printer, copies)
-            PrinterProtocol.EPL -> epl(text, printer, copies)
+            PrinterProtocol.ZPL -> zpl(text, printer, copies, centered)
+            PrinterProtocol.CPCL -> cpcl(text, printer, copies, centered)
+            PrinterProtocol.EPL -> epl(text, printer, copies, centered)
         }
 
     fun displayName(protocol: PrinterProtocol): String = when (protocol) {
@@ -24,7 +24,7 @@ object PrinterCommands {
         PrinterProtocol.EPL -> "EPL/EPL2 (etiquetas antigas)"
     }
 
-    private fun zpl(text: String, printer: PrinterConfig, copies: Int): ByteArray {
+    private fun zpl(text: String, printer: PrinterConfig, copies: Int, centered: Boolean): ByteArray {
         val lines = lines(text, printer.widthMm)
         val widthDots = mmToDots(printer.widthMm, printer.dpi)
         val heightDots = labelHeightDots(printer, lines.size)
@@ -35,13 +35,14 @@ object PrinterCommands {
         return buildString {
             append("^XA\n^PW$widthDots\n^LL$heightDots\n^LH0,0\n")
             lines.forEachIndexed { index, line ->
-                append("^FO$margin,${margin + index * lineHeight}^A0N,$fontSize,$fontSize^FD${line.replace("^", " ").replace("~", " ")}^FS\n")
+                if (centered) append("^FO0,${margin + index * lineHeight}^FB$widthDots,1,0,C,0^A0N,$fontSize,$fontSize^FD${line.replace("^", " ").replace("~", " ")}^FS\n")
+                else append("^FO$margin,${margin + index * lineHeight}^A0N,$fontSize,$fontSize^FD${line.replace("^", " ").replace("~", " ")}^FS\n")
             }
             append("^PQ${copies.coerceIn(1, 20)}\n^XZ\n")
         }.toByteArray(Charsets.US_ASCII)
     }
 
-    private fun cpcl(text: String, printer: PrinterConfig, copies: Int): ByteArray {
+    private fun cpcl(text: String, printer: PrinterConfig, copies: Int, centered: Boolean): ByteArray {
         val lines = lines(text, printer.widthMm)
         val heightDots = labelHeightDots(printer, lines.size)
         val dpi = printer.dpi.coerceIn(100, 1200)
@@ -51,12 +52,15 @@ object PrinterCommands {
         return buildString {
             append("! 0 $dpi $dpi $heightDots ${copies.coerceIn(1, 20)}\r\n")
             append("PW ${mmToDots(printer.widthMm, printer.dpi)}\r\n")
-            lines.forEachIndexed { index, line -> append("TEXT 0 2 $margin ${margin + index * lineHeight} $line\r\n") }
+            lines.forEachIndexed { index, line ->
+                val x = if (centered) ((mmToDots(printer.widthMm, dpi) - line.length * 12 * scale) / 2).toInt().coerceAtLeast(margin) else margin
+                append("TEXT 0 2 $x ${margin + index * lineHeight} $line\r\n")
+            }
             append("FORM\r\nPRINT\r\n")
         }.toByteArray(Charsets.US_ASCII)
     }
 
-    private fun epl(text: String, printer: PrinterConfig, copies: Int): ByteArray {
+    private fun epl(text: String, printer: PrinterConfig, copies: Int, centered: Boolean): ByteArray {
         val lines = lines(text, printer.widthMm)
         val heightDots = labelHeightDots(printer, lines.size)
         val scale = printer.dpi / 203.0
@@ -65,7 +69,8 @@ object PrinterCommands {
         return buildString {
             append("N\nq${mmToDots(printer.widthMm, printer.dpi)}\nQ$heightDots,${mmToDots(printer.gapMm, printer.dpi)}\n")
             lines.forEachIndexed { index, line ->
-                append("A$margin,${margin + index * lineHeight},0,3,1,1,N,\"${line.replace("\\", " ").replace("\"", "'")}\"\n")
+                val x = if (centered) ((mmToDots(printer.widthMm, printer.dpi) - line.length * 12 * scale) / 2).toInt().coerceAtLeast(margin) else margin
+                append("A$x,${margin + index * lineHeight},0,3,1,1,N,\"${line.replace("\\", " ").replace("\"", "'")}\"\n")
             }
             append("P${copies.coerceIn(1, 20)}\n")
         }.toByteArray(Charsets.US_ASCII)

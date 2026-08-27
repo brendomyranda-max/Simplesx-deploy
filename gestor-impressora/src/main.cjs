@@ -234,7 +234,7 @@ function quebrarPorLargura(texto, larguraMm) {
   }).join('\n')
 }
 
-function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58 } = {}) {
+function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, centralizar = false } = {}) {
   const normalizado = quebrarPorLargura(texto, larguraMm)
     .replace(/\r\n?/g, '\n')
     .normalize('NFD')
@@ -243,7 +243,10 @@ function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58 } = {
     .replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
     .trimEnd()
-  const partes = [Buffer.from([0x1b, 0x40]), Buffer.from(normalizado + '\n', 'ascii')]
+  const partes = [Buffer.from([0x1b, 0x40])]
+  if (centralizar) partes.push(Buffer.from([0x1b, 0x61, 0x01]))
+  partes.push(Buffer.from(normalizado + '\n', 'ascii'))
+  if (centralizar) partes.push(Buffer.from([0x1b, 0x61, 0x00]))
   if (alimentar > 0) partes.push(Buffer.from([0x1b, 0x64, Math.min(255, Number(alimentar) || 0)]))
   if (cortar) partes.push(Buffer.from([0x1d, 0x56, 0x00]))
   return Buffer.concat(partes)
@@ -262,7 +265,7 @@ function linhasEtiqueta(texto, larguraMm) {
 
 function mmDots(mm, dpi = 203) { return Math.max(0, Math.round(Number(mm || 0) * Number(dpi || 203) / 25.4)) }
 
-function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203 } = {}) {
+function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203, centralizar = false } = {}) {
   const linhas = linhasEtiqueta(texto, larguraMm)
   const escala = dpi / 203
   const margem = Math.max(8, Math.round(16 * escala))
@@ -271,22 +274,27 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203
   const largura = mmDots(larguraMm, dpi)
   const altura = Math.max(80, Math.round((32 + linhas.length * 28) * escala))
   const quantidade = Math.min(20, Math.max(1, Number(copias) || 1))
+  const xCentralizado = (linha, larguraCaractere = 12) => centralizar
+    ? Math.max(margem, Math.round((largura - linha.length * larguraCaractere * escala) / 2))
+    : Math.round(8 * escala)
   let comandos
   if (protocolo === 'TSPL') {
     comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / (dpi / 25.4))} mm\r\nGAP 0 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n`
-    comandos += linhas.map((linha, i) => `TEXT ${Math.round(8 * escala)},${margem + i * alturaLinha},"0",0,1,1,"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
+    comandos += linhas.map((linha, i) => `TEXT ${xCentralizado(linha)},${margem + i * alturaLinha},"0",0,1,1,"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
     comandos += `\r\nPRINT ${quantidade},1\r\n`
   } else if (protocolo === 'ZPL') {
     comandos = `^XA\n^PW${largura}\n^LL${altura}\n^LH0,0\n`
-    comandos += linhas.map((linha, i) => `^FO${margem},${margem + i * alturaLinha}^A0N,${fonte},${fonte}^FD${linha.replace(/[\^~]/g, ' ')}^FS`).join('\n')
+    comandos += linhas.map((linha, i) => centralizar
+      ? `^FO0,${margem + i * alturaLinha}^FB${largura},1,0,C,0^A0N,${fonte},${fonte}^FD${linha.replace(/[\^~]/g, ' ')}^FS`
+      : `^FO${margem},${margem + i * alturaLinha}^A0N,${fonte},${fonte}^FD${linha.replace(/[\^~]/g, ' ')}^FS`).join('\n')
     comandos += `\n^PQ${quantidade}\n^XZ\n`
   } else if (protocolo === 'CPCL') {
     comandos = `! 0 ${dpi} ${dpi} ${altura} ${quantidade}\r\nPW ${largura}\r\n`
-    comandos += linhas.map((linha, i) => `TEXT 0 2 ${margem} ${margem + i * alturaLinha} ${linha}`).join('\r\n')
+    comandos += linhas.map((linha, i) => `TEXT 0 2 ${xCentralizado(linha)} ${margem + i * alturaLinha} ${linha}`).join('\r\n')
     comandos += '\r\nFORM\r\nPRINT\r\n'
   } else if (protocolo === 'EPL') {
     comandos = `N\nq${largura}\nQ${altura},0\n`
-    comandos += linhas.map((linha, i) => `A${margem},${margem + i * alturaLinha},0,3,1,1,N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
+    comandos += linhas.map((linha, i) => `A${xCentralizado(linha)},${margem + i * alturaLinha},0,3,1,1,N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
     comandos += `\nP${quantidade}\n`
   } else {
     return bytesEscPos(texto, { larguraMm })
@@ -294,7 +302,7 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203
   return Buffer.from(comandos, 'ascii')
 }
 
-async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 0 }, printer) {
+async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 0, centralizar = false }, printer) {
   const larguraMm = Number(config.largurasImpressoras?.[printer.name]) || 58
   const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
   const protocolo = config.protocolosImpressoras?.[printer.name] || (/RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
@@ -303,8 +311,8 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
   const textoAjustado = quebrarPorLargura(texto, larguraMm).trimEnd()
   await fs.writeFile(temporario, filaRaw
     ? (protocolo === 'ESC_POS'
-        ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm })
-        : bytesEtiqueta(protocolo, textoAjustado, { copias, larguraMm, dpi }))
+        ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm, centralizar })
+        : bytesEtiqueta(protocolo, textoAjustado, { copias, larguraMm, dpi, centralizar }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
     const repeticoes = filaRaw && protocolo !== 'ESC_POS' ? 1 : Math.max(1, Number(copias) || 1)
@@ -351,7 +359,8 @@ async function imprimirRaw(opcoes) {
 
 async function executarJob(job) {
   if (job.tipo === 'html') throw new Error('Job HTML recusado: o deploy deve enviar somente texto para impressao termica')
-  await imprimirRaw({ texto: job.conteudo, impressora: job.impressora, copias: job.copias, cortar: job.cortar, alimentar: job.alimentar })
+  const etiquetaValidade = job.tipo === 'PRINT_LABEL' || /(^|\n)ABERTO:.*\nVENCE:.*\nTEMP:.*\nRESP:/i.test(job.conteudo || '')
+  await imprimirRaw({ texto: job.conteudo, impressora: job.impressora, copias: job.copias, cortar: job.cortar, alimentar: job.alimentar, centralizar: etiquetaValidade })
 }
 
 async function confirmarJob(job, status, erro) {

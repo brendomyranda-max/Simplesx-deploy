@@ -7,7 +7,7 @@ object Tspl {
     fun label(
         text: String, widthMm: Int = 58, copies: Int = 1,
         paperMode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
-        configuredHeightMm: Int = 30, gapMm: Int = 2, dpi: Int = 203,
+        configuredHeightMm: Int = 30, gapMm: Int = 2, dpi: Int = 203, centered: Boolean = false,
     ): ByteArray {
         val width = widthMm.coerceIn(20, 320)
         val columns = ((width * 32) / 58).coerceAtLeast(8)
@@ -28,7 +28,9 @@ object Tspl {
             append("DIRECTION 1\r\n")
             append("CLS\r\n")
             lines.forEachIndexed { index, line ->
-                append("TEXT ${(8 * scale).toInt()},${topMarginDots + index * lineHeightDots},\"0\",0,1,1,\"")
+                val widthDots = (width * dpi.coerceIn(100, 1200) / 25.4).toInt()
+                val x = if (centered) ((widthDots - line.length * 12 * scale) / 2).toInt().coerceAtLeast((8 * scale).toInt()) else (8 * scale).toInt()
+                append("TEXT $x,${topMarginDots + index * lineHeightDots},\"0\",0,1,1,\"")
                 append(line.replace("\\", "\\\\").replace("\"", "\\\""))
                 append("\"\r\n")
             }

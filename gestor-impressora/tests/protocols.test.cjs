@@ -19,11 +19,25 @@ test('ESC/POS inicializa, imprime, alimenta e corta', () => {
   assert.deepEqual([...bytes.subarray(-3)], [0x1d, 0x56, 0x00])
 })
 
+test('ESC/POS centraliza e restaura o alinhamento', () => {
+  const bytes = context.bytesEscPos('Validade', { centralizar: true })
+  assert.ok(bytes.includes(Buffer.from([0x1b, 0x61, 0x01])))
+  assert.ok(bytes.includes(Buffer.from([0x1b, 0x61, 0x00])))
+})
+
 test('TSPL usa mídia contínua e cópias', () => {
   const command = context.bytesEtiqueta('TSPL', 'Etiqueta', { copias: 3, larguraMm: 58, dpi: 300 }).toString('ascii')
   assert.match(command, /^SIZE 58 mm,.*\r\nGAP 0 mm,0 mm\r\n/)
   assert.match(command, /TEXT 12,24,/)
   assert.match(command, /PRINT 3,1\r\n$/)
+})
+
+test('protocolos de etiqueta calculam posição centralizada', () => {
+  const options = { copias: 1, larguraMm: 58, dpi: 203, centralizar: true }
+  assert.match(context.bytesEtiqueta('TSPL', 'ABC', options).toString('ascii'), /TEXT 214,/)
+  assert.match(context.bytesEtiqueta('ZPL', 'ABC', options).toString('ascii'), /\^FB464,1,0,C,0/)
+  assert.match(context.bytesEtiqueta('CPCL', 'ABC', options).toString('ascii'), /TEXT 0 2 214 /)
+  assert.match(context.bytesEtiqueta('EPL', 'ABC', options).toString('ascii'), /A214,/)
 })
 
 test('ZPL usa DPI na largura e finaliza o documento', () => {

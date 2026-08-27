@@ -347,8 +347,8 @@ async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 8
   const r = await env.DB.prepare(
     `INSERT INTO gestor_jobs
       (gestor_token, tipo, conteudo, impressora, largura_mm, copias, cortar, alimentar, status, criado_em)
-     VALUES (?, 'texto', ?, ?, ?, 1, 1, ?, 'pendente', ?)`
-  ).bind(gestorToken, conteudoCompativel, destino, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
+     VALUES (?, ?, ?, ?, ?, 1, 1, ?, 'pendente', ?)`
+  ).bind(gestorToken, taskType, conteudoCompativel, destino, larguraMm, larguraMm === 58 ? 3 : 0, now()).run();
   return { ok: true, job_id: r.meta.last_row_id };
 }
 

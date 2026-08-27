@@ -102,7 +102,7 @@ class PrintSyncService : Service() {
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
         val feed = payload.optIntAny("feed", "alimentar", default = 3)
         val text = content.ifBlank { fallback }
-        return PrinterCommands.document(text, printer, copies, feed, cut)
+        return PrinterCommands.document(text, printer, copies, feed, cut, centered = task.type == "PRINT_LABEL")
     }
 
     private fun JSONObject.optStringAny(vararg keys: String): String {
