@@ -36,6 +36,8 @@ jobs:
       - name: Repetir instalacao apos falha de rede
         if: steps.instalar.outcome == 'failure'
         run: npm ci
+      - name: Testar protocolos e sintaxe
+        run: npm test
       - run: ${{ matrix.comando }}
       - uses: actions/upload-artifact@v4
         with:

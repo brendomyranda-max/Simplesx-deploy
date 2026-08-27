@@ -36,10 +36,20 @@ public static class RawPrinter {
       try {
         if (!StartPagePrinter(printer)) throw new Win32Exception();
         try {
-          int written;
-          if (!WritePrinter(printer, bytes, bytes.Length, out written) || written != bytes.Length) throw new Win32Exception();
-        } finally { EndPagePrinter(printer); }
-      } finally { EndDocPrinter(printer); }
+          const int chunkSize = 4096;
+          for (int offset = 0; offset < bytes.Length; offset += chunkSize) {
+            int count = Math.Min(chunkSize, bytes.Length - offset);
+            byte[] chunk = new byte[count];
+            Buffer.BlockCopy(bytes, offset, chunk, 0, count);
+            int written;
+            if (!WritePrinter(printer, chunk, count, out written) || written != count) throw new Win32Exception();
+          }
+        } finally {
+          if (!EndPagePrinter(printer)) throw new Win32Exception();
+        }
+      } finally {
+        if (!EndDocPrinter(printer)) throw new Win32Exception();
+      }
     } finally { ClosePrinter(printer); }
   }
 }

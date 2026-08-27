@@ -23,6 +23,7 @@ let servidorLocal
 let ultimoErro = ''
 let ultimoContato = null
 let ultimoJob = null
+const filasImpressao = new Map()
 
 const instanciaUnica = app.requestSingleInstanceLock()
 if (!instanciaUnica) app.quit()
@@ -280,7 +281,7 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203
     comandos += linhas.map((linha, i) => `^FO${margem},${margem + i * alturaLinha}^A0N,${fonte},${fonte}^FD${linha.replace(/[\^~]/g, ' ')}^FS`).join('\n')
     comandos += `\n^PQ${quantidade}\n^XZ\n`
   } else if (protocolo === 'CPCL') {
-    comandos = `! 0 200 200 ${altura} ${quantidade}\r\nPW ${largura}\r\n`
+    comandos = `! 0 ${dpi} ${dpi} ${altura} ${quantidade}\r\nPW ${largura}\r\n`
     comandos += linhas.map((linha, i) => `TEXT 0 2 ${margem} ${margem + i * alturaLinha} ${linha}`).join('\r\n')
     comandos += '\r\nFORM\r\nPRINT\r\n'
   } else if (protocolo === 'EPL') {
@@ -293,8 +294,7 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, dpi = 203
   return Buffer.from(comandos, 'ascii')
 }
 
-async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alimentar = 0 }) {
-  const printer = await resolverImpressora(impressora)
+async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 0 }, printer) {
   const larguraMm = Number(config.largurasImpressoras?.[printer.name]) || 58
   const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
   const protocolo = config.protocolosImpressoras?.[printer.name] || (/RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
@@ -333,6 +333,19 @@ async function imprimirRaw({ texto, impressora, copias = 1, cortar = true, alime
     }
   } finally {
     await fs.unlink(temporario).catch(() => {})
+  }
+}
+
+async function imprimirRaw(opcoes) {
+  const printer = await resolverImpressora(opcoes.impressora)
+  const chave = nomeComparavel(printer.name)
+  const anterior = filasImpressao.get(chave) || Promise.resolve()
+  const atual = anterior.catch(() => {}).then(() => imprimirRawAgora(opcoes, printer))
+  filasImpressao.set(chave, atual)
+  try {
+    return await atual
+  } finally {
+    if (filasImpressao.get(chave) === atual) filasImpressao.delete(chave)
   }
 }
 

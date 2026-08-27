@@ -19,6 +19,11 @@ para filas comuns do Windows/Linux e a linguagem indicada no autoteste para fila
 RAW. Configure também a resolução indicada pela impressora (normalmente 203, 300
 ou 600 DPI). As escolhas são salvas individualmente para cada impressora.
 
+Os trabalhos são serializados por impressora: servidor, botão de teste e API
+local podem enviar ao mesmo tempo sem sobrepor documentos no spooler. Em papel
+contínuo, TSPL usa `GAP 0`; EPL usa gap zero; ZPL e CPCL calculam o comprimento
+de cada trabalho pelo conteúdo.
+
 Se o Linux mostrar `CUPS indisponível`, inicie o serviço antes de atualizar a
 lista de impressoras (normalmente `sudo systemctl enable --now cups`). O endereço
 de produção precisa usar HTTPS; HTTP é aceito somente para testes em localhost.
