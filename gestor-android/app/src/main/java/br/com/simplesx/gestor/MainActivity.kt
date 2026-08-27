@@ -80,6 +80,7 @@ private fun GestorScreen() {
     var printers by remember { mutableStateOf(config.printers) }
     var selectedPrinterIndex by remember { mutableStateOf(0) }
     var printer by remember { mutableStateOf(printers.first()) }
+    var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var message by remember { mutableStateOf(config.lastStatus) }
     var bluetoothPrinters by remember { mutableStateOf(PrinterTransport.pairedBluetooth(context)) }
@@ -166,7 +167,11 @@ private fun GestorScreen() {
                 Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado no SimplesX (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     printers.forEachIndexed { index, item ->
-                        OutlinedButton(onClick = { selectedPrinterIndex = index; printer = item }, modifier = Modifier.weight(1f)) {
+                        OutlinedButton(onClick = {
+                            selectedPrinterIndex = index
+                            printer = item
+                            dpiInput = item.dpi.toString()
+                        }, modifier = Modifier.weight(1f)) {
                             Text(item.name, maxLines = 1)
                         }
                     }
@@ -175,6 +180,7 @@ private fun GestorScreen() {
                     OutlinedButton(onClick = {
                         selectedPrinterIndex = -1
                         printer = PrinterConfig(name = "Nova rota", connection = ConnectionType.BLUETOOTH, widthMm = 58)
+                        dpiInput = printer.dpi.toString()
                     }, modifier = Modifier.weight(1f)) { Text("Adicionar") }
                     if (printers.size > 1 && selectedPrinterIndex >= 0) {
                         OutlinedButton(onClick = {
@@ -182,6 +188,7 @@ private fun GestorScreen() {
                             config.printers = printers
                             selectedPrinterIndex = 0
                             printer = printers.first()
+                            dpiInput = printer.dpi.toString()
                         }, modifier = Modifier.weight(1f)) { Text("Excluir") }
                     }
                 }
@@ -319,16 +326,25 @@ private fun GestorScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(203, 300, 600).forEach { dpi ->
                         if (printer.dpi == dpi) {
-                            Button(onClick = { printer = printer.copy(dpi = dpi) }, modifier = Modifier.weight(1f)) { Text("$dpi DPI") }
+                            Button(onClick = { printer = printer.copy(dpi = dpi); dpiInput = dpi.toString() }, modifier = Modifier.weight(1f)) { Text("$dpi DPI") }
                         } else {
-                            OutlinedButton(onClick = { printer = printer.copy(dpi = dpi) }, modifier = Modifier.weight(1f)) { Text("$dpi DPI") }
+                            OutlinedButton(onClick = { printer = printer.copy(dpi = dpi); dpiInput = dpi.toString() }, modifier = Modifier.weight(1f)) { Text("$dpi DPI") }
                         }
                     }
                 }
                 OutlinedTextField(
-                    value = printer.dpi.toString(),
-                    onValueChange = { value -> value.toIntOrNull()?.takeIf { it in 100..1200 }?.let { printer = printer.copy(dpi = it) } },
+                    value = dpiInput,
+                    onValueChange = { value ->
+                        if (value.length <= 4 && value.all(Char::isDigit)) {
+                            dpiInput = value
+                            value.toIntOrNull()?.takeIf { it in 100..1200 }?.let { printer = printer.copy(dpi = it) }
+                        }
+                    },
+                    isError = dpiInput.toIntOrNull() !in 100..1200,
                     label = { Text("DPI personalizado (100 a 1200)") },
+                    supportingText = {
+                        Text(if (printer.protocol == PrinterProtocol.ESC_POS) "ESC/POS em modo texto não depende do DPI." else "O DPI altera largura, altura, margens e espaçamento em pontos.")
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -357,6 +373,12 @@ private fun GestorScreen() {
                     }
                 }
                 Button(onClick = {
+                    val customDpi = dpiInput.toIntOrNull()
+                    if (customDpi == null || customDpi !in 100..1200) {
+                        message = "Informe um DPI entre 100 e 1200"
+                        return@Button
+                    }
+                    printer = printer.copy(dpi = customDpi)
                     if (printer.name.isBlank()) {
                         message = "Informe o nome da rota da impressora"
                         return@Button
@@ -387,7 +409,7 @@ private fun GestorScreen() {
                             val test = "SIMPLESX - TESTE DE IMPRESSAO\n${printer.protocol.name} · ${printer.dpi} DPI\nRede/Bluetooth OK"
                             val bytes = PrinterCommands.document(test, printer)
                             PrinterTransport.send(context, printer, bytes)
-                            "Teste ${printer.protocol.name} enviado com sucesso"
+                            "Dados ${printer.protocol.name} enviados. Confirme o texto no papel; a conexão Bluetooth não confirma se a impressora entendeu o protocolo."
                         }
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Salvar rota e imprimir teste") }

@@ -44,11 +44,12 @@ object PrinterCommands {
     private fun cpcl(text: String, printer: PrinterConfig, copies: Int): ByteArray {
         val lines = lines(text, printer.widthMm)
         val heightDots = labelHeightDots(printer, lines.size)
-        val scale = printer.dpi / 203.0
+        val dpi = printer.dpi.coerceIn(100, 1200)
+        val scale = dpi / 203.0
         val margin = (16 * scale).toInt().coerceAtLeast(8)
         val lineHeight = (28 * scale).toInt().coerceAtLeast(14)
         return buildString {
-            append("! 0 200 200 $heightDots ${copies.coerceIn(1, 20)}\r\n")
+            append("! 0 $dpi $dpi $heightDots ${copies.coerceIn(1, 20)}\r\n")
             append("PW ${mmToDots(printer.widthMm, printer.dpi)}\r\n")
             lines.forEachIndexed { index, line -> append("TEXT 0 2 $margin ${margin + index * lineHeight} $line\r\n") }
             append("FORM\r\nPRINT\r\n")

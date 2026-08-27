@@ -95,8 +95,17 @@ object PrinterTransport {
                         bluetoothSocket!!.connect()
                         bluetoothAddress = address
                     }
-                    bluetoothSocket!!.outputStream.apply { write(bytes); flush() }
-                    Thread.sleep(150)
+                    bluetoothSocket!!.outputStream.apply {
+                        var offset = 0
+                        while (offset < bytes.size) {
+                            val size = minOf(BLUETOOTH_CHUNK_SIZE, bytes.size - offset)
+                            write(bytes, offset, size)
+                            flush()
+                            offset += size
+                            if (offset < bytes.size) Thread.sleep(BLUETOOTH_CHUNK_DELAY_MS)
+                        }
+                    }
+                    Thread.sleep(250)
                     return
                 } catch (error: Exception) {
                     lastError = error
@@ -160,4 +169,6 @@ object PrinterTransport {
         }
 
     const val ACTION_USB_PERMISSION = "br.com.simplesx.gestor.USB_PERMISSION"
+    private const val BLUETOOTH_CHUNK_SIZE = 512
+    private const val BLUETOOTH_CHUNK_DELAY_MS = 20L
 }

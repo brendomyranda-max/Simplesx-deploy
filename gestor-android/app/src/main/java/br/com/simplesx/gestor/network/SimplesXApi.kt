@@ -10,7 +10,7 @@ data class DeviceTask(val id: String, val type: String, val leaseId: String, val
 data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
 
 class SimplesXApi(private val config: AppConfig) {
-    private val appVersion = "1.5.0"
+    private val appVersion = "1.5.2"
     private fun request(path: String, body: JSONObject, authenticated: Boolean = true): JSONObject {
         val base = config.deployUrl.trimEnd('/')
         val parsed = URL(base)
