@@ -2,6 +2,7 @@ package br.com.simplesx.gestor.print
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
@@ -83,6 +84,9 @@ object PrinterTransport {
         check(adapter.isEnabled) { "Ative o Bluetooth" }
         val address = config.bluetoothAddress.uppercase()
         val device = adapter.getRemoteDevice(address)
+        check(device.bondState == BluetoothDevice.BOND_BONDED) {
+            "A impressora ${config.bluetoothName.ifBlank { address }} não está mais pareada. Pareie novamente nas configurações do Android"
+        }
         synchronized(bluetoothLock) {
             var lastError: Exception? = null
             repeat(3) { attempt ->
@@ -105,7 +109,11 @@ object PrinterTransport {
                             if (offset < bytes.size) Thread.sleep(BLUETOOTH_CHUNK_DELAY_MS)
                         }
                     }
-                    Thread.sleep(250)
+                    // Muitas impressoras desligam o enlace RFCOMM quando entram em
+                    // repouso. Fechar depois de cada trabalho evita reutilizar um
+                    // socket que o Android ainda informa como conectado.
+                    Thread.sleep(BLUETOOTH_FINISH_DELAY_MS)
+                    closeBluetoothLocked()
                     return
                 } catch (error: Exception) {
                     lastError = error
@@ -113,7 +121,12 @@ object PrinterTransport {
                     if (attempt < 2) Thread.sleep(350L * (attempt + 1))
                 }
             }
-            throw IllegalStateException("Bluetooth desconectado após 3 tentativas: ${lastError?.message ?: "falha desconhecida"}", lastError)
+            throw IllegalStateException(
+                "Não foi possível conectar à impressora Bluetooth após 3 tentativas. " +
+                    "Confirme se ela está ligada, pareada e não está conectada a outro aparelho. " +
+                    "Detalhe: ${lastError?.message ?: "falha desconhecida"}",
+                lastError,
+            )
         }
     }
 
@@ -170,5 +183,6 @@ object PrinterTransport {
 
     const val ACTION_USB_PERMISSION = "br.com.simplesx.gestor.USB_PERMISSION"
     private const val BLUETOOTH_CHUNK_SIZE = 512
-    private const val BLUETOOTH_CHUNK_DELAY_MS = 20L
+    private const val BLUETOOTH_CHUNK_DELAY_MS = 40L
+    private const val BLUETOOTH_FINISH_DELAY_MS = 400L
 }

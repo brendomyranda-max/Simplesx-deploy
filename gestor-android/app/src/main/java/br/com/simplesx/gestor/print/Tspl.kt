@@ -1,6 +1,5 @@
 package br.com.simplesx.gestor.print
 
-import java.text.Normalizer
 import br.com.simplesx.gestor.data.TsplPaperMode
 
 object Tspl {
@@ -10,14 +9,9 @@ object Tspl {
         configuredHeightMm: Int = 30, gapMm: Int = 2, dpi: Int = 203, centered: Boolean = false,
     ): ByteArray {
         val width = widthMm.coerceIn(20, 320)
-        val columns = ((width * 32) / 58).coerceAtLeast(8)
-        val lines = normalize(text).lines().flatMap { wrap(it, columns) }.ifEmpty { listOf("") }
-        val scale = dpi.coerceIn(100, 1200) / 203.0
-        val lineHeightDots = (28 * scale).toInt().coerceAtLeast(14)
-        val topMarginDots = (16 * scale).toInt().coerceAtLeast(8)
-        val dotsPerMm = dpi.coerceIn(100, 1200) / 25.4
-        val contentHeightMm = (((topMarginDots * 2 + lines.size * lineHeightDots) / dotsPerMm).toInt() + 1).coerceAtLeast(10)
-        val heightMm = if (paperMode == TsplPaperMode.CONTINUOUS) contentHeightMm else configuredHeightMm.coerceIn(10, 500)
+        val fixedHeight = configuredHeightMm.takeIf { paperMode != TsplPaperMode.CONTINUOUS }
+        val layout = LabelLayouts.calculate(text, width, fixedHeight, dpi)
+        val heightMm = fixedHeight ?: ((layout.heightDots / (dpi.coerceIn(100, 1200) / 25.4)).toInt() + 1).coerceAtLeast(10)
         val commands = buildString {
             append("SIZE $width mm,$heightMm mm\r\n")
             when (paperMode) {
@@ -27,10 +21,12 @@ object Tspl {
             }
             append("DIRECTION 1\r\n")
             append("CLS\r\n")
-            lines.forEachIndexed { index, line ->
-                val widthDots = (width * dpi.coerceIn(100, 1200) / 25.4).toInt()
-                val x = if (centered) ((widthDots - line.length * 12 * scale) / 2).toInt().coerceAtLeast((8 * scale).toInt()) else (8 * scale).toInt()
-                append("TEXT $x,${topMarginDots + index * lineHeightDots},\"0\",0,1,1,\"")
+            val printerFont = if (layout.fontScale < 0.72) "1" else "0"
+            layout.lines.forEachIndexed { index, line ->
+                val characterWidth = 12 * layout.dpiScale * layout.fontScale
+                val leftMargin = (8 * layout.dpiScale * layout.fontScale).toInt().coerceAtLeast(4)
+                val x = if (centered) ((layout.widthDots - line.length * characterWidth) / 2).toInt().coerceAtLeast(leftMargin) else leftMargin
+                append("TEXT $x,${layout.margin + index * layout.lineHeight},\"$printerFont\",0,1,1,\"")
                 append(line.replace("\\", "\\\\").replace("\"", "\\\""))
                 append("\"\r\n")
             }
@@ -39,22 +35,4 @@ object Tspl {
         return commands.toByteArray(Charsets.US_ASCII)
     }
 
-    private fun normalize(text: String): String = Normalizer.normalize(
-        text.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD
-    ).replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "")
-        .replace('º', 'o').replace('ª', 'a').replace('–', '-').replace('—', '-')
-        .replace(Regex("[^\\x09\\x0A\\x20-\\x7E]"), "")
-        .trimEnd()
-
-    private fun wrap(source: String, columns: Int): List<String> {
-        if (source.isEmpty()) return listOf("")
-        val parts = mutableListOf<String>()
-        var remaining = source
-        while (remaining.length > columns) {
-            val split = remaining.lastIndexOf(' ', columns).takeIf { it > 0 } ?: columns
-            parts += remaining.substring(0, split).trimEnd()
-            remaining = remaining.substring(split).trimStart()
-        }
-        return parts + remaining
-    }
 }

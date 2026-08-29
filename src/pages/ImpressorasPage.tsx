@@ -308,7 +308,7 @@ export function ImpressorasPage() {
           </div>
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
-            <p className="text-sm text-slate-500">Desktop 1.5.4 e Android 1.5.3 com etiquetas de validade centralizadas nos protocolos RAW.</p>
+            <p className="text-sm text-slate-500">Windows, Linux e Android com largura e altura personalizadas e ajuste automático do conteúdo.</p>
           </div>
           <a
             className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"

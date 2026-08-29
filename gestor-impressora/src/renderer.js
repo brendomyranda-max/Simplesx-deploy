@@ -62,6 +62,11 @@ function larguraAtual(nome) {
   return Number(estado?.largurasImpressoras?.[nome]) || 58
 }
 
+function alturaAtual(nome) {
+  const altura = Number(estado?.alturasImpressoras?.[nome])
+  return Number.isFinite(altura) && altura >= 10 ? altura : null
+}
+
 function protocoloAtual(nome) {
   return estado?.protocolosImpressoras?.[nome] || 'DRIVER'
 }
@@ -78,6 +83,7 @@ $('tamanho').onclick = () => {
   $('tamanhoImpressora').textContent = nome
   $('larguraPreset').value = comuns.includes(largura) ? String(largura) : 'custom'
   $('larguraCustom').value = largura
+  $('altura').value = alturaAtual(nome) ?? ''
   $('protocolo').value = protocoloAtual(nome)
   $('dpi').value = dpiAtual(nome)
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
@@ -89,13 +95,16 @@ $('salvarTamanho').onclick = async (event) => {
   const nome = impressoraSelecionada()
   const largura = $('larguraPreset').value === 'custom' ? Number($('larguraCustom').value) : Number($('larguraPreset').value)
   if (!Number.isFinite(largura) || largura < 20 || largura > 320) return toast('Informe uma largura entre 20 e 320 mm')
+  const alturaTexto = $('altura').value.trim()
+  const altura = alturaTexto === '' ? null : Number(alturaTexto)
+  if (altura !== null && (!Number.isFinite(altura) || altura < 10 || altura > 500)) return toast('Informe uma altura entre 10 e 500 mm ou deixe vazia')
   try {
     const dpi = Number($('dpi').value)
     if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) return toast('Informe um DPI entre 100 e 1200')
-    const status = await window.simplesx.salvarImpressora(nome, largura, $('protocolo').value, dpi)
+    const status = await window.simplesx.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi)
     render(status)
     $('tamanhoDialog').close()
-    toast(`${nome}: ${largura} mm · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
+    toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
   } catch (e) { toast(`Erro: ${e.message}`) }
 }
 

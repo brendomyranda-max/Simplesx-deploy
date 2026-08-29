@@ -10,7 +10,7 @@ const end = source.indexOf('async function imprimirRawAgora')
 assert.ok(start >= 0 && end > start, 'geradores de protocolo não encontrados')
 const context = { Buffer }
 vm.createContext(context)
-vm.runInContext(`${source.slice(start, end)}; this.bytesEscPos = bytesEscPos; this.bytesEtiqueta = bytesEtiqueta`, context)
+vm.runInContext(`${source.slice(start, end)}; this.bytesEscPos = bytesEscPos; this.bytesEtiqueta = bytesEtiqueta; this.layoutEtiqueta = layoutEtiqueta; this.layoutDriver = layoutDriver`, context)
 
 test('ESC/POS inicializa, imprime, alimenta e corta', () => {
   const bytes = context.bytesEscPos('Ação 123', { alimentar: 2, cortar: true, larguraMm: 58 })
@@ -56,4 +56,29 @@ test('EPL usa largura, mídia contínua e cópias', () => {
   const command = context.bytesEtiqueta('EPL', 'Antiga', { copias: 5, larguraMm: 58, dpi: 300 }).toString('ascii')
   assert.match(command, /^N\nq685\nQ89,0\n/)
   assert.match(command, /P5\n$/)
+})
+
+test('altura vazia mantém fonte e comprimento automáticos', () => {
+  const layout = context.layoutEtiqueta('Linha 1\nLinha 2', { larguraMm: 58, dpi: 203 })
+  assert.equal(layout.escalaFonte, 1)
+  assert.ok(layout.altura >= 80)
+})
+
+test('altura fixa mantém fonte quando o conteúdo cabe', () => {
+  const layout = context.layoutEtiqueta('Texto curto', { larguraMm: 58, alturaMm: 30, dpi: 203 })
+  assert.equal(layout.escalaFonte, 1)
+  assert.equal(layout.altura, 240)
+})
+
+test('altura fixa reduz conteúdo apenas quando necessário', () => {
+  const texto = 'Produto com descricao muito longa que ocupa varias linhas\nQuantidade: 10\nPreco: 123,45'
+  const layout = context.layoutEtiqueta(texto, { larguraMm: 40, alturaMm: 20, dpi: 203 })
+  assert.ok(layout.escalaFonte < 1)
+  assert.equal(layout.altura, 160)
+  assert.ok(layout.margem * 2 + layout.linhas.length * layout.alturaLinha <= layout.altura)
+
+  const driver = context.layoutDriver(texto, 40, 20)
+  assert.ok(driver.cpi > 10)
+  assert.ok(driver.lpi > 6)
+  assert.equal(driver.alturaMm, 20)
 })

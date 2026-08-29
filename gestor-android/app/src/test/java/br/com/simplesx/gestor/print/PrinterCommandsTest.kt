@@ -14,7 +14,8 @@ class PrinterCommandsTest {
         dpi: Int = 203,
         width: Int = 58,
         mode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
-    ) = PrinterConfig(protocol = protocol, dpi = dpi, widthMm = width, tsplPaperMode = mode)
+        height: Int = 30,
+    ) = PrinterConfig(protocol = protocol, dpi = dpi, widthMm = width, tsplPaperMode = mode, labelHeightMm = height)
 
     @Test fun escPosProducesInitTextFeedAndCut() {
         val bytes = PrinterCommands.document("Ação 123", config(PrinterProtocol.ESC_POS), feed = 2, cut = true)
@@ -78,6 +79,22 @@ class PrinterCommandsTest {
         assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.ZPL), centered = true).toString(Charsets.US_ASCII).contains("^FB463,1,0,C,0"))
         assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.CPCL), centered = true).toString(Charsets.US_ASCII).contains("TEXT 0 2 213 "))
         assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.EPL), centered = true).toString(Charsets.US_ASCII).contains("A213,"))
+    }
+
+    @Test fun fixedHeightShrinksLabelOnlyWhenContentDoesNotFit() {
+        val shortLayout = LabelLayouts.calculate("Texto curto", 40, 30, 203)
+        assertEquals(1.0, shortLayout.fontScale, 0.001)
+
+        val text = "Produto com descricao muito longa que ocupa varias linhas\nQuantidade: 10\nPreco: 123,45"
+        val compactLayout = LabelLayouts.calculate(text, 40, 20, 203)
+        assertTrue(compactLayout.fontScale < 1.0)
+        assertTrue(compactLayout.margin * 2 + compactLayout.lines.size * compactLayout.lineHeight <= compactLayout.heightDots)
+
+        val zpl = PrinterCommands.document(
+            text, config(PrinterProtocol.ZPL, width = 40, mode = TsplPaperMode.GAP, height = 20),
+        ).toString(Charsets.US_ASCII)
+        assertTrue(zpl.contains("^LL159"))
+        assertFalse(zpl.contains("^A0N,24,24"))
     }
 
     private fun ByteArray.indexOfSubsequence(value: ByteArray): Int =

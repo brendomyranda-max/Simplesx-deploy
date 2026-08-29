@@ -14,7 +14,9 @@ O gestor gera um token na primeira execução. Copie-o para **Configurações �
 No Linux, as impressoras devem estar cadastradas no CUPS. No Windows, devem estar instaladas em **Impressoras e scanners**.
 
 Selecione a impressora e use **⚙ Configurar** para escolher o protocolo Driver,
-ESC/POS, TSPL/TSPL2, ZPL, CPCL ou EPL/EPL2 e a largura do papel. Use **Driver**
+ESC/POS, TSPL/TSPL2, ZPL, CPCL ou EPL/EPL2 e a largura do papel. A altura é
+opcional: vazia mantém o comprimento automático; preenchida mantém a fonte
+normal se o conteúdo couber e a reduz somente quando necessário. Use **Driver**
 para filas comuns do Windows/Linux e a linguagem indicada no autoteste para filas
 RAW. Configure também a resolução indicada pela impressora (normalmente 203, 300
 ou 600 DPI). As escolhas são salvas individualmente para cada impressora.

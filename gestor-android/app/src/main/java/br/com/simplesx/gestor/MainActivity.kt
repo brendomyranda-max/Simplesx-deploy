@@ -1,6 +1,7 @@
 package br.com.simplesx.gestor
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -80,6 +81,9 @@ private fun GestorScreen() {
     var printers by remember { mutableStateOf(config.printers) }
     var selectedPrinterIndex by remember { mutableStateOf(0) }
     var printer by remember { mutableStateOf(printers.first()) }
+    var widthInput by remember { mutableStateOf(printer.widthMm.toString()) }
+    var labelHeightInput by remember { mutableStateOf(printer.labelHeightMm.toString()) }
+    var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var message by remember { mutableStateOf(config.lastStatus) }
@@ -170,6 +174,9 @@ private fun GestorScreen() {
                         OutlinedButton(onClick = {
                             selectedPrinterIndex = index
                             printer = item
+                            widthInput = item.widthMm.toString()
+                            labelHeightInput = item.labelHeightMm.toString()
+                            gapInput = item.gapMm.toString()
                             dpiInput = item.dpi.toString()
                         }, modifier = Modifier.weight(1f)) {
                             Text(item.name, maxLines = 1)
@@ -180,6 +187,9 @@ private fun GestorScreen() {
                     OutlinedButton(onClick = {
                         selectedPrinterIndex = -1
                         printer = PrinterConfig(name = "Nova rota", connection = ConnectionType.BLUETOOTH, widthMm = 58)
+                        widthInput = printer.widthMm.toString()
+                        labelHeightInput = printer.labelHeightMm.toString()
+                        gapInput = printer.gapMm.toString()
                         dpiInput = printer.dpi.toString()
                     }, modifier = Modifier.weight(1f)) { Text("Adicionar") }
                     if (printers.size > 1 && selectedPrinterIndex >= 0) {
@@ -188,6 +198,9 @@ private fun GestorScreen() {
                             config.printers = printers
                             selectedPrinterIndex = 0
                             printer = printers.first()
+                            widthInput = printer.widthMm.toString()
+                            labelHeightInput = printer.labelHeightMm.toString()
+                            gapInput = printer.gapMm.toString()
                             dpiInput = printer.dpi.toString()
                         }, modifier = Modifier.weight(1f)) { Text("Excluir") }
                     }
@@ -241,13 +254,25 @@ private fun GestorScreen() {
                     )
                     if (printer.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
                         OutlinedTextField(
-                            printer.labelHeightMm.toString(),
-                            { value -> value.toIntOrNull()?.takeIf { it in 10..500 }?.let { printer = printer.copy(labelHeightMm = it) } },
+                            labelHeightInput,
+                            { value ->
+                                if (value.length <= 3 && value.all(Char::isDigit)) {
+                                    labelHeightInput = value
+                                    value.toIntOrNull()?.takeIf { it in 10..500 }?.let { printer = printer.copy(labelHeightMm = it) }
+                                }
+                            },
+                            isError = labelHeightInput.toIntOrNull() !in 10..500,
                             label = { Text("Altura da etiqueta (mm)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         )
                         OutlinedTextField(
-                            printer.gapMm.toString(),
-                            { value -> value.toIntOrNull()?.takeIf { it in 1..20 }?.let { printer = printer.copy(gapMm = it) } },
+                            gapInput,
+                            { value ->
+                                if (value.length <= 2 && value.all(Char::isDigit)) {
+                                    gapInput = value
+                                    value.toIntOrNull()?.takeIf { it in 1..20 }?.let { printer = printer.copy(gapMm = it) }
+                                }
+                            },
+                            isError = gapInput.toIntOrNull() !in 1..20,
                             label = { Text(if (printer.tsplPaperMode == TsplPaperMode.GAP) "Espaço entre etiquetas (mm)" else "Tamanho da marca preta (mm)") },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
                         )
@@ -270,6 +295,15 @@ private fun GestorScreen() {
                         }
                     }
                     Text("A impressora deve estar pareada nas configurações do Android.", style = MaterialTheme.typography.bodySmall)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
+                            message = if (bluetoothPrinters.isEmpty()) "Nenhum dispositivo Bluetooth pareado foi encontrado" else "Lista Bluetooth atualizada"
+                        }, modifier = Modifier.weight(1f)) { Text("Atualizar lista") }
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
+                        }, modifier = Modifier.weight(1f)) { Text("Parear no Android") }
+                    }
                 } else {
                     ExposedDropdownMenuBox(expanded = usbExpanded, onExpandedChange = { expand ->
                         usbPrinters = PrinterTransport.connectedUsb(context)
@@ -307,18 +341,25 @@ private fun GestorScreen() {
                 Text("⚙ Tamanho do papel", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(58, 76, 80).forEach { width ->
-                        OutlinedButton(onClick = { printer = printer.copy(widthMm = width) }, modifier = Modifier.weight(1f)) { Text("$width mm") }
+                        OutlinedButton(onClick = { printer = printer.copy(widthMm = width); widthInput = width.toString() }, modifier = Modifier.weight(1f)) { Text("$width mm") }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(100, 102).forEach { width ->
-                        OutlinedButton(onClick = { printer = printer.copy(widthMm = width) }, modifier = Modifier.weight(1f)) { Text("$width mm") }
+                        OutlinedButton(onClick = { printer = printer.copy(widthMm = width); widthInput = width.toString() }, modifier = Modifier.weight(1f)) { Text("$width mm") }
                     }
                 }
                 OutlinedTextField(
-                    value = printer.widthMm.toString(),
-                    onValueChange = { value -> value.toIntOrNull()?.takeIf { it in 20..320 }?.let { printer = printer.copy(widthMm = it) } },
+                    value = widthInput,
+                    onValueChange = { value ->
+                        if (value.length <= 3 && value.all(Char::isDigit)) {
+                            widthInput = value
+                            value.toIntOrNull()?.takeIf { it in 20..320 }?.let { printer = printer.copy(widthMm = it) }
+                        }
+                    },
+                    isError = widthInput.toIntOrNull() !in 20..320,
                     label = { Text("Largura personalizada (20 a 320 mm)") },
+                    supportingText = { Text("Valor atual: ${printer.widthMm} mm") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -373,12 +414,31 @@ private fun GestorScreen() {
                     }
                 }
                 Button(onClick = {
+                    val customWidth = widthInput.toIntOrNull()
+                    if (customWidth == null || customWidth !in 20..320) {
+                        message = "Informe uma largura entre 20 e 320 mm"
+                        return@Button
+                    }
                     val customDpi = dpiInput.toIntOrNull()
                     if (customDpi == null || customDpi !in 100..1200) {
                         message = "Informe um DPI entre 100 e 1200"
                         return@Button
                     }
-                    printer = printer.copy(dpi = customDpi)
+                    var validatedPrinter = printer.copy(widthMm = customWidth, dpi = customDpi)
+                    if (validatedPrinter.protocol != PrinterProtocol.ESC_POS && validatedPrinter.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
+                        val customHeight = labelHeightInput.toIntOrNull()
+                        val customGap = gapInput.toIntOrNull()
+                        if (customHeight == null || customHeight !in 10..500) {
+                            message = "Informe uma altura entre 10 e 500 mm"
+                            return@Button
+                        }
+                        if (customGap == null || customGap !in 1..20) {
+                            message = "Informe um espaço ou marca entre 1 e 20 mm"
+                            return@Button
+                        }
+                        validatedPrinter = validatedPrinter.copy(labelHeightMm = customHeight, gapMm = customGap)
+                    }
+                    printer = validatedPrinter
                     if (printer.name.isBlank()) {
                         message = "Informe o nome da rota da impressora"
                         return@Button

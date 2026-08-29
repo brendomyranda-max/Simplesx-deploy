@@ -57,7 +57,8 @@
       <label>Resolução da cabeça (DPI)<input id="dpi" type="number" min="100" max="1200" step="1" list="dpiComuns"><datalist id="dpiComuns"><option value="203"><option value="300"><option value="600"></datalist></label>
       <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>
       <label id="larguraCustomLabel">Largura personalizada (mm)<input id="larguraCustom" type="number" min="20" max="320" step="0.1"></label>
-      <small>O comprimento é automático e acompanha a quantidade de conteúdo impresso.</small>
+      <label>Altura da etiqueta (opcional)<input id="altura" type="number" min="10" max="500" step="0.1" placeholder="Vazio = automática"></label>
+      <small>Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.</small>
       <small>Use Driver para impressoras comuns instaladas no sistema. Para filas RAW, escolha a linguagem indicada no autoteste da impressora.</small>
       <div class="dialog-actions"><button value="cancel" class="secondary">Cancelar</button><button id="salvarTamanho" value="default">Salvar</button></div>
     </form>
