@@ -12,8 +12,8 @@ android {
         applicationId = "br.com.simplesx.gestor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.5.6"
+        versionCode = 20
+        versionName = "1.5.7"
     }
 
     buildFeatures { compose = true }

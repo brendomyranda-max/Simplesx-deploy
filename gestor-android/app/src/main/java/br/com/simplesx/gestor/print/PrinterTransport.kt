@@ -93,9 +93,12 @@ object PrinterTransport {
                 try {
                     if (bluetoothAddress != address || bluetoothSocket?.isConnected != true) {
                         closeBluetoothLocked()
-                        adapter.cancelDiscovery()
-                        bluetoothSocket = if (attempt < 2) device.createRfcommSocketToServiceRecord(sppUuid)
-                        else device.createInsecureRfcommSocketToServiceRecord(sppUuid)
+                        // cancelDiscovery exige BLUETOOTH_SCAN no Android 12+, embora
+                        // a lista usada aqui contenha apenas aparelhos já pareados.
+                        // O gestor não inicia descoberta, então não deve exigir essa
+                        // permissão para conseguir abrir uma impressora selecionada.
+                        if (Build.VERSION.SDK_INT < 31) runCatching { adapter.cancelDiscovery() }
+                        bluetoothSocket = createBluetoothSocket(device, attempt)
                         bluetoothSocket!!.connect()
                         bluetoothAddress = address
                     }
@@ -128,6 +131,16 @@ object PrinterTransport {
                 lastError,
             )
         }
+    }
+
+    private fun createBluetoothSocket(device: BluetoothDevice, attempt: Int): BluetoothSocket = when (attempt) {
+        // Impressoras térmicas genéricas normalmente expõem SPP sem autenticação.
+        0 -> device.createInsecureRfcommSocketToServiceRecord(sppUuid)
+        1 -> device.createRfcommSocketToServiceRecord(sppUuid)
+        // Alguns firmwares baratos não publicam corretamente o UUID no SDP, mas
+        // aceitam o canal serial RFCOMM 1, que também é usado por apps de teste.
+        else -> BluetoothDevice::class.java.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+            .invoke(device, 1) as BluetoothSocket
     }
 
     fun closeConnections() = synchronized(bluetoothLock) { closeBluetoothLocked() }
