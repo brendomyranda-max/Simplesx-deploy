@@ -1,3 +1,8 @@
+/**
+ * Arquivo: handlers-catalog.js
+ * Responsabilidade: Implementa categorias, fornecedores, produtos, estoque, lotes e validades.
+ */
+
 import {
   now,
   hoje,
@@ -20,6 +25,7 @@ import {
   cnpjValido,
   soDigitos,
 } from './util.js';
+import { decodificarEtiquetaBalanca } from './balanca.js';
 import { quantidadeEmUnidadesEstoque, arredondar } from './units.js';
 
 // ============================ AUTH ============================
@@ -280,7 +286,7 @@ export async function listProdutosHandler(c, env) {
 
     if (!adicionarFolhas(produtoId, 1, new Set())) return 0;
     const possiveis = [...quantidades.values()].map((item) =>
-      item.quantidade > 0 ? Math.floor(item.disponivel / item.quantidade) : 0
+      item.quantidade > 0 ? item.disponivel / item.quantidade : 0
     );
     return possiveis.length ? Math.min(...possiveis) : 0;
   };
@@ -289,7 +295,8 @@ export async function listProdutosHandler(c, env) {
     const ficha = fichasBy.get(p.id) || [];
     let estoque_possivel = null;
     if (p.tipo === 'composto' && ficha.length) {
-      estoque_possivel = calcularEstoquePossivel(p.id);
+      const capacidade = calcularEstoquePossivel(p.id);
+      estoque_possivel = num(p.produto_balanca) ? capacidade : Math.floor(capacidade);
     }
     return {
       ...p,
@@ -313,7 +320,20 @@ export async function buscarProdutoHandler(c, env) {
   const body = await c.req.json();
   const codigo = String(body.codigo || '').trim();
   if (!codigo) return c.json({ error: 'Código obrigatório' }, 400);
-  const p = await buscarProdutoPorCodigo(env, codigo);
+  let p = await buscarProdutoPorCodigo(env, codigo);
+  let quantidade_balanca = null;
+  if (!p) {
+    const etiqueta = decodificarEtiquetaBalanca(codigo);
+    if (etiqueta) {
+      const produtoBalanca = await env.DB.prepare(
+        'SELECT id FROM produtos WHERE produto_balanca=1 AND balanca_plu=? AND ativo=1'
+      ).bind(etiqueta.plu).first();
+      if (produtoBalanca) {
+        p = await getProdutoFull(env, produtoBalanca.id);
+        quantidade_balanca = etiqueta.quantidade;
+      }
+    }
+  }
   if (!p) return c.json({ error: 'Produto não encontrado', codigo }, 404);
   const local = body.local;
   if (local === 'restaurante' && !num(p.exibir_restaurante)) {
@@ -322,7 +342,7 @@ export async function buscarProdutoHandler(c, env) {
   if (local === 'mercado' && !num(p.exibir_mercado)) {
     return c.json({ error: 'Produto não cadastrado para o PDV', codigo }, 404);
   }
-  return c.json(p);
+  return c.json(quantidade_balanca === null ? p : { ...p, quantidade_balanca, codigo_etiqueta: codigo });
 }
 
 export async function addCodigoBarrasProdutoHandler(c, env) {
@@ -414,6 +434,10 @@ export async function createProdutoHandler(c, env) {
   const codigoInterno =
     String(b.codigo_interno || '').trim() || (principal ? principal.codigo : String(Date.now()).slice(-8));
   const preco = b.preco === null || b.preco === undefined || b.preco === '' ? null : num(b.preco);
+  const produtoBalanca = b.produto_balanca === true ? 1 : 0;
+  const balancaPlu = produtoBalanca ? String(b.balanca_plu || '').padStart(6, '0') : null;
+  if (produtoBalanca && !/^\d{6}$/.test(balancaPlu)) return c.json({ error: 'PLU da balança inválido' }, 400);
+  if (produtoBalanca && !['KG', 'L'].includes(String(b.unidade || '').toUpperCase())) return c.json({ error: 'Produto de balança deve usar KG ou L' }, 400);
   const ingredientes = Array.isArray(b.ingredientes) ? b.ingredientes : Array.isArray(b.ficha) ? b.ficha : [];
   const tipo = normalizarTipo(b, ingredientes);
   validaPreco(config, preco, tipo);
@@ -433,8 +457,8 @@ export async function createProdutoHandler(c, env) {
   const r = await env.DB.prepare(
     `INSERT INTO produtos (nome, codigo_interno, unidade, estoque_atual, estoque_minimo, custo, preco, fornecedor_id,
      marca, validade_fabricacao_dias, validade_aberto_dias, data_fabricacao, data_vencimento, temperatura, ativo, observacoes,
-     exibir_restaurante, exibir_mercado, tipo, conteudo_quantidade, conteudo_unidade, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)`
+     exibir_restaurante, exibir_mercado, tipo, conteudo_quantidade, conteudo_unidade, produto_balanca, balanca_plu, criado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)`
   )
     .bind(
       b.nome,
@@ -457,6 +481,8 @@ export async function createProdutoHandler(c, env) {
       tipo,
       tipo === 'insumo' && num(b.conteudo_quantidade) > 0 ? num(b.conteudo_quantidade) : null,
       tipo === 'insumo' && b.conteudo_unidade ? b.conteudo_unidade : null,
+      produtoBalanca,
+      balancaPlu,
       now()
     )
     .run();
@@ -534,6 +560,11 @@ export async function updateProdutoHandler(c, env) {
   if (!atual) return c.json({ error: 'Produto não encontrado' }, 404);
   const config = await getConfig(env);
   const preco = b.preco === null || b.preco === undefined || b.preco === '' ? null : num(b.preco);
+  const produtoBalanca = b.produto_balanca === true ? 1 : b.produto_balanca === false ? 0 : num(atual.produto_balanca);
+  const balancaPlu = produtoBalanca ? String(b.balanca_plu ?? atual.balanca_plu ?? '').padStart(6, '0') : null;
+  const unidadeFinal = String(b.unidade || atual.unidade || 'UN').toUpperCase();
+  if (produtoBalanca && !/^\d{6}$/.test(balancaPlu)) return c.json({ error: 'PLU da balança inválido' }, 400);
+  if (produtoBalanca && !['KG', 'L'].includes(unidadeFinal)) return c.json({ error: 'Produto de balança deve usar KG ou L' }, 400);
   const ingredientes = Array.isArray(b.ingredientes) ? b.ingredientes : Array.isArray(b.ficha) ? b.ficha : null;
 
   let tipo = atual.tipo || 'produto';
@@ -565,7 +596,7 @@ export async function updateProdutoHandler(c, env) {
   await env.DB.prepare(
     `UPDATE produtos SET nome=?, codigo_interno=?, unidade=?, estoque_minimo=?, custo=?, preco=?, fornecedor_id=?, marca=?,
      validade_fabricacao_dias=?, validade_aberto_dias=?, data_fabricacao=?, data_vencimento=?, temperatura=?, ativo=?, observacoes=?,
-     exibir_restaurante=?, exibir_mercado=?, tipo=?, conteudo_quantidade=?, conteudo_unidade=?, atualizado_em=?
+     exibir_restaurante=?, exibir_mercado=?, tipo=?, conteudo_quantidade=?, conteudo_unidade=?, produto_balanca=?, balanca_plu=?, atualizado_em=?
      WHERE id=?`
   )
     .bind(
@@ -589,6 +620,8 @@ export async function updateProdutoHandler(c, env) {
       tipo,
       tipo === 'insumo' && num(b.conteudo_quantidade ?? atual.conteudo_quantidade) > 0 ? num(b.conteudo_quantidade ?? atual.conteudo_quantidade) : null,
       tipo === 'insumo' ? (b.conteudo_unidade || atual.conteudo_unidade || null) : null,
+      produtoBalanca,
+      balancaPlu,
       now(),
       c.params.id
     )

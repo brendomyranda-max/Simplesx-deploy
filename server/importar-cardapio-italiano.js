@@ -1,4 +1,12 @@
-const BASE = process.env.SIMPLESX_URL || 'https://simplesx-projeto-beta.pages.dev/api';
+/**
+ * Arquivo: importar-cardapio-italiano.js
+ * Responsabilidade: Importa pela API um cardápio italiano e suas fichas técnicas.
+ */
+
+import { loadLocalEnv } from './env.js';
+
+loadLocalEnv();
+const BASE = process.env.SIMPLESX_URL || 'http://127.0.0.1:3001/api';
 const acesso = process.env.SIMPLESX_TOKEN;
 const usuario = process.env.SIMPLESX_USUARIO;
 const senha = process.env.SIMPLESX_SENHA;

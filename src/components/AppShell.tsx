@@ -1,3 +1,8 @@
+/**
+ * Arquivo: AppShell.tsx
+ * Responsabilidade: Monta menu, cabeçalho e área principal das telas autenticadas.
+ */
+
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -23,7 +28,9 @@ import {
   ClipboardCheck,
   FileCheck2,
 } from 'lucide-react';
+import { useToast } from '@/components/ui';
 import { useAuth } from '@/store/auth';
+import { areaSelecionada, type AreaApp } from '@/lib/areas';
 
 interface NavItem {
   to: string;
@@ -34,6 +41,7 @@ interface NavItem {
 
 interface NavGroup {
   title?: string;
+  area?: Exclude<AreaApp, 'geral'> | 'inicio' | 'somente-geral';
   items: NavItem[];
 }
 
@@ -47,16 +55,24 @@ export function AppShell({
   empresaNome?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { nome, perfil, logout, can } = useAuth();
+  const { nome, perfil, logout, saindo, can, canArea } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const isGestor = can('gestor');
   const isPdv = can('pdv_mercado');
   const isRest = can('restaurante');
+  // A área é escolhida na tela inicial. Ela reduz o menu sem retirar permissões
+  // nem alterar as rotas; voltar ao Início permite escolher outra visão.
+  const area = areaSelecionada();
 
-  const sair = () => {
-    logout();
-    navigate('/login');
+  const sair = async () => {
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      toast('error', 'Não foi possível sair da conta. Verifique a conexão e tente novamente.');
+    }
   };
 
   // Sem o Gestor, o painel lateral fica bloqueado: mostra só o conteúdo,
@@ -82,9 +98,10 @@ export function AppShell({
             <span className="hidden text-xs font-semibold text-slate-500 sm:block">{nome || 'Usuário'}</span>
             <button
               onClick={sair}
+              disabled={saindo}
               className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
             >
-              <LogOut className="h-4 w-4" /> Sair
+              <LogOut className="h-4 w-4" /> {saindo ? 'Saindo…' : 'Sair'}
             </button>
           </div>
         </header>
@@ -93,15 +110,18 @@ export function AppShell({
     );
   }
 
-  const groups: NavGroup[] = [
+  const allGroups: NavGroup[] = [
     {
+      area: 'inicio',
       items: [{ to: '/', label: 'Início', icon: <Home className="h-5 w-5" /> }],
     },
     {
-      title: 'Gestor',
+      area: 'somente-geral',
+      title: 'Geral',
       items: [{ to: '/dashboard', label: 'Painel', icon: <LayoutDashboard className="h-5 w-5" /> }],
     },
     {
+      area: 'vendas',
       title: 'Vendas',
       items: [
         { to: '/pdv', label: 'PDV Mercado', icon: <ScanBarcode className="h-5 w-5" /> },
@@ -111,6 +131,7 @@ export function AppShell({
       ],
     },
     {
+      area: 'estoque',
       title: 'Estoque',
       items: [
         { to: '/estoque', label: 'Estoque', icon: <Boxes className="h-5 w-5" />, badge: badges?.estoque_baixo },
@@ -120,28 +141,41 @@ export function AppShell({
       ],
     },
     {
+      area: 'gestao',
       title: 'Gestão',
       items: [
         { to: '/financeiro', label: 'Financeiro', icon: <Wallet className="h-5 w-5" /> },
         { to: '/fechamento-caixa', label: 'Fechamento de Caixa', icon: <ClipboardCheck className="h-5 w-5" /> },
-        { to: '/relatorios', label: 'Relatórios', icon: <BarChart3 className="h-5 w-5" /> },
         { to: '/perdas', label: 'Controle de Perdas', icon: <Trash2 className="h-5 w-5" />, badge: badges?.perdas },
-        { to: '/funcionarios', label: 'Funcionários', icon: <Users className="h-5 w-5" /> },
-        { to: '/impressoras', label: 'Impressoras', icon: <Printer className="h-5 w-5" /> },
       ],
     },
     {
+      area: 'somente-geral',
+      title: 'Análises',
       items: [
+        { to: '/relatorios', label: 'Relatórios', icon: <BarChart3 className="h-5 w-5" /> },
+      ],
+    },
+    {
+      area: 'configuracoes',
+      title: 'Configurações',
+      items: [
+        { to: '/funcionarios', label: 'Funcionários', icon: <Users className="h-5 w-5" /> },
+        { to: '/impressoras', label: 'Impressoras', icon: <Printer className="h-5 w-5" /> },
         { to: '/config', label: 'Configurações', icon: <Settings className="h-5 w-5" /> },
       ],
     },
   ];
 
+  const groups = area === 'geral'
+    ? allGroups.filter((group) => group.area === 'inicio' || group.area === 'somente-geral' || !group.area || canArea(group.area))
+    : allGroups.filter((group) => group.area === 'inicio' || (group.area === area && canArea(area)));
+
   const perfilLabel = perfil === 'admin' ? 'Acesso total' : perfil.charAt(0).toUpperCase() + perfil.slice(1);
 
   const sidebar = (
     <div className="flex h-full flex-col bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300">
-      <div className="flex items-center gap-2.5 px-5 py-5">
+      <div className="flex shrink-0 items-center gap-2.5 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-base font-extrabold text-white shadow-lg shadow-brand-500/40">
           S
         </div>
@@ -156,7 +190,7 @@ export function AppShell({
           <X className="h-5 w-5" />
         </button>
       </div>
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+      <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
         {groups.map((g, gi) => (
           <div key={gi}>
             {g.title && (
@@ -193,7 +227,7 @@ export function AppShell({
           </div>
         ))}
       </nav>
-      <div className="border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="mb-2 flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
             {String(nome || 'U').slice(0, 1).toUpperCase()}
@@ -205,9 +239,10 @@ export function AppShell({
         </div>
         <button
           onClick={sair}
+          disabled={saindo}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
         >
-          <LogOut className="h-4 w-4" /> Sair
+          <LogOut className="h-4 w-4" /> {saindo ? 'Saindo…' : 'Sair'}
         </button>
       </div>
     </div>
@@ -249,7 +284,7 @@ export function AppShell({
       <div className="flex min-h-viewport min-w-0 flex-col md:pl-64">
         <header className="sticky top-0 z-30 flex min-h-14 shrink-0 items-center gap-1 border-b border-slate-200 bg-white/80 px-2 pt-[env(safe-area-inset-top)] pb-1 backdrop-blur md:hidden">
           <button
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 md:hidden"
             onClick={() => setOpen(true)}
             aria-label="Abrir menu"
           >
@@ -262,7 +297,8 @@ export function AppShell({
           >
             <Home className="h-6 w-6" />
           </button>
-          <p className="ml-1 truncate font-extrabold text-slate-800">{empresaNome || 'SimplesX'}</p>
+          <p className="ml-1 min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplesX'}</p>
+
         </header>
         <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{children}</main>
       </div>

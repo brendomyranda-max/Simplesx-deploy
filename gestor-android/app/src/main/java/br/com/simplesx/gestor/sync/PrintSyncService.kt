@@ -1,3 +1,8 @@
+/**
+ * Arquivo: PrintSyncService.kt
+ * Responsabilidade: Mantém heartbeat, busca tarefas e informa o resultado da impressão.
+ */
+
 package br.com.simplesx.gestor.sync
 
 import android.app.NotificationChannel

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: ComandaPage.tsx
+ * Responsabilidade: Implementa a tela ComandaPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -16,8 +21,8 @@ import {
   Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AnimatedPage } from '@/components/anim';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useConfirm, useToast } from '@/components/ui';
+import { AnimatedPage } from '@/components/AnimatedPage';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Toggle, useConfirm, useToast } from '@/components/ui';
 import { comandaApi, mesaApi, produtoApi, impressoraApi, configApi } from '@/lib/api';
 import type { Comanda, Produto, ComandaItem } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
@@ -57,6 +62,9 @@ export function ComandaPage() {
   const [editandoItem, setEditandoItem] = useState<ComandaItem | null>(null);
   const [addQtd, setAddQtd] = useState(1);
   const [addObsSel, setAddObsSel] = useState<string[]>([]);
+  const [addObsUnidades, setAddObsUnidades] = useState<string[][]>([[]]);
+  const [addUnidade, setAddUnidade] = useState(0);
+  const [aplicarEmConjunto, setAplicarEmConjunto] = useState(false);
   const [addCustom, setAddCustom] = useState('');
   const [adicionando, setAdicionando] = useState(false);
   const [valoresIndiv, setValoresIndiv] = useState<Record<string, string>>({});
@@ -100,6 +108,9 @@ export function ComandaPage() {
     setAddProduto(p);
     setAddQtd(1);
     setAddObsSel([]);
+    setAddObsUnidades([[]]);
+    setAddUnidade(0);
+    setAplicarEmConjunto(false);
     setAddCustom('');
     setAdicionando(false);
   };
@@ -108,28 +119,65 @@ export function ComandaPage() {
     if (locked || item.status !== 'novo' || !item.produto_id) return;
     try {
       const produtoCompleto = produtos.find((p) => p.id === item.produto_id) || await produtoApi.get(item.produto_id);
-      const automaticas = produtoCompleto.comentarios || [];
-      const atuais = String(item.observacao || '').split(',').map((o) => o.trim()).filter(Boolean);
+      const atuais = String(item.observacao || '').split(/\n|,/).map((o) => o.replace(/^\(|\)$/g, '').trim()).filter(Boolean);
       setEditandoItem(item);
       setAddProduto(produtoCompleto);
       setAddQtd(Number(item.quantidade));
-      setAddObsSel(automaticas.filter((o) => atuais.includes(o)));
-      setAddCustom(atuais.filter((o) => !automaticas.includes(o)).join(', '));
+      setAddObsSel(atuais);
+      setAddObsUnidades([atuais]);
+      setAplicarEmConjunto(true);
+      setAddCustom('');
       setAdicionando(false);
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao abrir o produto');
     }
   };
 
-  const toggleObs = (o: string) =>
-    setAddObsSel((prev) => (prev.includes(o) ? prev.filter((x) => x !== o) : [...prev, o]));
+  const observacoesAtuais = aplicarEmConjunto ? addObsSel : (addObsUnidades[addUnidade] || []);
+
+  // Cada clique soma uma ocorrência. O botão "−" remove somente uma delas,
+  // permitindo pedir, por exemplo, dois copos com a mesma observação.
+  const adicionarObs = (o: string) => {
+    if (aplicarEmConjunto) return setAddObsSel((prev) => [...prev, o]);
+    setAddObsUnidades((prev) => prev.map((lista, i) => i === addUnidade ? [...lista, o] : lista));
+  };
+
+  const removerObs = (o: string) => {
+    const removerUma = (lista: string[]) => {
+      const i = lista.lastIndexOf(o);
+      return i < 0 ? lista : lista.filter((_, j) => j !== i);
+    };
+    if (aplicarEmConjunto) return setAddObsSel(removerUma);
+    setAddObsUnidades((prev) => prev.map((lista, i) => i === addUnidade ? removerUma(lista) : lista));
+  };
+
+  const alterarQuantidade = (quantidade: number) => {
+    const qtd = Math.max(1, quantidade);
+    setAddQtd(qtd);
+    setAddObsUnidades((prev) => Array.from({ length: qtd }, (_, i) => prev[i] || []));
+    setAddUnidade((atual) => Math.min(atual, qtd - 1));
+  };
+
+  const alterarAplicarEmConjunto = (ativar: boolean) => {
+    if (ativar) setAddObsSel(addObsUnidades.flat());
+    else setAddObsUnidades(Array.from({ length: addQtd }, (_, i) => i === 0 ? [...addObsSel] : []));
+    setAddUnidade(0);
+    setAplicarEmConjunto(ativar);
+  };
+
+  const adicionarPersonalizada = () => {
+    const texto = addCustom.trim();
+    if (!texto) return;
+    adicionarObs(texto);
+    setAddCustom('');
+  };
 
   const confirmarAdicao = async () => {
     if (!addProduto) return;
-    const observacao = [...addObsSel, addCustom.trim()].filter(Boolean).join(', ') || undefined;
     setAdicionando(true);
     try {
       if (editandoItem) {
+        const observacao = [...observacoesAtuais, addCustom.trim()].filter(Boolean).join('\n') || undefined;
         await comandaApi.updateItem(comandaId, editandoItem.id, { observacao });
         toast('success', `Observações de ${addProduto.nome} atualizadas`);
         setAddProduto(null);
@@ -137,13 +185,18 @@ export function ComandaPage() {
         loadComanda();
         return;
       }
-      await comandaApi.addItem(comandaId, {
-        produto_id: addProduto.id,
-        quantidade: addQtd,
-        pessoa_id: pessoaSel === 'geral' ? undefined : pessoaSel,
-        observacao,
-        responsavel: comanda?.garcom_nome || undefined,
-      });
+      const grupos = aplicarEmConjunto ? [addObsSel] : addObsUnidades.slice(0, addQtd);
+      for (let i = 0; i < grupos.length; i++) {
+        const observacoes = grupos[i];
+        const personalizadaPendente = aplicarEmConjunto || i === addUnidade ? addCustom.trim() : '';
+        await comandaApi.addItem(comandaId, {
+          produto_id: addProduto.id,
+          quantidade: aplicarEmConjunto ? addQtd : 1,
+          pessoa_id: pessoaSel === 'geral' ? undefined : pessoaSel,
+          observacao: [...observacoes, personalizadaPendente].filter(Boolean).join('\n') || undefined,
+          responsavel: comanda?.garcom_nome || undefined,
+        });
+      }
       toast('success', `${addQtd}x ${addProduto.nome} adicionado`);
       setAddProduto(null);
       loadComanda();
@@ -658,7 +711,9 @@ export function ComandaPage() {
                               </span>
                             )}
                           </p>
-                          {item.observacao && <p className="text-[11px] text-amber-600">* {item.observacao}</p>}
+                          {item.observacao && String(item.observacao).split('\n').map((obs, i) => (
+                            <p key={i} className="text-[11px] text-amber-600">({obs})</p>
+                          ))}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Badge color={item.status === 'entregue' ? 'green' : item.status === 'enviado' ? 'blue' : 'amber'}>
@@ -929,7 +984,7 @@ export function ComandaPage() {
 
             <Field label="Quantidade">
               <div className="flex items-center gap-2">
-                {!editandoItem && <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => setAddQtd(Math.max(1, addQtd - 1))}>
+                {!editandoItem && <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => alterarQuantidade(addQtd - 1)}>
                   <Minus className="h-4 w-4" />
                 </Button>}
                 <Input
@@ -938,13 +993,35 @@ export function ComandaPage() {
                   className="w-20 text-center"
                   value={addQtd}
                   disabled={!!editandoItem}
-                  onChange={(e) => setAddQtd(Math.max(1, Number(e.target.value) || 1))}
+                  onChange={(e) => alterarQuantidade(Number(e.target.value) || 1)}
                 />
-                {!editandoItem && <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => setAddQtd(addQtd + 1)}>
+                {!editandoItem && <Button type="button" variant="secondary" size="sm" className="h-9 w-9 p-0" onClick={() => alterarQuantidade(addQtd + 1)}>
                   <Plus className="h-4 w-4" />
                 </Button>}
               </div>
             </Field>
+
+            {!editandoItem && addQtd > 1 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-700">Aplicar em conjunto</p>
+                    <p className="text-[11px] text-slate-500">Mantém {addQtd}x em uma linha; desligado permite observar cada unidade.</p>
+                  </div>
+                  <Toggle checked={aplicarEmConjunto} onChange={alterarAplicarEmConjunto} label="Aplicar observações em conjunto" />
+                </div>
+              </div>
+            )}
+
+            {!aplicarEmConjunto && !editandoItem && addQtd > 1 && (
+              <div className="flex flex-wrap gap-2">
+                {Array.from({ length: addQtd }, (_, i) => (
+                  <Button key={i} type="button" size="sm" variant={addUnidade === i ? 'primary' : 'secondary'} onClick={() => setAddUnidade(i)}>
+                    Unidade {i + 1}{addObsUnidades[i]?.length ? ` (${addObsUnidades[i].length})` : ''}
+                  </Button>
+                ))}
+              </div>
+            )}
 
             {(addProduto.comentarios?.length || 0) > 0 ? (
               <Field label="Observações automáticas">
@@ -953,12 +1030,10 @@ export function ComandaPage() {
                     <button
                       key={o}
                       type="button"
-                      onClick={() => toggleObs(o)}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                        addObsSel.includes(o) ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                      onClick={() => adicionarObs(o)}
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-brand-100 hover:text-brand-700"
                     >
-                      {o}
+                      + {o}
                     </button>
                   ))}
                 </div>
@@ -967,8 +1042,23 @@ export function ComandaPage() {
               <p className="text-xs text-slate-400">Este produto não tem observações cadastradas.</p>
             )}
 
+            {observacoesAtuais.length > 0 && (
+              <div className="space-y-1 rounded-xl bg-brand-50 p-3">
+                <p className="text-xs font-bold text-brand-700">Observações adicionadas</p>
+                {observacoesAtuais.map((o, i) => (
+                  <div key={`${o}-${i}`} className="flex items-center justify-between text-xs text-brand-800">
+                    <span>({o})</span>
+                    <button type="button" className="font-bold text-red-500" onClick={() => removerObs(o)}>− remover</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <Field label="Observação personalizada">
-              <Input value={addCustom} onChange={(e) => setAddCustom(e.target.value)} placeholder="Digite uma observação..." />
+              <div className="flex gap-2">
+                <Input value={addCustom} onChange={(e) => setAddCustom(e.target.value)} placeholder="Digite uma observação..." />
+                <Button type="button" variant="secondary" onClick={adicionarPersonalizada}>Adicionar</Button>
+              </div>
             </Field>
 
             {pessoaSel !== 'geral' && (

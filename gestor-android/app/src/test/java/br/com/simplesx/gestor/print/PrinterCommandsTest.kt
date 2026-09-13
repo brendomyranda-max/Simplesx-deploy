@@ -1,3 +1,8 @@
+/**
+ * Arquivo: PrinterCommandsTest.kt
+ * Responsabilidade: Testa os comandos de impressão gerados no Android.
+ */
+
 package br.com.simplesx.gestor.print
 
 import br.com.simplesx.gestor.data.PrinterConfig

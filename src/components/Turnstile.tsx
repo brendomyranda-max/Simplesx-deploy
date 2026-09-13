@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Turnstile.tsx
+ * Responsabilidade: Carrega o desafio anti-robô e devolve seu token ao login.
+ */
+
 import { useEffect, useRef } from 'react';
 
 declare global {

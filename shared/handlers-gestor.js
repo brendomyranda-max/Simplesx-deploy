@@ -1,3 +1,8 @@
+/**
+ * Arquivo: handlers-gestor.js
+ * Responsabilidade: Mantém o protocolo legado da fila de impressão.
+ */
+
 import { now, num, gerarToken, getConfigValue } from './util.js';
 import { createDeviceTask } from './handlers-devices.js';
 

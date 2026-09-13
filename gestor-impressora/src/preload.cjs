@@ -1,3 +1,8 @@
+/**
+ * Arquivo: preload.cjs
+ * Responsabilidade: Expõe à tela apenas as operações Electron autorizadas.
+ */
+
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('simplesx', {

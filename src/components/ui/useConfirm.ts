@@ -1,3 +1,8 @@
+/**
+ * Arquivo: useConfirm.ts
+ * Responsabilidade: Componente visual reutilizável useConfirm.ts usado para manter a interface consistente.
+ */
+
 import { useToast } from './Toast';
 
 export function useConfirm() {

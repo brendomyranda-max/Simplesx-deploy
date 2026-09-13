@@ -1,6 +1,11 @@
+/**
+ * Arquivo: EstoquePage.tsx
+ * Responsabilidade: Implementa a tela EstoquePage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 import { Boxes, Plus, Search, Pencil, Trash2, ScanBarcode, PackageMinus, ChefHat, Layers, Wrench } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import {
   Badge,
   Button,
@@ -14,7 +19,7 @@ import {
   useConfirm,
   useToast,
 } from '@/components/ui';
-import { ProdutoForm } from '@/components/forms/ProdutoForm';
+import { ProdutoForm } from '@/components/ProdutoForm';
 import { produtoApi, estoqueApi, configApi } from '@/lib/api';
 import type { Produto, ConfigEmpresa, ProdutoTipo } from '@/lib/types';
 import { fmtBRL, fmtNum } from '@/lib/format';

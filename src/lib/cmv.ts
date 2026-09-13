@@ -1,3 +1,8 @@
+/**
+ * Arquivo: cmv.ts
+ * Responsabilidade: Converte unidades e calcula o custo das fichas técnicas.
+ */
+
 export interface LinhaCmv {
   quantidade: number;
   unidade: string;

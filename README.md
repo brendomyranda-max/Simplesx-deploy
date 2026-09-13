@@ -1,11 +1,59 @@
-# Simplesx-deploy
+# SimplesX — gestão de mercados e restaurantes
+
+Aplicação web com PDV, mesas e comandas, estoque, ficha técnica, validade,
+financeiro e impressão por agentes desktop e Android. React e TypeScript no
+frontend; API JavaScript compartilhada entre Express/SQLite local e Cloudflare
+Pages/D1/KV. Os dados são separados por estabelecimento.
+
+## Executar localmente
+
+Requer Node.js 22.13 ou superior e npm. O SQLite é fornecido pelo próprio Node.
+
+```bash
+npm ci
+cp .env.example .env
+npm run db:migrate:local
+npm run server
+```
+
+Em outro terminal, execute `npm run dev` e abra `http://localhost:5173`.
+Crie uma conta pela tela de acesso. A instalação começa sem usuários, senhas
+ou dados de clientes. O `.env.example` contém somente chaves públicas de teste
+do Turnstile; em produção, configure suas próprias chaves.
+
+Validação: `npm test`, `npm run build` e `npm --prefix gestor-impressora test`.
+Para servir a interface compilada, execute `npm run build` antes de
+`npm run server` e acesse `http://localhost:3001`.
+
+## Configuração e credenciais
+
+O servidor e os scripts Node carregam `.env`; variáveis exportadas no ambiente
+têm prioridade. O Wrangler usa `.dev.vars` no desenvolvimento. Os arquivos reais
+ficam fora do Git; os modelos `.env.example` e `.dev.vars.example` podem ser publicados.
+
+Para configurar o Cloudflare, copie `wrangler.toml.example` para `wrangler.toml`,
+informe os IDs do seu D1/KV e use Secrets do Cloudflare para credenciais. Os IDs
+identificam recursos e não são senhas; cada instalação mantém sua configuração local.
+O projeto Pages e o banco usados nos comandos são `simplesx-projeto-beta` e
+`simplesx-db`; se os renomear, ajuste também os comandos de deploy e administração.
+
+Consulte [SEGURANCA.md](./SEGURANCA.md) para a relação de variáveis, assinatura
+Android e cuidados ao publicar um repositório que já teve dados no histórico.
+
+Para entender a arquitetura, o fluxo dos dados, a função de cada arquivo e por
+que o repositório contém arquivos JSON, consulte [GUIA_DO_PROJETO.md](./GUIA_DO_PROJETO.md).
+
+Para preparar os secrets da integração de pagamentos, consulte
+[PAGBANK_CONFIGURACAO.md](./PAGBANK_CONFIGURACAO.md).
 
 ## Criar um estabelecimento
 
-Tokens não podem ser criados pela interface. No servidor, execute:
+Tokens não podem ser criados pela interface. Defina `SIMPLESX_SENHA_DONO` no
+`.env` privado (ao menos 8 caracteres), execute o comando e apague a senha do
+arquivo em seguida. Não passe senhas nos argumentos do terminal:
 
 ```bash
-npm run criar-token -- "Nome do estabelecimento" CNPJ usuario_dono "senha-com-8-ou-mais-caracteres"
+npm run criar-token -- "Nome do estabelecimento" CNPJ usuario_dono
 ```
 
 O comando cria um ambiente vazio, o usuário dono com acesso total e mostra o
@@ -15,7 +63,7 @@ vendas, configurações e impressão isolados dos demais.
 Para criar diretamente no deploy usado pelos clientes externos:
 
 ```bash
-npm run criar-token -- "Nome do estabelecimento" CNPJ usuario_dono "senha" --remote
+npm run criar-token -- "Nome do estabelecimento" CNPJ usuario_dono --remote
 ```
 
 ## Administrar tokens do deploy

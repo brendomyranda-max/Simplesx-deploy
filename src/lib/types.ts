@@ -1,3 +1,8 @@
+/**
+ * Arquivo: types.ts
+ * Responsabilidade: Declara os contratos TypeScript compartilhados pelas telas e pela API.
+ */
+
 export interface Categoria {
   id: number;
   nome: string;
@@ -54,6 +59,8 @@ export interface Produto {
   conteudo_unidade?: string | null;
   custo: number;
   preco: number | null;
+  produto_balanca?: number;
+  balanca_plu?: string | null;
   fornecedor_id: number | null;
   fornecedor_nome?: string | null;
   marca: string | null;

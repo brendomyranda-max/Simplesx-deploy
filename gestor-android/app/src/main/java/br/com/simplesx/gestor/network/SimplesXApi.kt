@@ -1,3 +1,8 @@
+/**
+ * Arquivo: SimplesXApi.kt
+ * Responsabilidade: Executa as chamadas HTTP do gestor Android para a API.
+ */
+
 package br.com.simplesx.gestor.network
 
 import br.com.simplesx.gestor.data.AppConfig

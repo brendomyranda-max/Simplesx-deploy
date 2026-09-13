@@ -1,3 +1,8 @@
+/**
+ * Arquivo: PageHeader.tsx
+ * Responsabilidade: Componente visual reutilizável PageHeader.tsx usado para manter a interface consistente.
+ */
+
 export function PageHeader({
   title,
   subtitle,

@@ -57,3 +57,4 @@ public static class RawPrinter {
 
 Add-Type -TypeDefinition $source
 [RawPrinter]::Send($PrinterName, [System.IO.File]::ReadAllBytes($FilePath))
+# Envia bytes sem transformação para uma impressora RAW do Windows.

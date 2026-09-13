@@ -1,3 +1,8 @@
+/**
+ * Arquivo: print.ts
+ * Responsabilidade: Prepara recibos e escolhe a estratégia de impressão.
+ */
+
 const PAGE_STYLE_ID = 'simplesx-print-page';
 const BOBINA_KEY = 'simplesx_bobina';
 

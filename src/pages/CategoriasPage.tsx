@@ -1,6 +1,11 @@
+/**
+ * Arquivo: CategoriasPage.tsx
+ * Responsabilidade: Implementa a tela CategoriasPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Tags, Plus, Pencil, Trash2, Truck, Save, Printer, CornerDownRight } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
 import { categoriaApi, fornecedorApi, impressoraApi, deviceApi, gestorApi } from '@/lib/api';
 import type { Categoria, Fornecedor } from '@/lib/types';

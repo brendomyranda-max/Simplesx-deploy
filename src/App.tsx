@@ -1,7 +1,13 @@
+/**
+ * Arquivo: App.tsx
+ * Responsabilidade: Define as rotas, protege áreas autenticadas e libera cada módulo conforme as permissões.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type Modulo } from '@/store/auth';
-import { AppShell } from '@/components/layout/AppShell';
+import type { AreaApp } from '@/lib/areas';
+import { AppShell } from '@/components/AppShell';
 import { Login } from '@/pages/Login';
 import { InicioPage } from '@/pages/InicioPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -25,10 +31,10 @@ import { FiscalPage } from '@/pages/FiscalPage';
 import { authApi, configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
-function Require({ mod, children }: { mod: Modulo; children: React.ReactNode }) {
-  const { can } = useAuth();
+function Require({ mod, area, children }: { mod: Modulo; area?: AreaApp; children: React.ReactNode }) {
+  const { can, canArea } = useAuth();
   const location = useLocation();
-  if (!can(mod)) return <Navigate to="/" replace state={{ from: location }} />;
+  if (!can(mod) || (area && can('gestor') && !canArea(area))) return <Navigate to="/" replace state={{ from: location }} />;
   return <>{children}</>;
 }
 
@@ -45,7 +51,7 @@ function ProtectedApp({
         <Route
           path="/dashboard"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="geral">
               <Dashboard />
             </Require>
           }
@@ -53,7 +59,7 @@ function ProtectedApp({
         <Route
           path="/vendas"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="vendas">
               <VendasPage />
             </Require>
           }
@@ -61,7 +67,7 @@ function ProtectedApp({
         <Route
           path="/estoque"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="estoque">
               <EstoquePage />
             </Require>
           }
@@ -69,7 +75,7 @@ function ProtectedApp({
         <Route
           path="/entrada"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="estoque">
               <EntradaPage />
             </Require>
           }
@@ -77,7 +83,7 @@ function ProtectedApp({
         <Route
           path="/validade"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="estoque">
               <ValidadePage />
             </Require>
           }
@@ -85,7 +91,7 @@ function ProtectedApp({
         <Route
           path="/categorias"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="estoque">
               <CategoriasPage />
             </Require>
           }
@@ -93,19 +99,19 @@ function ProtectedApp({
         <Route
           path="/financeiro"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="gestao">
               <FinanceiroPage />
             </Require>
           }
         />
         <Route
           path="/fechamento-caixa"
-          element={<Require mod="gestor"><FechamentoCaixaPage /></Require>}
+          element={<Require mod="gestor" area="gestao"><FechamentoCaixaPage /></Require>}
         />
         <Route
           path="/relatorios"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="geral">
               <RelatoriosPage />
             </Require>
           }
@@ -113,7 +119,7 @@ function ProtectedApp({
         <Route
           path="/perdas"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="gestao">
               <PerdasPage />
             </Require>
           }
@@ -121,7 +127,7 @@ function ProtectedApp({
         <Route
           path="/funcionarios"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="configuracoes">
               <FuncionariosPage />
             </Require>
           }
@@ -129,7 +135,7 @@ function ProtectedApp({
         <Route
           path="/impressoras"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="configuracoes">
               <ImpressorasPage />
             </Require>
           }
@@ -137,16 +143,16 @@ function ProtectedApp({
         <Route
           path="/config"
           element={
-            <Require mod="gestor">
+            <Require mod="gestor" area="configuracoes">
               <ConfiguracoesPage />
             </Require>
           }
         />
-        <Route path="/fiscal" element={<Require mod="gestor"><FiscalPage /></Require>} />
+        <Route path="/fiscal" element={<Require mod="gestor" area="vendas"><FiscalPage /></Require>} />
         <Route
           path="/pdv"
           element={
-            <Require mod="pdv_mercado">
+            <Require mod="pdv_mercado" area="vendas">
               <PdvPage />
             </Require>
           }
@@ -154,7 +160,7 @@ function ProtectedApp({
         <Route
           path="/restaurante"
           element={
-            <Require mod="restaurante">
+            <Require mod="restaurante" area="vendas">
               <RestaurantePage />
             </Require>
           }
@@ -162,7 +168,7 @@ function ProtectedApp({
         <Route
           path="/restaurante/comanda/:id"
           element={
-            <Require mod="restaurante">
+            <Require mod="restaurante" area="vendas">
               <ComandaPage />
             </Require>
           }
@@ -170,7 +176,7 @@ function ProtectedApp({
         <Route
           path="/restaurante/comanda/:id/pagamentos"
           element={
-            <Require mod="restaurante">
+            <Require mod="restaurante" area="vendas">
               <PagamentosComanda />
             </Require>
           }
@@ -182,21 +188,23 @@ function ProtectedApp({
 }
 
 export default function App() {
-  const { token, setAuth } = useAuth();
+  const { token, setAuth, clearSession } = useAuth();
   const [iniciando, setIniciando] = useState(true);
   const [empresa, setEmpresa] = useState<ConfigEmpresa | null>(null);
   const [badges, setBadges] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
   useEffect(() => {
+    let alive = true;
     authApi.me()
-      .then((sessao) => setAuth(sessao.nome, sessao.perfil, sessao.modulos))
+      .then((sessao) => { if (alive) setAuth(sessao.nome, sessao.perfil, sessao.modulos); })
       .catch(() => undefined)
-      .finally(() => setIniciando(false));
+      .finally(() => { if (alive) setIniciando(false); });
+    return () => { alive = false; };
   }, [setAuth]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) { setEmpresa(null); setBadges({}); return; }
     let alive = true;
     const load = async () => {
       try {
@@ -205,6 +213,7 @@ export default function App() {
           setEmpresa(cfg);
           localStorage.setItem('simplesx_empresa', cfg.empresa_nome);
         }
+        if (!alive) return;
         const est = await estadoApi.get();
         if (alive) {
           setBadges({
@@ -227,10 +236,10 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    const onLogout = () => navigate('/login');
+    const onLogout = () => { clearSession(); navigate('/login', { replace: true }); };
     window.addEventListener('simplesx:logout', onLogout);
     return () => window.removeEventListener('simplesx:logout', onLogout);
-  }, [navigate]);
+  }, [navigate, clearSession]);
 
   if (iniciando) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Verificando sessão…</div>;
   if (!token) return <Login />;

@@ -1,8 +1,13 @@
+/**
+ * Arquivo: RestaurantePage.tsx
+ * Responsabilidade: Implementa a tela RestaurantePage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UtensilsCrossed, Users, Plus, Pencil, Trash2, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useConfirm, useToast } from '@/components/ui';
 import { mesaApi, funcionarioApi } from '@/lib/api';
 import type { Mesa, Funcionario } from '@/lib/types';

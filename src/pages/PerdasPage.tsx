@@ -1,6 +1,11 @@
+/**
+ * Arquivo: PerdasPage.tsx
+ * Responsabilidade: Implementa a tela PerdasPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Trash2, Plus, PackageX, Eye, ReceiptText, User, CalendarClock } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, useToast } from '@/components/ui';
 import { perdaApi, produtoApi } from '@/lib/api';
 import type { Perda, Produto } from '@/lib/types';

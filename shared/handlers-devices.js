@@ -1,3 +1,8 @@
+/**
+ * Arquivo: handlers-devices.js
+ * Responsabilidade: Implementa pareamento, autenticação e tarefas do Gestor Local v2.
+ */
+
 import { estabelecimentoId, gerarToken, httpError, kvGet, kvPut, now, num, sha256, temModulo } from './util.js';
 
 export const DEVICE_TASK_TYPES = new Set([

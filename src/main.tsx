@@ -1,3 +1,8 @@
+/**
+ * Arquivo: main.tsx
+ * Responsabilidade: Inicializa o React, o roteador e os provedores globais da interface.
+ */
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

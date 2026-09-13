@@ -1,3 +1,8 @@
+/**
+ * Arquivo: LabelLayout.kt
+ * Responsabilidade: Calcula o posicionamento do conteúdo de uma etiqueta.
+ */
+
 package br.com.simplesx.gestor.print
 
 import java.text.Normalizer

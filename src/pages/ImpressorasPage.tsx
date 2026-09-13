@@ -1,6 +1,11 @@
+/**
+ * Arquivo: ImpressorasPage.tsx
+ * Responsabilidade: Implementa a tela ImpressorasPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone, Trash2 } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
 import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi } from '@/lib/api';
 import { getBobina, setBobina, type Bobina } from '@/lib/print';

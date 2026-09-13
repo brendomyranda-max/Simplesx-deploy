@@ -1,3 +1,8 @@
+/**
+ * Arquivo: index.ts
+ * Responsabilidade: Componente visual reutilizável index.ts usado para manter a interface consistente.
+ */
+
 export { Button } from './Button';
 export { IconButton } from './IconButton';
 export { Card } from './Card';

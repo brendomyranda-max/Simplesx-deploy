@@ -1,7 +1,12 @@
+/**
+ * Arquivo: PagamentosComanda.tsx
+ * Responsabilidade: Implementa a tela PagamentosComanda.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCheck, HandCoins, Printer, Users } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Modal, Spinner, useConfirm, useToast } from '@/components/ui';
 import { comandaApi, impressoraApi } from '@/lib/api';
 import type { Comanda, ComandaPessoa } from '@/lib/types';

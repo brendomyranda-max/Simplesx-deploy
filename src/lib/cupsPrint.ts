@@ -1,3 +1,8 @@
+/**
+ * Arquivo: cupsPrint.ts
+ * Responsabilidade: Comunica o navegador com o agente de impressão local ou remoto.
+ */
+
 import type { Bobina } from './print'
 import { gestorApi } from './api'
 

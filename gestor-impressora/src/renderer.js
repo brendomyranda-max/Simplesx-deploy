@@ -1,3 +1,8 @@
+/**
+ * Arquivo: renderer.js
+ * Responsabilidade: Controla os campos e estados visuais da janela do gestor desktop.
+ */
+
 const $ = (id) => document.getElementById(id)
 let estado
 

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: [[path]].ts
+ * Responsabilidade: Adapta qualquer rota /api do Cloudflare ao roteador compartilhado.
+ */
+
 import { handle } from '../../shared/router.js';
 
 export async function onRequest(context) {

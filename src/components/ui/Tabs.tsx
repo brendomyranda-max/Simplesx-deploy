@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Tabs.tsx
+ * Responsabilidade: Componente visual reutilizável Tabs.tsx usado para manter a interface consistente.
+ */
+
 import { motion } from 'framer-motion';
 
 export function Tabs<T extends string>({

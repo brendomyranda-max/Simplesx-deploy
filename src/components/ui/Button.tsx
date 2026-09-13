@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Button.tsx
+ * Responsabilidade: Componente visual reutilizável Button.tsx usado para manter a interface consistente.
+ */
+
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';

@@ -1,3 +1,9 @@
+/**
+ * Arquivo: InicioPage.tsx
+ * Responsabilidade: Implementa a tela InicioPage.tsx e coordena seus dados e ações.
+ */
+
+import { Colaboracao } from '@/components/Colaboracao';
 import { useMemo } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -5,6 +11,9 @@ import {
   LayoutDashboard,
   ScanBarcode,
   UtensilsCrossed,
+  Wallet,
+  Boxes,
+  Settings,
   LogOut,
   ArrowRight,
   Building2,
@@ -12,6 +21,61 @@ import {
 } from 'lucide-react';
 import { useAuth, type Modulo } from '@/store/auth';
 import { Button, useToast } from '@/components/ui';
+import { selecionarArea, type AreaApp } from '@/lib/areas';
+
+interface AreaCard {
+  key: AreaApp;
+  titulo: string;
+  descricao: string;
+  icon: React.ReactNode;
+  to: string;
+  corIcone: string;
+}
+
+// Estas são as cinco portas de entrada do Gestor. Todas usam as mesmas telas e
+// permissões; a diferença é quais grupos o menu mostrará depois da escolha.
+const AREAS: AreaCard[] = [
+  {
+    key: 'geral',
+    titulo: 'Geral',
+    descricao: 'Visão completa com painel, vendas, estoque, gestão, análises e configurações.',
+    icon: <LayoutDashboard className="h-7 w-7" />,
+    to: '/dashboard',
+    corIcone: 'text-brand-600 bg-brand-50',
+  },
+  {
+    key: 'vendas',
+    titulo: 'Vendas',
+    descricao: 'PDV, histórico de vendas, NFC-e e atendimento do restaurante.',
+    icon: <ScanBarcode className="h-7 w-7" />,
+    to: '/pdv',
+    corIcone: 'text-emerald-600 bg-emerald-50',
+  },
+  {
+    key: 'gestao',
+    titulo: 'Gestão',
+    descricao: 'Financeiro, fechamento de caixa e controle de perdas.',
+    icon: <Wallet className="h-7 w-7" />,
+    to: '/financeiro',
+    corIcone: 'text-violet-600 bg-violet-50',
+  },
+  {
+    key: 'estoque',
+    titulo: 'Estoque',
+    descricao: 'Estoque, validades, categorias e entrada de mercadorias.',
+    icon: <Boxes className="h-7 w-7" />,
+    to: '/estoque',
+    corIcone: 'text-amber-600 bg-amber-50',
+  },
+  {
+    key: 'configuracoes',
+    titulo: 'Configurações',
+    descricao: 'Funcionários, impressoras e preferências da empresa.',
+    icon: <Settings className="h-7 w-7" />,
+    to: '/funcionarios',
+    corIcone: 'text-sky-600 bg-sky-50',
+  },
+];
 
 interface ModuloCard {
   key: Modulo;
@@ -58,11 +122,13 @@ const MODULOS: ModuloCard[] = [
 ];
 
 export function InicioPage() {
-  const { nome, logout, can } = useAuth();
+  const { nome, logout, saindo, can, areas } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
 
   const disponiveis = useMemo(() => MODULOS.filter((m) => can(m.key)), [can]);
+  const possuiGestor = can('gestor');
+  const areasDisponiveis = AREAS.filter((area) => areas.includes('geral') || areas.includes(area.key));
 
   // Tudo começa bloqueado: quem tem Gestor entra em PDV/Restaurante pelo Gestor.
   const estaBloqueado = (key: Modulo): boolean => {
@@ -73,6 +139,7 @@ export function InicioPage() {
 
   // Com apenas um módulo liberado, entra direto nele (ex.: só restaurante)
   const unico = disponiveis.length === 1 ? disponiveis[0] : null;
+  const unicaArea = possuiGestor && areasDisponiveis.length === 1 ? areasDisponiveis[0] : null;
 
   const entrar = (mod: ModuloCard) => {
     if (estaBloqueado(mod.key)) {
@@ -82,12 +149,25 @@ export function InicioPage() {
     navigate(mod.to);
   };
 
-  const sair = () => {
-    logout();
-    navigate('/login');
+  const entrarNaArea = (area: AreaCard) => {
+    selecionarArea(area.key);
+    navigate(area.to);
+  };
+
+  const sair = async () => {
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      toast('error', 'Não foi possível sair da conta. Verifique a conexão e tente novamente.');
+    }
   };
 
   if (unico) return <Navigate to={unico.to} replace />;
+  if (unicaArea) {
+    selecionarArea(unicaArea.key);
+    return <Navigate to={unicaArea.to} replace />;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-brand-950 to-slate-900 p-4">
@@ -95,7 +175,7 @@ export function InicioPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-        className="w-full max-w-2xl"
+        className="w-full max-w-4xl"
       >
         <div className="mb-8 flex flex-col items-center text-center">
           <motion.div
@@ -113,7 +193,32 @@ export function InicioPage() {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        {possuiGestor ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {areasDisponiveis.map((area, i) => (
+              <motion.button
+                key={area.key}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.12 + i * 0.07, type: 'spring', stiffness: 260, damping: 22 }}
+                whileHover={{ y: -4 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => entrarNaArea(area)}
+                className="card group flex min-h-48 flex-col items-center gap-3 p-5 text-center transition-colors hover:border-white/20"
+              >
+                <span className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg ${area.corIcone}`}>{area.icon}</span>
+                <h2 className="mt-1 block w-full border-b border-brand-400/20 pb-3 text-2xl font-black tracking-tight text-brand-400 drop-shadow-sm">
+                  {area.titulo}
+                </h2>
+                <span className="block text-sm leading-relaxed text-slate-400">{area.descricao}</span>
+                <span className="mt-auto flex items-center gap-1 text-xs font-bold text-slate-500 transition-colors group-hover:text-white">
+                  Entrar <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </motion.button>
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
           {MODULOS.map((mod, i) => {
             const bloqueado = estaBloqueado(mod.key);
             return (
@@ -150,7 +255,8 @@ export function InicioPage() {
               </motion.button>
             );
           })}
-        </div>
+          </div>
+        )}
 
         {disponiveis.length === 0 && (
           <motion.div
@@ -162,8 +268,9 @@ export function InicioPage() {
           </motion.div>
         )}
 
+        <Colaboracao />
         <div className="mt-8 text-center">
-          <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={sair}>
+          <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={sair} loading={saindo}>
             Sair
           </Button>
         </div>

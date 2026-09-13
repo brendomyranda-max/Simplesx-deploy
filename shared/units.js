@@ -1,3 +1,8 @@
+/**
+ * Arquivo: units.js
+ * Responsabilidade: Normaliza unidades e converte quantidades compatíveis.
+ */
+
 const num = (v) => (v === null || v === undefined || v === '' ? 0 : Number(v));
 
 // Famílias de unidades com fator de conversão para a base da família.

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: PrinterTransport.kt
+ * Responsabilidade: Descobre impressoras e transmite bytes por USB, Bluetooth ou rede.
+ */
+
 package br.com.simplesx.gestor.print
 
 import android.Manifest

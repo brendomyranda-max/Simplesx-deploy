@@ -1,8 +1,13 @@
+/**
+ * Arquivo: EntradaPage.tsx
+ * Responsabilidade: Implementa a tela EntradaPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { PackagePlus, ScanBarcode, CheckCircle2, Search, History, Link2, X } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useToast } from '@/components/ui';
-import { ProdutoForm } from '@/components/forms/ProdutoForm';
+import { ProdutoForm } from '@/components/ProdutoForm';
 import { produtoApi, estoqueApi, fornecedorApi, categoriaApi, configApi } from '@/lib/api';
 import type { Produto, Fornecedor, Categoria, ConfigEmpresa, MovimentacaoEstoque } from '@/lib/types';
 import { fmtBRL, fmtData, fmtNum, hojeLocal } from '@/lib/format';

@@ -47,3 +47,4 @@ try { $document.Print() } finally {
   $document.remove_PrintPage($handler)
   $document.Dispose()
 }
+# Envia ao Windows um documento ajustado às dimensões configuradas do papel.

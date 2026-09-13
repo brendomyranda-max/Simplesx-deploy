@@ -1,0 +1,22 @@
+{
+  "files.exclude": {
+    "**/.git": true,
+    "**/.gradle": true,
+    "**/.kotlin": true,
+    "**/.wrangler": true,
+    "**/node_modules": true,
+    "**/release": true,
+    "**/build": true,
+    "**/dist": true,
+    "**/*.tsbuildinfo": true
+  },
+  "search.exclude": {
+    "**/.gradle": true,
+    "**/.kotlin": true,
+    "**/.wrangler": true,
+    "**/node_modules": true,
+    "**/release": true,
+    "**/build": true,
+    "**/dist": true
+  }
+}

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: util.js
+ * Responsabilidade: Fornece segurança, sessões e operações comuns de produto, estoque e financeiro.
+ */
+
 function randBytesHex(n) {
   const arr = new Uint8Array(n);
   crypto.getRandomValues(arr);

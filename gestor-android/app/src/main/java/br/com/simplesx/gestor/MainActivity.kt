@@ -1,3 +1,8 @@
+/**
+ * Arquivo: MainActivity.kt
+ * Responsabilidade: Exibe configuração, pareamento e controle do serviço Android.
+ */
+
 package br.com.simplesx.gestor
 
 import android.Manifest

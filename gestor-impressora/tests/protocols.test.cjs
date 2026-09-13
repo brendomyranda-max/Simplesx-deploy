@@ -1,3 +1,8 @@
+/**
+ * Arquivo: protocols.test.cjs
+ * Responsabilidade: Verifica a montagem dos protocolos enviados às impressoras.
+ */
+
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')

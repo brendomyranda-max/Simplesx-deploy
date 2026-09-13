@@ -1,0 +1,21 @@
+# Copie para wrangler.toml e informe os recursos da sua conta.
+# Credenciais pertencem aos Secrets do Cloudflare, nunca a este arquivo.
+name = "simplesx-projeto-beta"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
+
+# Pagamentos começam obrigatoriamente no simulador. Alterar para `sandbox`
+# somente após cadastrar os secrets; `production` exigirá homologação explícita.
+[vars]
+PAGBANK_MODE = "simulator"
+PAGBANK_PLATFORM_FEE_BPS = "2"
+
+# Recursos Cloudflare criados no deploy
+[[d1_databases]]
+binding = "DB"
+database_name = "simplesx-db"
+database_id = "SUBSTITUA_PELO_ID_DO_SEU_D1"
+
+[[kv_namespaces]]
+binding = "AUTH_KV"
+id = "SUBSTITUA_PELO_ID_DO_SEU_KV"

@@ -1,0 +1,13 @@
+# Copie para .dev.vars somente no seu computador. Nunca envie .dev.vars ao Git.
+PAGBANK_API_TOKEN=
+PAGBANK_TAPON_APP_KEY=
+PAGBANK_SIMPLESX_ACCOUNT_ID=
+
+# Chaves PÚBLICAS DE TESTE, somente para desenvolvimento com Wrangler.
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+
+# Opcional: dados do recebedor Pix. Configure Secrets no Cloudflare no deploy.
+COLABORACAO_PIX_CHAVE=
+COLABORACAO_PIX_NOME=
+COLABORACAO_PIX_CIDADE=

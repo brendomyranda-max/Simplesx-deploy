@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tema visual nativo aplicado às telas do gestor Android. -->
 <resources>
     <style name="Theme.SimplesX" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>

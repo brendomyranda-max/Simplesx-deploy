@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Field.tsx
+ * Responsabilidade: Componente visual reutilizável Field.tsx usado para manter a interface consistente.
+ */
+
 export function Field({
   label,
   children,

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: AppConfig.kt
+ * Responsabilidade: Persiste localmente URL, identificação e credenciais do dispositivo.
+ */
+
 package br.com.simplesx.gestor.data
 
 import android.content.Context

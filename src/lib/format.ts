@@ -1,3 +1,8 @@
+/**
+ * Arquivo: format.ts
+ * Responsabilidade: Reúne formatações de moeda, números, datas e meios de pagamento.
+ */
+
 export function fmtBRL(v: number | string | null | undefined): string {
   const n = Number(v || 0);
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Tspl.kt
+ * Responsabilidade: Gera comandos TSPL para impressoras de etiquetas.
+ */
+
 package br.com.simplesx.gestor.print
 
 import br.com.simplesx.gestor.data.TsplPaperMode

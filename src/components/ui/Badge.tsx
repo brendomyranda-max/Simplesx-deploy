@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Badge.tsx
+ * Responsabilidade: Componente visual reutilizável Badge.tsx usado para manter a interface consistente.
+ */
+
 export function Badge({
   children,
   color = 'slate',

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: useBarcodeScanner.ts
+ * Responsabilidade: Interpreta sequências rápidas do teclado como leitura de código de barras.
+ */
+
 import { useEffect, useRef } from 'react';
 
 interface BarcodeScannerOptions {

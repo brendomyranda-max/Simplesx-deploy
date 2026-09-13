@@ -1,3 +1,8 @@
+/**
+ * Arquivo: main.cjs
+ * Responsabilidade: Controla o processo Electron, a bandeja, a configuração e a impressão.
+ */
+
 const { app, BrowserWindow, dialog, ipcMain, shell, Tray, Menu, nativeImage } = require('electron')
 const crypto = require('node:crypto')
 const { execFile } = require('node:child_process')

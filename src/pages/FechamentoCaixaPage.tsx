@@ -1,6 +1,11 @@
+/**
+ * Arquivo: FechamentoCaixaPage.tsx
+ * Responsabilidade: Implementa a tela FechamentoCaixaPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, RefreshCw, Store, UtensilsCrossed } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Spinner, Textarea, useToast } from '@/components/ui';
 import { fechamentoCaixaApi } from '@/lib/api';
 import type { FechamentoCaixa, FechamentoCaixaResumo } from '@/lib/types';

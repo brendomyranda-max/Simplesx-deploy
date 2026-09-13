@@ -1,3 +1,8 @@
+/**
+ * Arquivo: RelatoriosPage.tsx
+ * Responsabilidade: Implementa a tela RelatoriosPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import {
   BarChart3,
@@ -11,7 +16,7 @@ import {
   FolderTree,
   UserSquare2,
 } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Spinner, StatCard, Tabs, useToast } from '@/components/ui';
 import { relatorioApi } from '@/lib/api';
 import type { ResumoRelatorio, Produto, ValidadeControle } from '@/lib/types';

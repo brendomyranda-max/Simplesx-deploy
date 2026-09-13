@@ -1,3 +1,8 @@
+/**
+ * Arquivo: tenant-db.js
+ * Responsabilidade: Isola consultas por estabelecimento para impedir mistura de dados entre empresas.
+ */
+
 // Aplica o estabelecimento em uma única fronteira, inclusive em consultas
 // internas dos handlers. O ID é numérico e vem de uma sessão autenticada.
 const TABELAS = [

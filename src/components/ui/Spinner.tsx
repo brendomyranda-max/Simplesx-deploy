@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Spinner.tsx
+ * Responsabilidade: Componente visual reutilizável Spinner.tsx usado para manter a interface consistente.
+ */
+
 import { Loader2 } from 'lucide-react';
 
 export function Spinner({ label }: { label?: string }) {

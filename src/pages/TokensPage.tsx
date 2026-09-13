@@ -1,6 +1,11 @@
+/**
+ * Arquivo: TokensPage.tsx
+ * Responsabilidade: Implementa a tela TokensPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { KeyRound, Plus, Trash2, Copy } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Spinner, useToast } from '@/components/ui';
 import { tokenApi } from '@/lib/api';
 

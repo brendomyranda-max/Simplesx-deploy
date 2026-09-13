@@ -1,3 +1,8 @@
+/**
+ * Arquivo: EmptyState.tsx
+ * Responsabilidade: Componente visual reutilizável EmptyState.tsx usado para manter a interface consistente.
+ */
+
 export function EmptyState({
   icon,
   title,

@@ -1,7 +1,12 @@
+/**
+ * Arquivo: VendasPage.tsx
+ * Responsabilidade: Implementa a tela VendasPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileCheck2, ReceiptText, RotateCcw, Search, Store, UtensilsCrossed } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, Textarea, useToast } from '@/components/ui';
 import { vendaApi } from '@/lib/api';
 import type { Venda, VendaItem, Pagamento } from '@/lib/types';

@@ -11,3 +11,4 @@ dialog p { margin: 0 0 18px; color: #64748b; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 dialog small { display: block; margin-top: 12px; color: #64748b; }
 @media(max-width:650px){.printer-row{align-items:stretch;flex-direction:column}.printer-row .gear{width:100%}}
+/* Aparência da janela em que o usuário configura o gestor de impressão. */

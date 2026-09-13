@@ -1,3 +1,8 @@
+/**
+ * Arquivo: AnimatedPage.tsx
+ * Responsabilidade: Aplica uma animação consistente ao entrar e sair das páginas.
+ */
+
 import { motion } from 'framer-motion';
 import React from 'react';
 

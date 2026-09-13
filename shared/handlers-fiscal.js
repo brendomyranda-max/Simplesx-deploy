@@ -1,3 +1,8 @@
+/**
+ * Arquivo: handlers-fiscal.js
+ * Responsabilidade: Implementa configuração tributária e o ciclo simulado de NFC-e.
+ */
+
 import { estabelecimentoId, httpError, now, num } from './util.js';
 
 const soDigitos = (v) => String(v || '').replace(/\D/g, '');

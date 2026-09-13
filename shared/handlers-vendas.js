@@ -1,3 +1,8 @@
+/**
+ * Arquivo: handlers-vendas.js
+ * Responsabilidade: Implementa mesas, comandas, PDV, pagamentos, vendas e perdas.
+ */
+
 import {
   now,
   hoje,

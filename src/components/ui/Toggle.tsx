@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Toggle.tsx
+ * Responsabilidade: Componente visual reutilizável Toggle.tsx usado para manter a interface consistente.
+ */
+
 import { motion } from 'framer-motion';
 
 export function Toggle({

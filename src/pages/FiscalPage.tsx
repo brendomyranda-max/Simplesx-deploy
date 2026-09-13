@@ -1,6 +1,11 @@
+/**
+ * Arquivo: FiscalPage.tsx
+ * Responsabilidade: Implementa a tela FiscalPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 import { FileCheck2, PackageSearch, ReceiptText, Save, XCircle } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, useToast } from '@/components/ui';
 import { fiscalApi } from '@/lib/api';
 import { fmtBRL } from '@/lib/format';

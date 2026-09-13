@@ -1,3 +1,8 @@
+/**
+ * Arquivo: EscPos.kt
+ * Responsabilidade: Gera comandos ESC/POS para impressoras térmicas de cupons.
+ */
+
 package br.com.simplesx.gestor.print
 
 import java.io.ByteArrayOutputStream

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: IconButton.tsx
+ * Responsabilidade: Componente visual reutilizável IconButton.tsx usado para manter a interface consistente.
+ */
+
 import { motion } from 'framer-motion';
 
 export function IconButton({

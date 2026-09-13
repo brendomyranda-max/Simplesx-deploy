@@ -1,6 +1,11 @@
+/**
+ * Arquivo: ConfiguracoesPage.tsx
+ * Responsabilidade: Implementa a tela ConfiguracoesPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Settings, Save } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Button, Card, Field, Input, Select, Spinner, useToast } from '@/components/ui';
 import { configApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: handlers-financeiro.js
+ * Responsabilidade: Implementa contas, lançamentos, caixa, fechamento e relatórios.
+ */
+
 import { now, hoje, num, diasAte, addDays, criarPerda, registrarLancamento, registrarCaixa, registrarMovimentacao } from './util.js';
 
 // ============================ PERDAS ============================

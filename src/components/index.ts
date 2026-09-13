@@ -1,4 +1,9 @@
+/**
+ * Arquivo: index.ts
+ * Responsabilidade: Componente reutilizável da interface index.ts.
+ */
+
 export * from './ui';
-export * from './anim';
-export { ProdutoForm } from './forms/ProdutoForm';
-export { AppShell } from './layout/AppShell';
+export { AnimatedPage } from './AnimatedPage';
+export { ProdutoForm } from './ProdutoForm';
+export { AppShell } from './AppShell';

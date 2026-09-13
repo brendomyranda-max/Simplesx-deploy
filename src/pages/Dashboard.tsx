@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Dashboard.tsx
+ * Responsabilidade: Implementa a tela Dashboard.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -13,7 +18,7 @@ import {
   ArrowRight,
   Trash2,
 } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Button, Card, StatCard, Spinner, Badge } from '@/components/ui';
 import { estadoApi, relatorioApi, validadeApi, vendaApi } from '@/lib/api';
 import type { EstadoSistema, ResumoRelatorio, Venda, ValidadeControle } from '@/lib/types';

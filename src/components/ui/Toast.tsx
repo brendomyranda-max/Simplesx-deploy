@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Toast.tsx
+ * Responsabilidade: Componente visual reutilizável Toast.tsx usado para manter a interface consistente.
+ */
+
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';

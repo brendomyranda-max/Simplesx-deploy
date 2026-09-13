@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Card.tsx
+ * Responsabilidade: Componente visual reutilizável Card.tsx usado para manter a interface consistente.
+ */
+
 import { motion } from 'framer-motion';
 
 export function Card({

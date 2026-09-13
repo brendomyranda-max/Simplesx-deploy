@@ -88,3 +88,4 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: artefatos/*
+# Testa e empacota versões Linux e Windows do gestor quando uma release é criada.

@@ -1,9 +1,17 @@
+/**
+ * Arquivo: gerenciar-tokens.js
+ * Responsabilidade: Administra tokens de estabelecimentos pela linha de comando.
+ */
+
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SqliteDb from './sqlite-db.js';
+import { loadLocalEnv } from './env.js';
+
+loadLocalEnv();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DB_FILE = process.env.SIMPLESX_DB || path.join(ROOT, 'data', 'simplesx.db');

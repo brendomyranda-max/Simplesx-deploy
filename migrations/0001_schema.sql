@@ -383,5 +383,4 @@ INSERT OR IGNORE INTO impressora_agentes (nome, ip, porta, tipo, protocolo) VALU
   ('Impressora Bar', '192.168.0.11', 9100, 'impressora', 'raw'),
   ('Agente Salão', '192.168.0.20', 7000, 'agente', 'http');
 
-INSERT OR IGNORE INTO funcionarios (nome, usuario, senha_hash, perfil) VALUES
-  ('Administrador', 'admin', 'admin', 'admin');
+-- Nenhum usuário ou senha padrão. Crie o dono pela tela de cadastro ou CLI.

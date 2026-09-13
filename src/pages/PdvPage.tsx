@@ -1,7 +1,12 @@
+/**
+ * Arquivo: PdvPage.tsx
+ * Responsabilidade: Implementa a tela PdvPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScanBarcode, Plus, Minus, Trash2, Search, Printer, X, Wallet, RotateCcw, ShoppingCart, PackageCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Textarea, useToast } from '@/components/ui';
 import { produtoApi, vendaApi, configApi } from '@/lib/api';
 import type { Produto, ConfigEmpresa, Venda } from '@/lib/types';
@@ -14,6 +19,8 @@ interface CartItem {
   produto: Produto;
   qtd: number;
 }
+
+type ProdutoBalanca = Produto & { quantidade_balanca?: number; codigo_etiqueta?: string };
 
 const PDV_CART_STORAGE = 'simplesx_pdv_cart';
 
@@ -115,25 +122,25 @@ export function PdvPage() {
 
   const disponivel = (p: Produto) => (p.tipo === 'composto' ? (p.estoque_possivel ?? 0) : p.estoque_atual);
 
-  const adicionar = (p: Produto) => {
+  const adicionar = (p: Produto, quantidade = 1) => {
     if (p.preco == null) {
       toast('error', `${p.nome} não tem preço cadastrado`);
       return;
     }
-    if (disponivel(p) <= 0) {
+    if (disponivel(p) < quantidade) {
       toast('error', p.tipo === 'composto' ? `${p.nome} sem insumos suficientes` : `${p.nome} sem estoque`);
       return;
     }
     const atual = cart.find((i) => i.produto.id === p.id)?.qtd || 0;
-    if (atual >= disponivel(p)) {
+    if (atual + quantidade > disponivel(p) + 0.000001) {
       toast('error', `Quantidade máxima disponível de ${p.nome} atingida`);
       return;
     }
     setUltimoProduto(p);
     setCart((c) => {
       const ex = c.find((i) => i.produto.id === p.id);
-      if (ex) return c.map((i) => (i.produto.id === p.id ? { ...i, qtd: i.qtd + 1 } : i));
-      return [...c, { produto: p, qtd: 1 }];
+      if (ex) return c.map((i) => (i.produto.id === p.id ? { ...i, qtd: i.qtd + quantidade } : i));
+      return [...c, { produto: p, qtd: quantidade }];
     });
   };
 
@@ -142,9 +149,10 @@ export function PdvPage() {
     if (!c) return;
     (async () => {
       try {
-        const p = await produtoApi.buscar(c, 'mercado');
-        adicionar(p);
-        toast('success', `${p.nome} adicionado`);
+        const p = await produtoApi.buscar(c, 'mercado') as ProdutoBalanca;
+        const quantidade = Number(p.quantidade_balanca || 1);
+        adicionar(p, quantidade);
+        toast('success', p.quantidade_balanca ? `${p.nome}: ${fmtNum(quantidade)} ${p.unidade}` : `${p.nome} adicionado`);
       } catch {
         const local = produtos.find((x) => x.codigo_interno === c);
         if (local) adicionar(local);
@@ -359,7 +367,7 @@ export function PdvPage() {
                     <p className="font-mono text-xs opacity-70">Cód. {ultimoProduto.codigo_interno}</p>
                   </div>
                 </div>
-                <p className="ml-3 text-2xl font-black">{fmtBRL(ultimoProduto.preco)}</p>
+                <p className="ml-3 text-right text-2xl font-black">{fmtBRL(ultimoProduto.preco)}{ultimoProduto.produto_balanca ? <span className="block text-[10px] font-bold">por {ultimoProduto.unidade}</span> : null}</p>
               </motion.div>
             ) : (
               <div className="mt-3 rounded-xl border border-dashed border-slate-600 py-4 text-center text-sm text-slate-400">Caixa livre — aguardando o primeiro produto</div>
@@ -390,10 +398,10 @@ export function PdvPage() {
                   <p className="line-clamp-2 text-sm font-bold leading-snug text-slate-800">{p.nome}</p>
                   <p className="text-[11px] text-slate-400">
                     {p.tipo === 'composto'
-                      ? `disponível p/ ${fmtNum(disponivel(p))} un`
+                      ? p.produto_balanca ? `disponível ${fmtNum(disponivel(p))} ${p.unidade}` : `disponível p/ ${fmtNum(disponivel(p))} un`
                       : `estoque ${fmtNum(disponivel(p))} ${p.unidade}`}
                   </p>
-                  <p className="text-base font-extrabold text-brand-600">{p.preco != null ? fmtBRL(p.preco) : '—'}</p>
+                  <p className="text-base font-extrabold text-brand-600">{p.preco != null ? `${fmtBRL(p.preco)}${p.produto_balanca ? `/${p.unidade}` : ''}` : '—'}</p>
                 </motion.button>
               ))}
             </AnimatePresence>
@@ -437,6 +445,7 @@ export function PdvPage() {
                     <div className="flex flex-col items-end justify-between gap-2">
                       <p className="text-base font-extrabold text-slate-800">{fmtBRL(Number(i.produto.preco) * i.qtd)}</p>
                       <div className="flex items-center gap-1.5">
+                      {!i.produto.produto_balanca && <>
                       <button onClick={() => mudarQtd(i.produto.id, -1)} className="rounded-lg bg-white p-1 shadow-sm hover:bg-slate-100">
                         <Minus className="h-3.5 w-3.5 text-slate-600" />
                       </button>
@@ -448,6 +457,7 @@ export function PdvPage() {
                       >
                         <Plus className="h-3.5 w-3.5 text-slate-600" />
                       </button>
+                      </>}
                       <button onClick={() => setCart((c) => c.filter((x) => x.produto.id !== i.produto.id))} className="rounded-lg p-1 text-red-500 hover:bg-red-50">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

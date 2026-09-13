@@ -1,3 +1,8 @@
+/**
+ * Arquivo: router.js
+ * Responsabilidade: Mapeia URLs da API, aplica autenticação e encaminha cada chamada ao handler.
+ */
+
 import { patternToRegex, modulosFromString, temModulo, sha256 } from './util.js';
 import * as cat from './handlers-catalog.js';
 import * as ven from './handlers-vendas.js';
@@ -12,9 +17,11 @@ import { TenantDb } from './tenant-db.js';
 const routes = [
   // auth
   { m: 'POST', p: '/api/auth/login', h: cat.loginHandler, pub: true },
+  { m: 'POST', p: '/api/auth/cadastro', h: cad.cadastroHandler, pub: true },
+  { m: 'GET', p: '/api/colaboracao', h: cad.colaboracaoHandler, pub: true },
   { m: 'GET', p: '/api/auth/config', h: cad.authConfigHandler, pub: true },
   { m: 'GET', p: '/api/auth/me', h: cad.meHandler },
-  { m: 'POST', p: '/api/auth/logout', h: cad.logoutHandler },
+  { m: 'POST', p: '/api/auth/logout', h: cad.logoutHandler, pub: true },
   // funcionários (login por senha/pin não usa token)
   { m: 'POST', p: '/api/funcionarios/login', h: cad.loginFuncionarioHandler, pub: true },
   { m: 'POST', p: '/api/funcionarios/pin', h: cad.loginPinHandler, pub: true },
@@ -169,6 +176,32 @@ const routes = [
   { m: 'POST', p: '/api/impressora-etiquetas', h: cad.createEtiquetaHandler, mod: 'gestor' },
 ];
 
+// Permissões de área são gravadas junto aos módulos como `area:vendas`, etc.
+// A checagem ocorre também na API para que digitar uma URL manualmente não
+// conceda acesso. Leituras de catálogo/impressoras são compartilhadas porque
+// Vendas e Estoque precisam delas para operar.
+function areasDaRota(method, path) {
+  if (path === '/api/config') return method === 'GET' ? [] : ['configuracoes'];
+  if (/^\/api\/(funcionarios|devices|device-tasks|gestores)/.test(path)) return ['configuracoes'];
+  if (/^\/api\/(setores-impressao|impressora-agentes|impressora-etiquetas)/.test(path)) {
+    return method === 'GET' ? ['vendas', 'estoque', 'configuracoes'] : ['configuracoes'];
+  }
+  if (/^\/api\/impressao/.test(path)) return ['vendas', 'estoque'];
+  if (/^\/api\/(fiscal|vendas|mesas|comandas)/.test(path)) return ['vendas'];
+  if (/^\/api\/(financeiro|despesas|contas-pagar|contas-receber|lancamentos|caixa|fechamento-caixa|perdas)/.test(path)) return ['gestao'];
+  if (/^\/api\/(estoque|validade|fornecedores)/.test(path)) return ['estoque'];
+  if (path === '/api/produtos/buscar') return ['vendas', 'estoque'];
+  if (/^\/api\/(categorias|produtos)/.test(path)) return method === 'GET' ? ['vendas', 'estoque'] : ['estoque'];
+  return [];
+}
+
+function temArea(user, permitidas) {
+  if (!permitidas.length) return true;
+  const areas = user.modulos.filter((m) => m.startsWith('area:')).map((m) => m.slice(5));
+  if (!areas.length || areas.includes('geral')) return true;
+  return permitidas.some((area) => areas.includes(area));
+}
+
 export async function authMiddleware(c, env) {
   const header = c.req.header('authorization') || c.req.header('x-token') || '';
   const cookies = String(c.req.header('cookie') || '').split(';').map((item) => item.trim());
@@ -210,6 +243,9 @@ export async function handle(c, env) {
       if (!user) return c.json({ error: 'Usuário ou senha inválidos' }, 401);
       if (route.mod && !temModulo(user, route.mod)) {
         return c.json({ error: 'Usuário ou senha inválidos' }, 403);
+      }
+      if (!temArea(user, areasDaRota(method, route.p))) {
+        return c.json({ error: 'Área não autorizada para este funcionário' }, 403);
       }
       c.user = user;
       env = { ...env, rawDB: env.DB, DB: new TenantDb(env.DB, user.estabelecimento_id), estabelecimentoId: user.estabelecimento_id };

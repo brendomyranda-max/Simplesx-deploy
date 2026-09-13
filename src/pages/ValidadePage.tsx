@@ -1,6 +1,11 @@
+/**
+ * Arquivo: ValidadePage.tsx
+ * Responsabilidade: Implementa a tela ValidadePage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, Plus, Printer, Search, ScanBarcode, CheckCircle2, Trash2 } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
 import { validadeApi, produtoApi, impressoraApi, categoriaApi } from '@/lib/api';
 import type { ValidadeControle, Produto, Categoria } from '@/lib/types';

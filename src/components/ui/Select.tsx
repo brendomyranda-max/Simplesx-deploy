@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Select.tsx
+ * Responsabilidade: Componente visual reutilizável Select.tsx usado para manter a interface consistente.
+ */
+
 import React from 'react';
 
 export function Select({

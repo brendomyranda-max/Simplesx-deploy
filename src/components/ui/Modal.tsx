@@ -1,3 +1,8 @@
+/**
+ * Arquivo: Modal.tsx
+ * Responsabilidade: Componente visual reutilizável Modal.tsx usado para manter a interface consistente.
+ */
+
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';

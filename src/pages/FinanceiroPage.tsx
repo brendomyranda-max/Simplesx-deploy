@@ -1,6 +1,11 @@
+/**
+ * Arquivo: FinanceiroPage.tsx
+ * Responsabilidade: Implementa a tela FinanceiroPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Wallet, Plus, ArrowUpCircle, ArrowDownCircle, CheckCircle2, Clock } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
 import { financeiroApi } from '@/lib/api';
 import type { Lancamento, CaixaMov, Conta } from '@/lib/types';

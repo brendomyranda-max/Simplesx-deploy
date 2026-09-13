@@ -1,3 +1,8 @@
+/**
+ * Arquivo: StatCard.tsx
+ * Responsabilidade: Componente visual reutilizável StatCard.tsx usado para manter a interface consistente.
+ */
+
 import { motion } from 'framer-motion';
 
 export function StatCard({

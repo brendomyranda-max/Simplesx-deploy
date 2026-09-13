@@ -1,3 +1,8 @@
+/**
+ * Arquivo: build.gradle.kts
+ * Responsabilidade: Configura plugins, SDK, dependências e opções da compilação Android.
+ */
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")

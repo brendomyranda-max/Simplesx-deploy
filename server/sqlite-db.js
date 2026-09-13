@@ -1,3 +1,8 @@
+/**
+ * Arquivo: sqlite-db.js
+ * Responsabilidade: Adapta o SQLite local à interface esperada pelo código compartilhado.
+ */
+
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

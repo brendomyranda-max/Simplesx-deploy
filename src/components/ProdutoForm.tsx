@@ -1,3 +1,8 @@
+/**
+ * Arquivo: ProdutoForm.tsx
+ * Responsabilidade: Controla o formulário completo de produtos, insumos e fichas técnicas.
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, ScanBarcode, Trash2, Boxes, MessageSquare, X, ChefHat } from 'lucide-react';
 import { Button, Field, Input, Modal, Select, Textarea, Toggle, useToast } from '@/components/ui';
@@ -31,6 +36,8 @@ function initialState(p?: Produto | null, codigoInicial?: string) {
     codigo_interno: p?.codigo_interno ?? '',
     unidade: p?.unidade ?? 'UN',
     preco: p?.preco ?? '',
+    produto_balanca: p ? !!p.produto_balanca : false,
+    balanca_plu: p?.balanca_plu ?? '',
     custo: p?.custo ?? '',
     estoque_atual: p?.estoque_atual ?? '',
     estoque_minimo: p?.estoque_minimo ?? '',
@@ -149,6 +156,12 @@ export function ProdutoForm({
       return toast('error', unidadeIncompativel.ing ? `Unidade incompatível: ${unidadeIncompativel.ing.nome}` : 'Unidade incompatível');
     if (form.tipo === 'composto' && Number(form.preco) <= 0)
       return toast('error', 'Informe o preço de venda do produto composto');
+    if (form.produto_balanca && !['KG', 'L'].includes(form.unidade))
+      return toast('error', 'Produto de balança deve usar a unidade KG ou L');
+    if (form.produto_balanca && !/^\d{1,6}$/.test(String(form.balanca_plu)))
+      return toast('error', 'Informe um PLU numérico de até 6 dígitos');
+    if (form.produto_balanca && Number(form.preco) <= 0)
+      return toast('error', `Informe o preço por ${form.unidade === 'L' ? 'litro' : 'quilo'}`);
     if (form.tipo !== 'composto' && (!form.data_fabricacao || !form.data_vencimento))
       return toast('error', 'Informe as datas de fabricação e vencimento');
     if (form.tipo !== 'composto' && form.data_vencimento < form.data_fabricacao)
@@ -165,6 +178,8 @@ export function ProdutoForm({
         codigo_interno: form.codigo_interno.trim(),
         unidade: form.unidade,
         preco: form.preco === '' ? null : Number(form.preco),
+        produto_balanca: form.produto_balanca,
+        balanca_plu: form.produto_balanca ? String(form.balanca_plu).padStart(6, '0') : null,
         custo: form.tipo === 'composto' ? undefined : Number(form.custo || 0),
         estoque_atual: form.tipo === 'produto' ? Number(form.estoque_atual || 0) : undefined,
         estoque_minimo: form.tipo === 'produto' ? Number(form.estoque_minimo || 0) : undefined,
@@ -396,6 +411,7 @@ export function ProdutoForm({
           </Field>
           <Field label="Preço venda (R$)">
             <Input type="number" step="0.01" value={form.preco} onChange={(e) => set('preco', e.target.value)} placeholder="0,00" />
+            {form.produto_balanca && <p className="mt-1 text-[11px] text-slate-500">Valor por {form.unidade === 'L' ? 'litro' : 'quilo'}</p>}
           </Field>
           {form.tipo === 'composto' ? (
             <Field label="Custo (R$)" hint="Calculado pela ficha técnica">
@@ -405,6 +421,45 @@ export function ProdutoForm({
             <Field label="Custo (R$)">
               <Input type="number" step="0.01" value={form.custo} onChange={(e) => set('custo', e.target.value)} placeholder="0,00" />
             </Field>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-slate-800">Produto de balança</p>
+              <p className="text-[11px] text-slate-500">A etiqueta informa o peso ou volume e o PDV calcula o valor automaticamente.</p>
+            </div>
+            <Toggle
+              checked={form.produto_balanca}
+              onChange={(v) => {
+                setForm((f: any) => ({ ...f, produto_balanca: v, unidade: v && !['KG', 'L'].includes(f.unidade) ? 'KG' : f.unidade }));
+              }}
+            />
+          </div>
+          {form.produto_balanca && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="PLU da balança *" hint="Código numérico do produto, com até 6 dígitos">
+                <Input
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={form.balanca_plu}
+                  onChange={(e) => set('balanca_plu', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="Ex.: 123"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Unidade medida *">
+                <Select value={form.unidade} onChange={(e) => set('unidade', e.target.value)}>
+                  <option value="KG">Quilo (peso em gramas)</option>
+                  <option value="L">Litro (volume em ml)</option>
+                </Select>
+              </Field>
+              <p className="sm:col-span-2 text-xs text-emerald-800">
+                Etiqueta EAN-13: <b>2 + PLU com 6 dígitos + {form.unidade === 'L' ? 'ml' : 'gramas'} com 5 dígitos + verificador</b>.
+                O preço acima será calculado por {form.unidade === 'L' ? 'litro' : 'quilo'}.
+              </p>
+            </div>
           )}
         </div>
 

@@ -1,3 +1,8 @@
+/**
+ * Arquivo: BootReceiver.kt
+ * Responsabilidade: Reativa a sincronização de impressão após o Android iniciar.
+ */
+
 package br.com.simplesx.gestor.sync
 
 import android.content.BroadcastReceiver

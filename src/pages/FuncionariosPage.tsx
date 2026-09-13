@@ -1,33 +1,36 @@
+/**
+ * Arquivo: FuncionariosPage.tsx
+ * Responsabilidade: Implementa a tela FuncionariosPage.tsx e coordena seus dados e ações.
+ */
+
 import { useEffect, useState } from 'react';
 import { Users, Plus, Pencil, Trash2, KeyRound, ShieldCheck } from 'lucide-react';
-import { AnimatedPage } from '@/components/anim';
+import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, useToast } from '@/components/ui';
 import { funcionarioApi } from '@/lib/api';
 import type { Funcionario } from '@/lib/types';
 
 const PERFIS = ['caixa', 'garcom', 'gerente', 'cozinha', 'admin'];
 
-const MODULOS = [
-  { key: 'gestor', label: 'Gestor (tudo)', desc: 'Aplicação completa' },
-  { key: 'pdv_mercado', label: 'PDV Mercado', desc: 'Somente vendas no balcão' },
-  { key: 'restaurante', label: 'Restaurante', desc: 'Somente mesas e comandas' },
+const AREAS_ACESSO = [
+  { key: 'tudo', label: 'Tudo', desc: 'Todas as áreas do sistema' },
+  { key: 'vendas', label: 'Vendas', desc: 'PDV, vendas, NFC-e e restaurante' },
+  { key: 'gestao', label: 'Gestão', desc: 'Financeiro, caixa e perdas' },
+  { key: 'estoque', label: 'Estoque', desc: 'Produtos, entradas, categorias e validades' },
+  { key: 'configuracoes', label: 'Configurações', desc: 'Funcionários, impressoras e empresa' },
 ];
 
-const MODULO_COR: Record<string, any> = {
-  gestor: 'brand',
-  pdv_mercado: 'green',
-  restaurante: 'orange',
-};
-
-const MODULO_LABEL: Record<string, string> = {
-  gestor: 'Gestor',
-  pdv_mercado: 'PDV',
-  restaurante: 'Restaurante',
-};
-
 const modulosPadrao = (perfil: string): string[] => {
-  if (perfil === 'admin' || perfil === 'gerente') return ['gestor'];
-  return ['restaurante'];
+  if (perfil === 'admin' || perfil === 'gerente') return ['gestor', 'area:geral'];
+  return ['gestor', 'area:vendas'];
+};
+
+const areasDoFuncionario = (modulos: string[]) => {
+  const areas = modulos.filter((m) => m.startsWith('area:')).map((m) => m.slice(5));
+  if (!areas.length && modulos.includes('gestor')) return ['tudo'];
+  if (!areas.length && (modulos.includes('pdv_mercado') || modulos.includes('restaurante'))) return ['vendas'];
+  if (areas.includes('geral')) return ['tudo'];
+  return areas;
 };
 
 export function FuncionariosPage() {
@@ -53,10 +56,16 @@ export function FuncionariosPage() {
     loadAll();
   }, []);
 
-  const toggleModulo = (key: string) => {
+  const toggleArea = (key: string) => {
     setForm((f) => ({
       ...f,
-      modulos: f.modulos.includes(key) ? f.modulos.filter((m) => m !== key) : [...f.modulos, key],
+      modulos: key === 'tudo'
+        ? ['gestor', 'area:geral']
+        : (() => {
+          const atuais = areasDoFuncionario(f.modulos).filter((a) => a !== 'tudo');
+          const novas = atuais.includes(key) ? atuais.filter((a) => a !== key) : [...atuais, key];
+          return ['gestor', ...novas.map((a) => `area:${a}`)];
+        })(),
     }));
   };
 
@@ -64,7 +73,7 @@ export function FuncionariosPage() {
     e.preventDefault();
     if (!form.nome.trim() || !form.usuario.trim()) return toast('error', 'Nome e usuário obrigatórios');
     if (!editId && !form.senha.trim()) return toast('error', 'Defina uma senha');
-    if (!form.modulos.length) return toast('error', 'Selecione pelo menos um módulo de acesso');
+    if (!areasDoFuncionario(form.modulos).length) return toast('error', 'Selecione pelo menos uma área de acesso');
     try {
       const body: any = { nome: form.nome, usuario: form.usuario, perfil: form.perfil, pin: form.pin || null, modulos: form.modulos };
       if (form.senha) body.senha_hash = form.senha;
@@ -143,8 +152,8 @@ export function FuncionariosPage() {
                     <td className="td"><Badge color={perfilCor[f.perfil] || 'slate'}>{f.perfil}</Badge></td>
                     <td className="td">
                       <div className="flex flex-wrap gap-1">
-                        {(f.modulos?.length ? f.modulos : []).map((m) => (
-                          <Badge key={m} color={MODULO_COR[m] || 'slate'}>{MODULO_LABEL[m] || m}</Badge>
+                        {areasDoFuncionario(f.modulos || []).map((m) => (
+                          <Badge key={m} color="brand">{m === 'tudo' ? 'Tudo' : m}</Badge>
                         ))}
                         {!f.modulos?.length && <span className="text-xs text-slate-400">—</span>}
                       </div>
@@ -205,15 +214,15 @@ export function FuncionariosPage() {
             </Field>
           </div>
           <div>
-            <Field label="Módulos de acesso" hint="Escolha o que este funcionário pode usar no login">
+            <Field label="Áreas de acesso" hint="Escolha tudo, uma área ou combine várias áreas">
               <div className="grid gap-2 sm:grid-cols-3">
-                {MODULOS.map((mod) => {
-                  const ativo = form.modulos.includes(mod.key);
+                {AREAS_ACESSO.map((mod) => {
+                  const ativo = areasDoFuncionario(form.modulos).includes(mod.key);
                   return (
                     <button
                       key={mod.key}
                       type="button"
-                      onClick={() => toggleModulo(mod.key)}
+                      onClick={() => toggleArea(mod.key)}
                       className={`flex flex-col items-start gap-0.5 rounded-xl border-2 p-3 text-left transition-colors ${
                         ativo ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}

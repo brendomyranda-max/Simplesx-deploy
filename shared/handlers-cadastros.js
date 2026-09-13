@@ -1,4 +1,10 @@
+/**
+ * Arquivo: handlers-cadastros.js
+ * Responsabilidade: Implementa login, funcionários, impressão e cadastros administrativos.
+ */
+
 import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE, sha256, gerarToken, estabelecimentoId, hashSenha, verificarSenha, cnpjValido, soDigitos, kvGet, kvPut } from './util.js';
+import { gerarPix } from './pix-colaboracao.js';
 import { createDeviceTask } from './handlers-devices.js';
 
 const LOGIN_LIMIT = 8;
@@ -52,6 +58,60 @@ async function validarTurnstile(c, env, token) {
 export async function authConfigHandler(c, env) {
   if (!env.TURNSTILE_SITE_KEY) return c.json({ error: 'Proteção humana não configurada' }, 503);
   return c.json({ turnstile_site_key: String(env.TURNSTILE_SITE_KEY) });
+}
+
+// O lote é atômico tanto no D1 quanto no adaptador SQLite local.
+export async function cadastroHandler(c, env) {
+  const b = await c.req.json();
+  const cnpj = soDigitos(b.cnpj);
+  const nome = typeof b.nome === 'string' ? b.nome.trim() : '';
+  const telefone = soDigitos(b.telefone);
+  if (!cnpjValido(cnpj)) return c.json({ error: 'Informe um CNPJ válido' }, 400);
+  if (nome.length < 2 || nome.length > 120) return c.json({ error: 'Informe o nome do restaurante (2 a 120 caracteres)' }, 400);
+  if (!/^\d{10,11}$/.test(telefone)) return c.json({ error: 'Informe o telefone com DDD' }, 400);
+  if (typeof b.senha !== 'string' || b.senha.length < 8 || b.senha.length > 128) return c.json({ error: 'A senha deve ter entre 8 e 128 caracteres' }, 400);
+  const key = await loginKey(c, 'cadastro', '');
+  if (await loginBloqueado(env, key)) return c.json({ error: 'Muitas tentativas. Aguarde 15 minutos.' }, 429);
+  await registrarFalha(env, key);
+  const humano = await validarTurnstile(c, env, b.turnstile_token);
+  if (humano.indisponivel) return c.json({ error: 'Verificação de segurança temporariamente indisponível' }, 503);
+  if (!humano.valido) return c.json({ error: 'Confirme que você é humano' }, 400);
+  const existente = await env.DB.prepare('SELECT id FROM estabelecimentos WHERE cnpj=?').bind(cnpj).first();
+  if (existente) return c.json({ error: 'Este CNPJ já possui conta. Entre com seu usuário e senha.' }, 409);
+  const senhaHash = await hashSenha(b.senha);
+  const data = now();
+  const statements = [
+    env.DB.prepare('INSERT INTO estabelecimentos (nome, cnpj, ativo, criado_em) VALUES (?,?,1,?)').bind(nome, cnpj, data),
+    env.DB.prepare("INSERT INTO funcionarios (estabelecimento_id, nome, usuario, senha_hash, perfil, modulos, ativo, criado_em) SELECT id, ?, 'admin', ?, 'admin', 'gestor,restaurante', 1, ? FROM estabelecimentos WHERE cnpj=?").bind(nome, senhaHash, data, cnpj),
+    env.DB.prepare("INSERT INTO mesas (estabelecimento_id, numero, nome, capacidade, setor, status, tipo, ativo, criado_em) SELECT id,9999,'Pagamentos Individuais',99,'Pagamentos','livre','pagamentos',1,? FROM estabelecimentos WHERE cnpj=?").bind(data, cnpj),
+    ...Object.entries({ modo_operacao: 'restaurante', taxa_garcom_pct: '10', perda_timeout_min: '2', empresa_nome: nome, empresa_cnpj: cnpj, empresa_telefone: telefone, dias_vencimento_aviso: '7' }).map(([chave, valor]) =>
+      env.DB.prepare('INSERT INTO empresa_config (estabelecimento_id, chave, valor) SELECT id, ?, ? FROM estabelecimentos WHERE cnpj=?').bind(chave, valor, cnpj)),
+  ];
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    if (String(error).includes('UNIQUE')) return c.json({ error: 'Este CNPJ já possui conta. Entre com seu usuário e senha.' }, 409);
+    throw error;
+  }
+  return c.json({ ok: true, usuario: 'admin' }, 201);
+}
+
+export async function colaboracaoHandler(c, env) {
+  const valor = c.req.query('valor');
+  const recebedor = {
+    chave: String(env.COLABORACAO_PIX_CHAVE || '').trim(),
+    nome: String(env.COLABORACAO_PIX_NOME || '').trim(),
+    cidade: String(env.COLABORACAO_PIX_CIDADE || '').trim(),
+  };
+  if (!recebedor.chave || !recebedor.nome || !recebedor.cidade) {
+    return c.json({ error: 'Contribuição Pix indisponível no momento' }, 503);
+  }
+  if (valor === undefined || valor === null) return c.json({ recebedor: recebedor.nome, cidade: recebedor.cidade, pix_copia_cola: '' });
+  try {
+    return c.json({ recebedor: recebedor.nome, cidade: recebedor.cidade, pix_copia_cola: gerarPix(recebedor, valor) });
+  } catch (error) {
+    return c.json({ error: error.message }, 400);
+  }
 }
 
 export async function meHandler(c) {
@@ -196,7 +256,7 @@ export async function logoutHandler(c, env) {
   const header = c.req.header('authorization') || '';
   const cookie = String(c.req.header('cookie') || '').split(';').map((item) => item.trim()).find((item) => item.startsWith('simplesx_session='));
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : (cookie ? decodeURIComponent(cookie.slice('simplesx_session='.length)) : '');
-  if (token) await env.rawDB.prepare('DELETE FROM sessoes WHERE token_hash=?').bind(await sha256(token)).run();
+  if (token) await (env.rawDB || env.DB).prepare('DELETE FROM sessoes WHERE token_hash=?').bind(await sha256(token)).run();
   return c.json({ ok: true }, 200, { 'set-cookie': cookieSessao('', c, 0) });
 }
 
@@ -365,6 +425,10 @@ function textoCompativelComEscPos(value) {
 }
 
 function textoPedido({ empresa, cnpj, mesa, com, destino, itens }) {
+  const linhasItens = itens.flatMap((i) => [
+    `${num(i.quantidade)}x ${i.nome}`,
+    ...String(i.observacao || '').split('\n').map((o) => o.trim()).filter(Boolean).map((o) => `  (${o})`),
+  ]);
   return [
     linha(),
     '    ' + String(empresa).toUpperCase(),
@@ -373,7 +437,7 @@ function textoPedido({ empresa, cnpj, mesa, com, destino, itens }) {
     `MESA: ${mesa?.numero || '-'}  GARÇOM: ${com.garcom_nome || '-'}`,
     `CLIENTE: ${com.cliente_nome || '-'}   DESTINO: ${destino}`,
     linha('-'),
-    ...itens.map((i) => `${num(i.quantidade)}x ${i.nome}${i.observacao ? '  *' + i.observacao : ''}`),
+    ...linhasItens,
     linha(),
     `Emitida: ${new Date().toLocaleString('pt-BR')}`,
     linha(),
@@ -424,9 +488,10 @@ export async function imprimirComandaHandler(c, env) {
       linha(),
       `MESA: ${mesa?.numero || '-'}    GARÇOM: ${com.garcom_nome || '-'}`,
       linha('-'),
-      ...itens.results.map(
-        (i) => `${num(i.quantidade)}x ${i.nome}  ${fmtBRL(num(i.quantidade) * num(i.preco_unitario))}`
-      ),
+      ...itens.results.flatMap((i) => [
+        `${num(i.quantidade)}x ${i.nome}  ${fmtBRL(num(i.quantidade) * num(i.preco_unitario))}`,
+        ...String(i.observacao || '').split('\n').map((o) => o.trim()).filter(Boolean).map((o) => `  (${o})`),
+      ]),
       linha('-'),
       `Subtotal: ${fmtBRL(sub)}`,
       taxaPct > 0 ? `Garçom (${taxaPct}%): ${fmtBRL(garcom)}` : '',

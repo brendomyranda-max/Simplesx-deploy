@@ -1,9 +1,18 @@
+/**
+ * Arquivo: index.js
+ * Responsabilidade: Inicia o servidor local Express e conecta o roteador compartilhado ao SQLite.
+ */
+
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SqliteDb from './sqlite-db.js';
 import { handle } from '../shared/router.js';
+import { loadLocalEnv, serverEnv } from './env.js';
+
+loadLocalEnv();
+const config = serverEnv();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DB_FILE = process.env.SIMPLESX_DB || path.join(ROOT, 'data', 'simplesx.db');
@@ -14,9 +23,8 @@ fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 const db = new SqliteDb(DB_FILE);
 const env = {
   DB: db,
-  TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY || '1x00000000000000000000AA',
-  TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA',
-}; // sem AUTH_KV local => rate-limit em memória; Turnstile usa chaves oficiais de teste
+  ...config,
+}; // sem AUTH_KV local => rate-limit em memória
 
 const app = express();
 app.disable('x-powered-by');

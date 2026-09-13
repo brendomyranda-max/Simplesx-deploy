@@ -1,3 +1,8 @@
+/**
+ * Arquivo: devices.test.js
+ * Responsabilidade: Testa pareamento, autenticação, filas e isolamento dos dispositivos.
+ */
+
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';

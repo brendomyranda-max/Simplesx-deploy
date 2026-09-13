@@ -1,3 +1,8 @@
+/**
+ * Arquivo: PrinterCommands.kt
+ * Responsabilidade: Escolhe o protocolo e monta o trabalho de impressão.
+ */
+
 package br.com.simplesx.gestor.print
 
 import br.com.simplesx.gestor.data.PrinterConfig

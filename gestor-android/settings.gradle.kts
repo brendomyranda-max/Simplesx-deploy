@@ -1,3 +1,8 @@
+/**
+ * Arquivo: settings.gradle.kts
+ * Responsabilidade: Define módulos e repositórios usados pelo projeto Android.
+ */
+
 pluginManagement {
     repositories {
         google()

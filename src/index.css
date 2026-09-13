@@ -1,3 +1,8 @@
+/*
+ * Estilos globais do frontend: carrega o Tailwind e define aparência comum,
+ * responsividade e regras usadas na impressão pelo navegador.
+ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
