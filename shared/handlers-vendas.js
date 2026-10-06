@@ -12,7 +12,6 @@ import {
   getConfig,
   getConfigValue,
   getProdutoFull,
-  buscarProdutoPorCodigo,
   registrarMovimentacao,
   baixarEstoque,
   registrarLancamento,
@@ -24,6 +23,8 @@ import {
 } from './util.js';
 import { quantidadeEmUnidadesEstoque } from './units.js';
 import { emitirNfceVenda } from './handlers-fiscal.js';
+import { saveOrderItems } from './restaurant-orders.js';
+import { dispatchOrders } from './order-printing.js';
 
 // ============================ VALIDADE ============================
 
@@ -642,6 +643,11 @@ async function getComandaFull(env, id) {
     .bind(id)
     .all();
   const mesa = await env.DB.prepare('SELECT * FROM mesas WHERE id=?').bind(c.mesa_id).first();
+  const printing = await env.DB.prepare(`SELECT p.item_id,p.impressora_id,
+    COALESCE(j.status,t.status,'ausente') AS status,COALESCE(j.erro,t.erro_mensagem) AS erro
+    FROM pedido_impressoes p JOIN comanda_itens i ON i.id=p.item_id
+    LEFT JOIN gestor_jobs j ON j.pedido_lote_id=p.lote_id LEFT JOIN device_tasks t ON t.id=p.lote_id
+    WHERE i.comanda_id=?`).bind(id).all();
   const ativos = itens.results.filter((i) => i.status !== 'cancelado');
   const subtotal = ativos.reduce((s, i) => s + num(i.quantidade) * num(i.preco_unitario), 0);
   const transfer = await env.DB.prepare(
@@ -653,7 +659,7 @@ async function getComandaFull(env, id) {
     ...c,
     mesa: mesa || null,
     pessoas: pessoas.results,
-    itens: itens.results,
+    itens: itens.results.map((item) => ({ ...item, impressoes: printing.results.filter((p) => p.item_id === item.id) })),
     subtotal,
     transfer_comanda_id: transfer?.id ?? null,
     transfer_comanda_status: transfer?.status ?? null,
@@ -698,38 +704,8 @@ export async function updatePessoaComandaHandler(c, env) {
 
 export async function addItemComandaHandler(c, env) {
   const b = await c.req.json();
-  const com = await env.DB.prepare("SELECT * FROM comandas WHERE id=? AND status='aberta'").bind(c.params.id).first();
-  if (!com) return c.json({ error: 'Comanda não encontrada' }, 404);
-
-  let produto = null;
-  if (b.produto_id) {
-    produto = await getProdutoFull(env, b.produto_id);
-  } else if (b.codigo) {
-    produto = await buscarProdutoPorCodigo(env, b.codigo);
-  }
-  const qtd = num(b.quantidade) || 1;
-  const preco = b.preco_unitario !== undefined && b.preco_unitario !== null ? num(b.preco_unitario) : num(produto?.preco || 0);
-  const nome = b.nome || produto?.nome || 'Item avulso';
-
-  const r = await env.DB.prepare(
-    `INSERT INTO comanda_itens (comanda_id, pessoa_id, produto_id, nome, quantidade, preco_unitario, observacao, status, responsavel, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
-  )
-    .bind(
-      c.params.id,
-      b.pessoa_id || null,
-      produto?.id || null,
-      nome,
-      qtd,
-      preco,
-      b.observacao || null,
-      'novo',
-      b.responsavel || null,
-      now()
-    )
-    .run();
-  const item = await env.DB.prepare('SELECT * FROM comanda_itens WHERE id=?').bind(r.meta.last_row_id).first();
-  return c.json(item, 201);
+  const result = await saveOrderItems(c, env, { chave: b.chave || crypto.randomUUID(), itens: [b] });
+  return c.json(result.itens[0], result.repetido ? 200 : 201);
 }
 
 export async function updateItemComandaHandler(c, env) {
@@ -741,10 +717,14 @@ export async function updateItemComandaHandler(c, env) {
   ).bind(c.params.item_id, c.params.id).first();
   if (!item) return c.json({ error: 'Item não encontrado ou comanda bloqueada' }, 404);
   if (item.status !== 'novo') return c.json({ error: 'Somente itens ainda não enviados podem ser alterados' }, 409);
+  if (await env.DB.prepare('SELECT item_id FROM pedido_impressoes WHERE item_id=? LIMIT 1').bind(item.id).first()) {
+    return c.json({ error: 'Este item já entrou na fila de impressão. Suas observações não podem ser alteradas.' }, 409);
+  }
 
   const observacao = typeof b.observacao === 'string' ? b.observacao.trim() : '';
   const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=? WHERE id=? AND comanda_id=? AND versao=?
-    AND status='novo' AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
+    AND status='novo' AND NOT EXISTS (SELECT 1 FROM pedido_impressoes WHERE item_id=comanda_itens.id)
+    AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
     .bind(observacao || null, item.id, item.comanda_id, item.versao, item.comanda_id)
     .run();
   if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
@@ -753,6 +733,7 @@ export async function updateItemComandaHandler(c, env) {
 
 export async function updateItemStatusHandler(c, env) {
   const b = await c.req.json();
+  if (b.status === 'enviado') return c.json(await dispatchOrders(c, env, { comanda_id: Number(c.params.id), itens_ids: [Number(c.params.item_id)] }));
   const item = await env.DB.prepare(`SELECT i.* FROM comanda_itens i JOIN comandas c ON c.id=i.comanda_id
     WHERE i.id=? AND i.comanda_id=? AND c.status='aberta'`).bind(c.params.item_id, c.params.id).first();
   if (!item) return c.json({ error: 'Item não encontrado' }, 404);

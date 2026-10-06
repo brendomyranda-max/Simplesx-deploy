@@ -34,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.File
 
 class PrintSyncService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -73,11 +74,13 @@ class PrintSyncService : Service() {
             }
         }
         while (scope.isActive && config.serviceEnabled) {
+            var receivedTasks = false
             try {
                 check(config.deviceToken.isNotBlank()) { "Pareie este aparelho com o SimplesX" }
                 val api = SimplesXApi(config)
                 if (heartbeatCounter++ % 5 == 0) api.heartbeat()
                 val tasks = api.pullTasks()
+                receivedTasks = tasks.isNotEmpty()
                 config.lastStatus = "Online"
                 updateNotification(if (tasks.isEmpty()) "Online · aguardando trabalhos" else "${tasks.size} trabalho(s) recebido(s)")
                 tasks.forEach { executeTask(api, it) }
@@ -87,7 +90,7 @@ class PrintSyncService : Service() {
                 config.lastStatus = "Erro: ${error.message ?: "falha de conexão"}"
                 updateNotification(config.lastStatus)
             }
-            delay(3_000)
+            if (!receivedTasks) delay(3_000)
         }
         heartbeat.cancelAndJoin()
         val disconnected = runCatching {
@@ -101,21 +104,37 @@ class PrintSyncService : Service() {
         stopSelf()
     }
 
-    private fun executeTask(api: SimplesXApi, task: DeviceTask) {
+    private suspend fun executeTask(api: SimplesXApi, task: DeviceTask) {
+        var renewal: Job? = null
         try {
-            api.taskStatus(task, "processing")
+            if (api.taskStatus(task, "processing") != "processing") return
+            renewal = scope.launch {
+                while (isActive) {
+                    delay(30_000)
+                    runCatching { api.taskStatus(task, "processing") }
+                }
+            }
             val route = task.payload.optStringAny("printer", "impressora")
             val printer = config.printerFor(route)
-            val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
-            val bytes = taskBytes(task, printer, copies)
-            if (printer.protocol == PrinterProtocol.ESC_POS) repeat(copies) { PrinterTransport.send(this, printer, bytes) }
-            else PrinterTransport.send(this, printer, bytes)
-            api.taskStatus(task, "success", resultPrinter = printer.name)
-            config.lastJob = "${task.type} → ${printer.name} · concluído"
+            val result = PrintJournal(File(filesDir, "print-journal")).execute("${config.deployUrl}:${config.deviceId}:${task.id}") {
+                val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
+                val bytes = taskBytes(task, printer, copies)
+                if (printer.protocol == PrinterProtocol.ESC_POS) repeat(copies) { PrinterTransport.send(this, printer, bytes) }
+                else PrinterTransport.send(this, printer, bytes)
+            }
+            renewal.cancelAndJoin()
+            if (result.success) {
+                api.taskStatus(task, "success", resultPrinter = printer.name)
+                config.lastJob = "${task.type} → ${printer.name} · concluído"
+            } else {
+                api.taskStatus(task, "failed", "PRINT_CHECK_REQUIRED", result.error)
+                config.lastJob = "${task.type} · conferir: ${result.error}"
+            }
         } catch (error: Exception) {
             val message = error.message ?: error.javaClass.simpleName
-            runCatching { api.taskStatus(task, "failed", "PRINT_ERROR", message) }
-            config.lastJob = "${task.type} · erro: $message"
+            config.lastJob = "${task.type} · confirmação pendente: $message"
+        } finally {
+            renewal?.cancelAndJoin()
         }
     }
 

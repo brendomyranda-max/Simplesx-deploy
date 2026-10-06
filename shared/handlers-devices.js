@@ -368,6 +368,7 @@ export async function cancelDeviceTaskHandler(c, env) {
 
 export async function pullDeviceTasksHandler(c, env) {
   const device = await authenticateDevice(c, env, true);
+  const body = await c.req.json();
   const current = now();
   const expired = await env.DB.prepare(
     `SELECT id FROM device_tasks WHERE device_id=? AND estabelecimento_id=?
@@ -389,7 +390,7 @@ export async function pullDeviceTasksHandler(c, env) {
   const pending = await env.DB.prepare(
     `SELECT id FROM device_tasks WHERE device_id=? AND estabelecimento_id=? AND status='pending' AND disponivel_em<=?
      ORDER BY criado_em LIMIT ?`
-  ).bind(device.id, device.estabelecimento_id, current, CLAIM_LIMIT).all();
+  ).bind(device.id, device.estabelecimento_id, current, Math.min(CLAIM_LIMIT, Math.max(1, num(body?.limit) || CLAIM_LIMIT))).all();
   const tasks = [];
   for (const candidate of pending.results) {
     const leaseId = uuid();
@@ -427,7 +428,7 @@ export async function updateDeviceTaskStatusHandler(c, env) {
   if (task.lease_id !== leaseId || task.lease_expira_em < now()) {
     return c.json({ error: 'Lease da tarefa inválido ou expirado' }, 409);
   }
-  if (requested === 'processing' && task.status !== 'sent') {
+  if (requested === 'processing' && !['sent','processing'].includes(task.status)) {
     return c.json({ error: 'Transição de status inválida' }, 409);
   }
   if ((requested === 'success' || requested === 'failed') && !['sent', 'processing'].includes(task.status)) {
@@ -439,10 +440,11 @@ export async function updateDeviceTaskStatusHandler(c, env) {
   const resultJson = body?.result === undefined ? null : jsonLimit(body.result, 32 * 1024);
   const updated = await env.DB.prepare(
     `UPDATE device_tasks SET status=?, erro_codigo=?, erro_mensagem=?, resultado_json=?,
+     lease_expira_em=CASE WHEN ?='processing' THEN ? ELSE lease_expira_em END,
      processando_em=CASE WHEN ?='processing' THEN ? ELSE processando_em END,
      concluido_em=COALESCE(?,concluido_em), atualizado_em=?
      WHERE id=? AND device_id=? AND estabelecimento_id=? AND lease_id=? AND status=?`
-  ).bind(requested, errorCode || null, errorMessage || null, resultJson, requested, now(), completedAt, now(),
+  ).bind(requested, errorCode || null, errorMessage || null, resultJson, requested, isoAfter(LEASE_MS), requested, now(), completedAt, now(),
     task.id, device.id, device.estabelecimento_id, leaseId, task.status).run();
   if (!updated.meta.changes) return c.json({ error: 'Tarefa foi atualizada por outra conexão' }, 409);
   await audit(env.DB, device.estabelecimento_id, task.id, device.id, 'status_changed', task.status, requested,

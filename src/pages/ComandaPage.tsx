@@ -25,7 +25,7 @@ import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestaurantCatalog } from '@/components/RestaurantCatalog';
 import { TransferItemModal } from '@/components/TransferItemModal';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Toggle, useConfirm, useToast } from '@/components/ui';
-import { comandaApi, mesaApi, produtoApi, impressoraApi, configApi, categoriaApi } from '@/lib/api';
+import { comandaApi, produtoApi, impressoraApi, configApi, categoriaApi, authApi, retryOrder, type OrderSubmission } from '@/lib/api';
 import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
@@ -67,6 +67,7 @@ export function ComandaPage() {
   const [sobrePessoa, setSobrePessoa] = useState<string | null>(null);
   const transferenciaRef = useRef(false);
   const loadSequence = useRef(0);
+  const loadingRequests = useRef(0);
   const [addQtd, setAddQtd] = useState(1);
   const [addObsSel, setAddObsSel] = useState<string[]>([]);
   const [addObsUnidades, setAddObsUnidades] = useState<string[][]>([[]]);
@@ -74,10 +75,18 @@ export function ComandaPage() {
   const [aplicarEmConjunto, setAplicarEmConjunto] = useState(false);
   const [addCustom, setAddCustom] = useState('');
   const [adicionando, setAdicionando] = useState(false);
+  const adicionandoRef = useRef(false);
+  const enviandoRef = useRef(false);
+  const pendingRef = useRef<OrderSubmission | null>(null);
+  const [pendente, setPendente] = useState<OrderSubmission | null>(null);
+  const [actorId, setActorId] = useState<number | null>(null);
+  const storageKey = actorId ? `simplesx_pedido:${actorId}:${comandaId}` : null;
   const [valoresIndiv, setValoresIndiv] = useState<Record<string, string>>({});
   const impressaoRef = useRef<HTMLDivElement>(null);
 
-  const loadComanda = async () => {
+  const loadComanda = async (background = false) => {
+    if (background && loadingRequests.current) return;
+    loadingRequests.current++;
     const sequence = ++loadSequence.current;
     try {
       const c = await comandaApi.get(comandaId);
@@ -87,6 +96,7 @@ export function ComandaPage() {
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar comanda');
     } finally {
+      loadingRequests.current--;
       if (sequence === loadSequence.current) setLoad(false);
     }
   };
@@ -98,9 +108,18 @@ export function ComandaPage() {
       setProdutos(ps); setCategorias(cs);
     }).catch(() => toast('error', 'Não foi possível carregar o cardápio'));
     impressoraApi.setores().then((s) => setSetores(s.map((x) => x.nome))).catch(() => {});
-    const iv = setInterval(loadComanda, 20000);
+    const iv = setInterval(() => { if (!document.hidden) void loadComanda(true); }, 3000);
     return () => clearInterval(iv);
   }, [comandaId]);
+
+  useEffect(() => { authApi.me().then((user) => setActorId(user.id)).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+      pendingRef.current = saved; setPendente(saved);
+    } catch { pendingRef.current = null; setPendente(null); }
+  }, [storageKey]);
 
   const pessoas = comanda?.pessoas || [];
   const itens = comanda?.itens || [];
@@ -154,6 +173,7 @@ export function ComandaPage() {
   };
 
   const abrirAdicionar = (p: Produto) => {
+    if (pendingRef.current || adicionandoRef.current) { toast('error', 'Confirme o lançamento pendente antes de adicionar outro.'); return; }
     setEditandoItem(null);
     setAddProduto(p);
     setAddQtd(1);
@@ -202,7 +222,7 @@ export function ComandaPage() {
   };
 
   const alterarQuantidade = (quantidade: number) => {
-    const qtd = Math.max(1, quantidade);
+    const qtd = Math.min(50, Math.max(1, Math.floor(quantidade)));
     setAddQtd(qtd);
     setAddObsUnidades((prev) => Array.from({ length: qtd }, (_, i) => prev[i] || []));
     setAddUnidade((atual) => Math.min(atual, qtd - 1));
@@ -222,42 +242,53 @@ export function ComandaPage() {
     setAddCustom('');
   };
 
-  const confirmarAdicao = async () => {
-    if (!addProduto) return;
-    setAdicionando(true);
+  const enviarLancamento = async (submission: OrderSubmission) => {
+    if (adicionandoRef.current || !storageKey) return;
+    adicionandoRef.current = true; setAdicionando(true);
     try {
-      if (editandoItem) {
+      sessionStorage.setItem(storageKey, JSON.stringify(submission));
+      pendingRef.current = submission; setPendente(submission);
+      await comandaApi.addItems(comandaId, submission);
+      sessionStorage.removeItem(storageKey);
+      pendingRef.current = null; setPendente(null);
+      setAddProduto(null);
+      toast('success', 'Pedido salvo na mesa. Pronto para enviar à cozinha.');
+      await loadComanda();
+    } catch (e: any) {
+      if (e?.status >= 400 && e?.status < 500 && e.status !== 401) {
+        sessionStorage.removeItem(storageKey); pendingRef.current = null; setPendente(null);
+      } else {
+        setAddProduto(null);
+      }
+      toast('error', e?.error || 'Não foi possível confirmar o pedido. Use Tentar novamente para consultar e concluir o mesmo lançamento.');
+    } finally { adicionandoRef.current = false; setAdicionando(false); }
+  };
+
+  const confirmarAdicao = async () => {
+    if (!addProduto || adicionandoRef.current || !storageKey) return;
+    if (editandoItem) {
+      adicionandoRef.current = true; setAdicionando(true);
+      try {
         const observacao = [...observacoesAtuais, addCustom.trim()].filter(Boolean).join('\n') || undefined;
         await comandaApi.updateItem(comandaId, editandoItem.id, { observacao });
         toast('success', `Observações de ${addProduto.nome} atualizadas`);
-        setAddProduto(null);
-        setEditandoItem(null);
-        loadComanda();
-        return;
-      }
-      const grupos = aplicarEmConjunto ? [addObsSel] : addObsUnidades.slice(0, addQtd);
-      for (let i = 0; i < grupos.length; i++) {
-        const observacoes = grupos[i];
-        const personalizadaPendente = aplicarEmConjunto || i === addUnidade ? addCustom.trim() : '';
-        await comandaApi.addItem(comandaId, {
-          produto_id: addProduto.id,
-          quantidade: aplicarEmConjunto ? addQtd : 1,
-          pessoa_id: pessoaSel === 'geral' ? undefined : pessoaSel,
-          observacao: [...observacoes, personalizadaPendente].filter(Boolean).join('\n') || undefined,
-          responsavel: comanda?.garcom_nome || undefined,
-        });
-      }
-      toast('success', `${addQtd}x ${addProduto.nome} adicionado`);
-      setAddProduto(null);
-      loadComanda();
-    } catch (e: any) {
-      toast('error', e?.error || 'Erro ao adicionar');
-    } finally {
-      setAdicionando(false);
+        setAddProduto(null); setEditandoItem(null);
+        await loadComanda();
+      } catch (e: any) { toast('error', e?.error || 'Erro ao editar observações'); }
+      finally { adicionandoRef.current = false; setAdicionando(false); }
+      return;
     }
+    if (pendingRef.current) { await enviarLancamento(pendingRef.current); return; }
+    const grupos = aplicarEmConjunto ? [addObsSel] : addObsUnidades.slice(0, addQtd);
+    await enviarLancamento({ chave: crypto.randomUUID(), itens: grupos.map((observacoes, index) => ({
+      produto_id: addProduto.id, quantidade: aplicarEmConjunto ? addQtd : 1,
+      pessoa_id: pessoaSel === 'geral' ? undefined : pessoaSel,
+      observacao: [...observacoes, aplicarEmConjunto || index === addUnidade ? addCustom.trim() : ''].filter(Boolean).join('\n') || undefined,
+    })) });
   };
 
   const mudarStatus = async (item: ComandaItem, status: string) => {
+    if (status === 'enviado') { await enviarCozinha([item.id]); return; }
     if (status === 'cancelado') {
       confirm('Cancelar item?', `"${item.nome}" será cancelado${item.criado_em ? ' (após o tempo limite vira perda)' : ''}.`, async () => {
         await comandaApi.itemStatus(comandaId, item.id, status, comanda?.garcom_nome || undefined);
@@ -270,16 +301,11 @@ export function ComandaPage() {
   };
 
   const imprimirComanda = async () => {
+    if (!locked) { await enviarCozinha(); return; }
     try {
-      const r = await impressoraApi.imprimirComanda(comandaId, { setor });
+      const r = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
       setImprimir(r);
-      loadComanda();
-      if (r.sem_rota?.length) toast('error', `${r.sem_rota.length} item(ns) sem impressora configurada: ${r.sem_rota.join(', ')}`);
-      else if (r.falhas?.length) toast('error', `Falha em ${r.falhas.map((f) => f.impressora).join(', ')}: ${r.falhas[0].erro}`);
-      else toast('success', `${r.jobs?.length || 0} impressão(ões) enviada(s)`);
-    } catch (e: any) {
-      toast('error', e?.error || 'Erro ao imprimir');
-    }
+    } catch (e: any) { toast('error', e?.error || 'Erro ao imprimir conta'); }
   };
 
   const salvarNomePessoa = async (p: Comanda['pessoas'][0]) => {
@@ -305,20 +331,19 @@ export function ComandaPage() {
     });
   };
 
-  const enviarCozinha = async () => {
-    if (enviandoCozinha) return;
-    setEnviandoCozinha(true);
+  const enviarCozinha = async (selectedIds?: number[]) => {
+    if (enviandoRef.current || adicionandoRef.current || pendingRef.current) return;
+    const ids = selectedIds || itensNovos.map((item) => item.id);
+    if (!ids.length) { toast('info', 'Nenhum pedido novo para enviar'); return; }
+    enviandoRef.current = true; setEnviandoCozinha(true);
     try {
-      const r = await impressoraApi.imprimirComanda(comandaId, { setor });
-      loadComanda();
-      if (r.sem_rota?.length) toast('error', `${r.sem_rota.length} item(ns) sem impressora configurada: ${r.sem_rota.join(', ')}`);
-      else if (r.falhas?.length) toast('error', `Falha em ${r.falhas.map((f) => f.impressora).join(', ')}: ${r.falhas[0].erro}`);
-      else toast('success', `${r.itens} item(ns) enviado(s) para ${r.jobs?.length || 0} impressora(s)`);
-    } catch (e: any) {
-      toast('error', e?.error || 'Erro ao enviar para a cozinha');
-    } finally {
-      setEnviandoCozinha(false);
-    }
+      const r = await retryOrder(() => impressoraApi.imprimirComanda(comandaId, { setor, itens_ids: ids }));
+      await loadComanda();
+      if (r.sem_rota?.length) toast('error', `Sem impressora configurada: ${r.sem_rota.join(', ')}`);
+      else if (r.falhas?.length) toast('error', `Fila incompleta: ${r.falhas[0].impressora}: ${r.falhas[0].erro}. Tente enviar novamente após corrigir a conexão.`);
+      else toast('success', r.itens ? `${r.itens} item(ns) colocado(s) na fila de impressão` : 'Estes pedidos já foram enviados por outra tela');
+    } catch (e: any) { toast('error', e?.error || 'Falha ao confirmar a fila. Tente enviar novamente; os itens já recebidos não serão duplicados.'); }
+    finally { enviandoRef.current = false; setEnviandoCozinha(false); }
   };
 
   const totalComTaxa = subtotal + subtotal * (Number(taxa || 0) / 100);
@@ -541,6 +566,11 @@ export function ComandaPage() {
         </div>
       </div>
 
+      {pendente && <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <p className="text-sm text-amber-900">{adicionando ? 'Confirmando lançamento…' : 'Lançamento aguardando confirmação. Tente novamente para concluir sem duplicar.'}</p>
+        <Button loading={adicionando} onClick={() => void enviarLancamento(pendente)}>Tentar novamente</Button>
+      </div>}
+
       {preFechada && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 px-4 py-3">
           <p className="text-sm font-semibold text-brand-800">
@@ -674,7 +704,7 @@ export function ComandaPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-bold text-slate-700">Itens ({ativos.length})</h2>
               {!locked && itensNovos.length > 0 && (
-                <Button size="sm" variant="secondary" icon={<Send className="h-3.5 w-3.5" />} loading={enviandoCozinha} onClick={enviarCozinha}>
+                <Button size="sm" variant="secondary" icon={<Send className="h-3.5 w-3.5" />} loading={enviandoCozinha} onClick={() => void enviarCozinha()}>
                   Enviar
                 </Button>
               )}
@@ -715,6 +745,7 @@ export function ComandaPage() {
                           {item.observacao && String(item.observacao).split('\n').map((obs, i) => (
                             <p key={i} className="text-[11px] text-amber-600">({obs})</p>
                           ))}
+                          {item.responsavel && <p className="mt-1 text-[11px] text-slate-500">Lançado por {item.responsavel}</p>}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Badge color={item.status === 'entregue' ? 'green' : item.status === 'enviado' ? 'blue' : 'amber'}>
@@ -726,6 +757,12 @@ export function ComandaPage() {
                           {podeTransferir(item) && <MoreHorizontal className="h-4 w-4 shrink-0 text-slate-500" />}
                         </div>
                       </button>
+                      {!!item.impressoes?.length && <p className={`mt-1 text-xs ${item.impressoes.some((p) => ['erro', 'failed', 'cancelled', 'ausente'].includes(p.status)) ? 'font-semibold text-red-600' : 'text-slate-500'}`}>
+                        {item.impressoes.some((p) => ['erro', 'failed', 'cancelled', 'ausente'].includes(p.status))
+                          ? `Verificar impressão: ${item.impressoes.find((p) => p.erro)?.erro || 'Trabalho não concluído. Confira o servidor de impressão.'}`
+                          : item.impressoes.every((p) => ['feito', 'success'].includes(p.status)) ? 'Enviado à impressora'
+                            : item.impressoes.some((p) => ['processando', 'processing', 'sent', 'enviado'].includes(p.status)) ? 'Impressão em andamento' : 'Na fila de impressão'}
+                      </p>}
                       {!locked && !transferindo && ['novo', 'enviado'].includes(item.status) && (
                         <div className="mt-1.5 flex gap-1.5">
                           {item.status === 'novo' && (
@@ -1008,9 +1045,9 @@ export function ComandaPage() {
       </Modal>
 
       {/* Adicionar produto */}
-      <Modal open={!!addProduto} onClose={() => { setAddProduto(null); setEditandoItem(null); }} title={editandoItem ? 'Observações do produto' : 'Adicionar produto'} width="max-w-md">
+      <Modal open={!!addProduto} onClose={() => { if (adicionandoRef.current) return; setAddProduto(null); setEditandoItem(null); }} title={editandoItem ? 'Observações do produto' : 'Adicionar produto'} width="max-w-md">
         {addProduto && (
-          <div className="space-y-4">
+          <fieldset disabled={adicionando} className="space-y-4">
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-sm font-bold text-slate-800">{addProduto.nome}</p>
               <p className="text-xs text-slate-500">{addProduto.preco != null ? fmtBRL(addProduto.preco) : '—'}</p>
@@ -1106,10 +1143,10 @@ export function ComandaPage() {
               <p className="text-xl font-extrabold text-brand-600">{fmtBRL((addProduto.preco || 0) * addQtd)}</p>
             </div>
 
-            <Button className="w-full" loading={adicionando} onClick={confirmarAdicao}>
+            <Button className="w-full" loading={adicionando} disabled={!storageKey} onClick={confirmarAdicao}>
               {editandoItem ? 'Salvar observações' : `Adicionar ${addQtd}x ${addProduto.nome}`}
             </Button>
-          </div>
+          </fieldset>
         )}
       </Modal>
 

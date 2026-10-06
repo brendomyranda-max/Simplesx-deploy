@@ -6,6 +6,7 @@
 import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulosToString, MOD_RESTAURANTE, sha256, gerarToken, estabelecimentoId, hashSenha, verificarSenha, cnpjValido, soDigitos, kvGet, kvPut } from './util.js';
 import { gerarPix } from './pix-colaboracao.js';
 import { createDeviceTask } from './handlers-devices.js';
+import { dispatchOrders } from './order-printing.js';
 
 const LOGIN_LIMIT = 8;
 const LOGIN_TTL = 15 * 60;
@@ -451,28 +452,9 @@ function textoCompativelComEscPos(value) {
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
 }
 
-function textoPedido({ empresa, cnpj, mesa, com, destino, itens }) {
-  const linhasItens = itens.flatMap((i) => [
-    `${num(i.quantidade)}x ${i.nome}`,
-    ...String(i.observacao || '').split('\n').map((o) => o.trim()).filter(Boolean).map((o) => `  (${o})`),
-  ]);
-  return [
-    linha(),
-    '    ' + String(empresa).toUpperCase(),
-    ...(cnpj ? [`CNPJ: ${cnpj}`] : []),
-    linha(),
-    `MESA: ${mesa?.numero || '-'}  GARÇOM: ${com.garcom_nome || '-'}`,
-    `CLIENTE: ${com.cliente_nome || '-'}   DESTINO: ${destino}`,
-    linha('-'),
-    ...linhasItens,
-    linha(),
-    `Emitida: ${new Date().toLocaleString('pt-BR')}`,
-    linha(),
-  ].join('\n');
-}
-
 export async function imprimirComandaHandler(c, env) {
   const b = await c.req.json();
+  if (b.tipo !== 'conta') return c.json(await dispatchOrders(c, env, b));
   const com = await env.DB.prepare('SELECT * FROM comandas WHERE id=?').bind(b.comanda_id).first();
   if (!com) return c.json({ error: 'Comanda não encontrada' }, 404);
   const mesa = await env.DB.prepare('SELECT numero, nome FROM mesas WHERE id=?').bind(com.mesa_id).first();
@@ -483,8 +465,7 @@ export async function imprimirComandaHandler(c, env) {
   const setor = b.setor || 'Cozinha';
   const tipo = b.tipo || 'cozinha';
 
-  const itens = tipo === 'conta'
-    ? await env.DB.prepare(
+  const itens = await env.DB.prepare(
       `SELECT i.*,
         (SELECT GROUP_CONCAT(DISTINCT COALESCE(c.impressora_agente_id, pai.impressora_agente_id))
          FROM produto_categorias pc
@@ -492,15 +473,6 @@ export async function imprimirComandaHandler(c, env) {
          LEFT JOIN categorias pai ON pai.id=c.categoria_pai_id
          WHERE pc.produto_id=i.produto_id) AS impressora_ids
        FROM comanda_itens i WHERE i.comanda_id=? AND i.status!='cancelado' ORDER BY i.id`
-    ).bind(b.comanda_id).all()
-    : await env.DB.prepare(
-      `SELECT i.*,
-        (SELECT GROUP_CONCAT(DISTINCT COALESCE(c.impressora_agente_id, pai.impressora_agente_id))
-         FROM produto_categorias pc
-         JOIN categorias c ON c.id=pc.categoria_id
-         LEFT JOIN categorias pai ON pai.id=c.categoria_pai_id
-         WHERE pc.produto_id=i.produto_id) AS impressora_ids
-       FROM comanda_itens i WHERE i.comanda_id=? AND i.status='novo' ORDER BY i.id`
     ).bind(b.comanda_id).all();
 
   if (tipo === 'conta') {
@@ -544,42 +516,7 @@ export async function imprimirComandaHandler(c, env) {
     }
     return c.json({ impressao: txt, itens: itens.results.length, setor, tipo, agente: b.agente || null, jobs });
   }
-  const rotas = await env.DB.prepare(
-    `SELECT id, nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
-     FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1 ORDER BY id`
-  ).all();
-  const jobs = [];
-  const enviados = new Set();
-  const comRota = new Set();
-  let preview = '';
-  for (const rota of rotas.results) {
-    const selecionados = itens.results.filter((item) => {
-      const ids = String(item.impressora_ids || '').split(',').map(num).filter(Boolean);
-      return ids.includes(num(rota.id));
-    });
-    if (!selecionados.length) continue;
-    selecionados.forEach((item) => comRota.add(item.id));
-    const txt = textoPedido({ empresa, cnpj, mesa, com, destino: rota.nome, itens: selecionados });
-    if (!preview) preview = txt;
-    const job = await enqueueGestorJob(env, c.user, {
-      conteudo: txt, impressora: rota.nome, larguraMm: num(rota.largura_mm) || 80,
-      servidorTipo: rota.servidor_tipo, servidorId: rota.servidor_id, impressoraDestino: rota.impressora_destino,
-    });
-    jobs.push({ impressora: rota.nome, itens: selecionados.length, ...job });
-    if (job.ok) selecionados.forEach((item) => enviados.add(item.id));
-  }
-  if (enviados.size) {
-    const ids = [...enviados];
-    const placeholders = ids.map(() => '?').join(',');
-    await env.DB.prepare(`UPDATE comanda_itens SET status='enviado', enviado_em=? WHERE id IN (${placeholders}) AND status='novo'`)
-      .bind(now(), ...ids).run();
-  }
-  const semRota = itens.results.filter((item) => !comRota.has(item.id)).map((item) => item.nome);
-  const falhas = jobs
-    .filter((job) => !job.ok)
-    .map((job) => ({ impressora: job.impressora, erro: job.error || 'Falha ao enviar para o gestor' }));
-  if (!preview) preview = textoPedido({ empresa, cnpj, mesa, com, destino: setor, itens: itens.results });
-  return c.json({ impressao: preview, itens: enviados.size, setor, tipo, agente: b.agente || null, jobs, sem_rota: semRota, falhas });
+
 }
 
 export async function imprimirPessoaComandaHandler(c, env) {

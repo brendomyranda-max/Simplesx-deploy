@@ -11,6 +11,7 @@ const TABELAS = [
   'estoque_movimentacoes', 'lotes', 'validade_controles', 'mesas', 'comandas',
   'comanda_pessoas', 'comanda_itens', 'vendas', 'venda_itens', 'pagamentos',
   'comanda_item_transferencias',
+  'comanda_lancamentos', 'pedido_impressoes',
   'perdas', 'despesas', 'contas_pagar', 'contas_receber', 'lancamentos', 'caixa',
   'funcionarios', 'setores_impressao', 'impressora_agentes', 'impressora_etiquetas',
   'gestores', 'gestor_jobs',

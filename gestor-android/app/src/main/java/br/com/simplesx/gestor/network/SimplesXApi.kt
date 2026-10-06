@@ -15,7 +15,7 @@ data class DeviceTask(val id: String, val type: String, val leaseId: String, val
 data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
 
 class SimplesXApi(private val config: AppConfig) {
-    private val appVersion = "1.5.8"
+    private val appVersion = "1.5.9"
     private fun request(path: String, body: JSONObject, authenticated: Boolean = true): JSONObject {
         val base = config.deployUrl.trimEnd('/')
         val parsed = URL(base)
@@ -67,7 +67,7 @@ class SimplesXApi(private val config: AppConfig) {
     }
 
     fun pullTasks(): List<DeviceTask> {
-        val tasks = request("/device/tasks/pull", JSONObject()).optJSONArray("tasks") ?: JSONArray()
+        val tasks = request("/device/tasks/pull", JSONObject().put("limit", 1)).optJSONArray("tasks") ?: JSONArray()
         return (0 until tasks.length()).map { index ->
             val item = tasks.getJSONObject(index)
             DeviceTask(item.getString("id"), item.getString("tipo"), item.getString("lease_id"), item.optJSONObject("payload") ?: JSONObject())
@@ -91,14 +91,14 @@ class SimplesXApi(private val config: AppConfig) {
             .put("category_ids", JSONArray(printer.categoryIds)))
     }
 
-    fun taskStatus(task: DeviceTask, status: String, code: String? = null, error: String? = null, resultPrinter: String? = null) {
-        request("/device/tasks/${task.id}/status", JSONObject().put("status", status).put("lease_id", task.leaseId).apply {
+    fun taskStatus(task: DeviceTask, status: String, code: String? = null, error: String? = null, resultPrinter: String? = null): String {
+        return request("/device/tasks/${task.id}/status", JSONObject().put("status", status).put("lease_id", task.leaseId).apply {
             if (code != null) put("error_code", code)
             if (error != null) put("error_message", error.take(2000))
             if (status == "success") put("result", JSONObject().apply {
                 put("printer", resultPrinter ?: config.printer.name)
                 put("transport", config.printerFor(resultPrinter).connection.name.lowercase())
             })
-        })
+        }).optString("status", status)
     }
 }

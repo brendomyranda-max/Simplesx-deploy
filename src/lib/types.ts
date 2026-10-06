@@ -159,6 +159,8 @@ export interface ComandaPessoa {
 }
 
 export interface ComandaItem {
+  funcionario_id?: number | null;
+  impressoes?: { impressora_id: number; status: string; erro: string | null }[];
   id: number;
   versao: number;
   comanda_id: number;

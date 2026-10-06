@@ -30,6 +30,21 @@ export interface ApiError {
   status: number;
 }
 
+export interface OrderSubmission {
+  chave: string;
+  itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string }[];
+}
+
+// Somente operações protegidas no servidor podem repetir automaticamente.
+export async function retryOrder<T>(send: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await send(); } catch (error: any) {
+      if (attempt >= 2 || (error?.status !== 0 && error?.status < 500)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+}
+
 const BASE = '/api';
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -217,6 +232,7 @@ export const mesaApi = {
 };
 
 export const comandaApi = {
+  addItems: (id: number, body: OrderSubmission) => retryOrder(() => api.post<{ itens: Comanda['itens']; repetido: boolean }>(`/comandas/${id}/itens/lote`, body)),
   get: (id: number) => api.get<Comanda>(`/comandas/${id}`),
   addPessoa: (id: number, b: { nome?: string; cor?: string }) => api.post<{ id: number }>(`/comandas/${id}/pessoas`, b),
   removePessoa: (id: number, pid: number) => api.del<{ ok: boolean }>(`/comandas/${id}/pessoas/${pid}`),
@@ -308,7 +324,7 @@ export const impressoraApi = {
   atualizarEtiqueta: (id: number, b: { nome: string; largura_mm: number; altura_mm: number }) => api.put<{ ok: boolean }>(`/impressora-etiquetas/${id}`, b),
   excluirEtiqueta: (id: number) => api.del<{ ok: boolean }>(`/impressora-etiquetas/${id}`),
   criarEtiqueta: (b: { nome: string; largura_mm?: number; altura_mm?: number }) => api.post<any>('/impressora-etiquetas', b),
-  imprimirComanda: (comanda_id: number, b?: { setor?: string; agente?: string; tipo?: 'cozinha' | 'conta' }) =>
+  imprimirComanda: (comanda_id: number, b?: { setor?: string; agente?: string; tipo?: 'cozinha' | 'conta'; itens_ids?: number[] }) =>
     api.post<{ impressao: string; itens: number; setor: string; tipo?: string; jobs?: any[]; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] }>(`/impressao/comanda?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, ...b }),
   imprimirPessoa: (comanda_id: number, pessoa_id: number) =>
     api.post<{ impressao: string; pessoa: ComandaPessoa; total: number }>(`/impressao/pessoa?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, pessoa_id }),

@@ -11,6 +11,7 @@ import * as cad from './handlers-cadastros.js';
 import * as gestor from './handlers-gestor.js';
 import * as devices from './handlers-devices.js';
 import { transferirItemHandler } from './handlers-transferencias.js';
+import { addOrderItemsHandler } from './restaurant-orders.js';
 import * as fiscal from './handlers-fiscal.js';
 import { TenantDb } from './tenant-db.js';
 
@@ -96,6 +97,7 @@ const routes = [
   { m: 'DELETE', p: '/api/comandas/:id/pessoas/:pid', h: ven.removePessoaHandler },
   { m: 'PUT', p: '/api/comandas/:id/pessoas/:pid', h: ven.updatePessoaComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/itens', h: ven.addItemComandaHandler },
+  { m: 'POST', p: '/api/comandas/:id/itens/lote', h: addOrderItemsHandler },
   { m: 'PUT', p: '/api/comandas/:id/itens/:item_id', h: ven.updateItemComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/itens/:item_id/transferir', h: transferirItemHandler },
   { m: 'POST', p: '/api/comandas/:id/itens/:item_id/status', h: ven.updateItemStatusHandler },

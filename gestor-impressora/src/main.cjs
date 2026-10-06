@@ -11,6 +11,7 @@ const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
 const { promisify } = require('node:util')
+const { JobJournal } = require('./job-journal.cjs')
 
 const executarArquivo = promisify(execFile)
 
@@ -431,7 +432,7 @@ async function executarJob(job) {
 }
 
 async function confirmarJob(job, status, erro) {
-  await api(`/gestor/jobs/${job.id}/status`, { token: config.token, status, erro })
+  return api(`/gestor/jobs/${job.id}/status`, { token: config.token, lease_id: job.lease_id, status, erro })
 }
 
 function sincronizar() {
@@ -459,21 +460,33 @@ async function sincronizarAgora() {
   sincronizando = true
   try {
     await registrar()
-    const resposta = await api('/gestor/pull', { token: config.token })
+    const resposta = await api('/gestor/pull', { token: config.token, limit: 1 })
     ultimoContato = new Date().toISOString()
     ultimoErro = ''
     notificarStatus()
     for (const job of resposta.jobs || []) {
+      let renewal
       try {
-        await executarJob(job)
-        await confirmarJob(job, 'feito')
-        ultimoJob = { id: job.id, impressora: job.impressora || config.impressoraPadrao || 'padrao', status: 'feito', em: new Date().toISOString() }
+        const reservation = await confirmarJob(job, 'processando')
+        if (reservation?.duplicate) continue
+        renewal = setInterval(() => confirmarJob(job, 'processando').catch(() => {}), 30000)
+        const journal = new JobJournal(path.join(app.getPath('userData'), 'print-journal'))
+        const result = await journal.execute(`${config.deployUrl}:${config.token}`, job, executarJob)
+        clearInterval(renewal)
+        await confirmarJob(job, result.status, result.erro)
+        ultimoJob = { id: job.id, impressora: job.impressora || config.impressoraPadrao || 'padrao', status: result.status, erro: result.erro, em: new Date().toISOString() }
       } catch (erro) {
-        await confirmarJob(job, 'erro', erro.message).catch(() => {})
-        ultimoJob = { id: job.id, impressora: job.impressora || '-', status: 'erro', erro: erro.message, em: new Date().toISOString() }
+        // Uma falha de confirmação não é uma falha da impressora. A reserva
+        // expira e o diário local permite confirmar novamente sem reimprimir.
+        ultimoErro = `Confirmação pendente: ${erro.message}`
+        ultimoJob = { id: job.id, impressora: job.impressora || '-', status: 'pendente', erro: erro.message, em: new Date().toISOString() }
+      } finally {
+        clearInterval(renewal)
       }
       notificarStatus()
     }
+    // Drena a fila sem acrescentar três segundos de espera a cada pedido.
+    if (resposta.jobs?.length) setTimeout(() => sincronizar(), 0)
   } catch (erro) {
     ultimoErro = erro.message || String(erro)
     notificarStatus()

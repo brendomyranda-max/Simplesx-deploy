@@ -64,7 +64,7 @@ export async function pullGestorJobsHandler(c, env) {
 
   // Trabalhos reclamados mas não confirmados a tempo voltam para a fila.
   await env.DB.prepare(
-    "UPDATE gestor_jobs SET status='pendente', enviado_em=NULL WHERE gestor_token=? AND status='enviado' AND enviado_em < ?"
+    "UPDATE gestor_jobs SET status='pendente', enviado_em=NULL,lease_id=NULL WHERE gestor_token=? AND status IN ('enviado','processando') AND enviado_em < ?"
   )
     .bind(token, new Date(Date.now() - RECLAIM_MS).toISOString())
     .run();
@@ -72,17 +72,19 @@ export async function pullGestorJobsHandler(c, env) {
   const pendentes = await env.DB.prepare(
     "SELECT id, tipo, conteudo, impressora, largura_mm, copias, cortar, alimentar FROM gestor_jobs WHERE gestor_token=? AND status='pendente' ORDER BY id LIMIT ?"
   )
-    .bind(token, CLAIM_LIMIT)
+    .bind(token, Math.min(CLAIM_LIMIT, Math.max(1, num(b.limit) || CLAIM_LIMIT)))
     .all();
 
   const jobs = [];
   for (const j of pendentes.results) {
-    const claimed = await env.DB.prepare("UPDATE gestor_jobs SET status='enviado', enviado_em=? WHERE id=? AND status='pendente'")
-      .bind(now(), j.id)
+    const leaseId = crypto.randomUUID();
+    const claimed = await env.DB.prepare("UPDATE gestor_jobs SET status='enviado', enviado_em=?,lease_id=? WHERE id=? AND status='pendente'")
+      .bind(now(), leaseId, j.id)
       .run();
     if (!claimed.meta.changes) continue;
     jobs.push({
       id: j.id,
+      lease_id: leaseId,
       tipo: j.tipo || 'texto',
       conteudo: j.conteudo || '',
       impressora: j.impressora || null,
@@ -112,12 +114,21 @@ export async function gestorJobStatusHandler(c, env) {
     .bind(token, String(b?.session_id || '')).first();
   if (!gestor) return c.json({ error: 'Gestor não reconhecido' }, 401);
 
-  const status = b?.status === 'erro' ? 'erro' : 'feito';
+  const status = b?.status;
+  if (!['erro','feito','processando'].includes(status)) return c.json({ error: 'Status inválido' }, 400);
+  const job = await env.DB.prepare('SELECT * FROM gestor_jobs WHERE id=? AND gestor_token=?').bind(jobId, token).first();
+  if (!job) return c.json({ error: 'Trabalho não encontrado' }, 404);
+  if (['feito','erro','cancelado'].includes(job.status)) return c.json({ ok: true, duplicate: true, status: job.status });
+  if (b.lease_id && b.lease_id !== job.lease_id) return c.json({ error: 'Reserva do trabalho expirou' }, 409);
+  if (!['enviado','processando'].includes(job.status)) return c.json({ error: 'Trabalho não reservado' }, 409);
   const erro = status === 'erro' ? String(b?.erro || 'Falha na impressão') : null;
 
-  await env.DB.prepare('UPDATE gestor_jobs SET status=?, erro=?, executado_em=? WHERE id=? AND gestor_token=?')
-    .bind(status, erro, now(), jobId, token)
+  const result = await env.DB.prepare(`UPDATE gestor_jobs SET status=?, erro=?,
+    executado_em=CASE WHEN ?='processando' THEN executado_em ELSE ? END,enviado_em=?
+    WHERE id=? AND gestor_token=? AND lease_id=? AND status IN ('enviado','processando')`)
+    .bind(status, erro, status, now(), now(), jobId, token, job.lease_id)
     .run();
+  if (!result.meta.changes) return c.json({ error: 'Trabalho alterado em outra conexão' }, 409);
 
   return c.json({ ok: true });
 }

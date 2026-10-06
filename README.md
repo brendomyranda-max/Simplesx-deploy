@@ -123,6 +123,25 @@ reserva temporária durante o fechamento, preservando os pedidos existentes.
 
 ## Gestor Local v2
 
+A versão **1.5.9** adiciona proteção para pedidos simultâneos na mesma mesa.
+Aplique `0023_pedidos_concorrentes.sql` antes do backend e atualize os Gestores
+Windows/Linux/Android. Cada lançamento usa uma chave que permite retomar uma
+requisição sem duplicar itens; o lote inteiro é salvo em uma transação.
+O garçom vem da sessão autenticada de quem lançou, e aparece na tela e no ticket.
+Para identificar quatro garçons, cada um deve entrar com seu próprio usuário.
+
+A reserva por item/impressora, a criação do trabalho e o status de envio são
+atômicos. Pedidos para mais de uma rota permanecem pendentes até todas entrarem
+na fila; uma nova tentativa completa apenas as rotas faltantes. A tela consulta
+a comanda a cada três segundos e mostra fila, processamento e falhas.
+
+Os Gestores guardam em disco o resultado antes de confirmar ao servidor,
+renovam a reserva durante a impressão e processam a fila sem sobrepor trabalhos.
+Uma confirmação HTTP perdida é repetida sem reimprimir. Após interrupção durante
+o envio físico, ou erro da impressora, o trabalho pede conferência: ESC/POS não
+permite garantir se o papel saiu antes de uma queda de energia. Não há repetição
+automática de bytes em um resultado incerto.
+
 A tela **Impressoras** permite editar e excluir impressoras, modelos de etiqueta
 e servidores Android/Windows/Linux. Editar um servidor altera seu nome no painel.
 Excluir um servidor remove suas rotas, libera as categorias e cancela os trabalhos
