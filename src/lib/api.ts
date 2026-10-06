@@ -93,10 +93,15 @@ export const api = {
   del: <T>(path: string) => request<T>('DELETE', path),
 };
 
+export interface SignupPolicy {
+  valor_centavos: number;
+  moeda: string;
+  periodicidade: 'unico';
+  pagamento_disponivel: boolean;
+}
+
 export const authApi = {
-  cadastro: (body: { cnpj: string; nome: string; telefone: string; senha: string; turnstile_token: string }) => request<{ ok: boolean; usuario: string }>('POST', '/auth/cadastro', body),
-  colaboracao: (valor?: string) => request<{ pix_copia_cola: string; recebedor: string; cidade: string }>('GET', '/colaboracao' + (valor === undefined ? '' : `?valor=${encodeURIComponent(valor)}`)),
-  config: () => request<{ turnstile_site_key: string }>('GET', '/auth/config'),
+  config: () => request<{ turnstile_site_key: string; cadastro: SignupPolicy }>('GET', '/auth/config'),
   me: () => request<{ id: number; nome: string; perfil: string; modulos?: string[] }>('GET', '/auth/me'),
   login: (token: string) =>
     request<{ ok: boolean; nome: string; token_id: number }>('POST', '/auth/login', { token }),

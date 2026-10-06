@@ -8,6 +8,7 @@ import * as cat from './handlers-catalog.js';
 import * as ven from './handlers-vendas.js';
 import * as fin from './handlers-financeiro.js';
 import * as cad from './handlers-cadastros.js';
+import { cadastroHandler } from './signup-policy.js';
 import * as gestor from './handlers-gestor.js';
 import * as devices from './handlers-devices.js';
 import { transferirItemHandler } from './handlers-transferencias.js';
@@ -19,8 +20,7 @@ import { TenantDb } from './tenant-db.js';
 const routes = [
   // auth
   { m: 'POST', p: '/api/auth/login', h: cat.loginHandler, pub: true },
-  { m: 'POST', p: '/api/auth/cadastro', h: cad.cadastroHandler, pub: true },
-  { m: 'GET', p: '/api/colaboracao', h: cad.colaboracaoHandler, pub: true },
+  { m: 'POST', p: '/api/auth/cadastro', h: cadastroHandler, pub: true },
   { m: 'GET', p: '/api/auth/config', h: cad.authConfigHandler, pub: true },
   { m: 'GET', p: '/api/auth/me', h: cad.meHandler },
   { m: 'POST', p: '/api/auth/logout', h: cad.logoutHandler, pub: true },

@@ -17,7 +17,9 @@ npm run server
 ```
 
 Em outro terminal, execute `npm run dev` e abra `http://localhost:5173`.
-Crie uma conta pela tela de acesso. A instalação começa sem usuários, senhas
+O cadastro pelo acesso tem taxa única de R$ 50,00 e está aguardando a configuração
+do recebimento. Para preparar um ambiente administrativamente, use a CLI descrita
+em **Criar um estabelecimento**. A instalação começa sem usuários, senhas
 ou dados de clientes. O `.env.example` contém somente chaves públicas de teste
 do Turnstile; em produção, configure suas próprias chaves.
 
@@ -45,6 +47,9 @@ que o repositório contém arquivos JSON, consulte [GUIA_DO_PROJETO.md](./GUIA_D
 
 Para preparar os secrets da integração de pagamentos, consulte
 [PAGBANK_CONFIGURACAO.md](./PAGBANK_CONFIGURACAO.md).
+
+O estado atual do cadastro pago e da apresentação de investimento está documentado
+em [CADASTRO_E_INVESTIMENTO.md](./CADASTRO_E_INVESTIMENTO.md).
 
 ## Criar um estabelecimento
 

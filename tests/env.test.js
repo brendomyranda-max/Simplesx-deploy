@@ -14,7 +14,7 @@ test('servidor exige Turnstile real em produção e não expõe outras variávei
     assert.throws(() => serverEnv({ NODE_ENV: 'production', TURNSTILE_SITE_KEY: 'site-configurado', TURNSTILE_SECRET_KEY: `${prefix}x0000000000000000000000000000000AA` }), /produção/);
   }
   const config = serverEnv({ NODE_ENV: 'production', TURNSTILE_SITE_KEY: 'site-configurado', TURNSTILE_SECRET_KEY: 'valor-ficticio', COLABORACAO_PIX_CHAVE: ' pix@example.com ', SIMPLESX_SENHA_DONO: 'somente-no-processo' });
-  assert.equal(config.COLABORACAO_PIX_CHAVE, 'pix@example.com');
+  assert.equal(config.COLABORACAO_PIX_CHAVE, undefined);
   assert.equal(config.SIMPLESX_SENHA_DONO, undefined);
   assert.equal(serverEnv({}).TURNSTILE_SECRET_KEY, '');
 });

@@ -6,7 +6,6 @@
 | --- | --- | --- |
 | `TURNSTILE_SITE_KEY` | `.env` (Express) ou `.dev.vars` (Wrangler), com chave pública de teste | Variável do servidor ou Cloudflare; a site key é pública |
 | `TURNSTILE_SECRET_KEY` | Mesmos arquivos, com chave pública de teste | Secret do Cloudflare ou ambiente privado do servidor |
-| `COLABORACAO_PIX_CHAVE`, `COLABORACAO_PIX_NOME`, `COLABORACAO_PIX_CIDADE` | `.env` ou `.dev.vars`; opcionais | Secrets do Cloudflare ou ambiente privado do servidor |
 | `SIMPLESX_SENHA_DONO` | `.env` ou variável exportada, somente durante a criação do dono | Ambiente privado do terminal administrativo; remover após uso |
 | `SIMPLESX_TOKEN`, `SIMPLESX_USUARIO`, `SIMPLESX_SENHA`, `SIMPLESX_URL` | `.env`, somente para o importador de cardápio | Ambiente privado do script, quando necessário |
 | `PAGBANK_API_TOKEN`, `PAGBANK_TAPON_APP_KEY`, `PAGBANK_SIMPLESX_ACCOUNT_ID` | `.dev.vars` para a futura integração | Secrets do Cloudflare; ver [configuração PagBank](./PAGBANK_CONFIGURACAO.md) |
@@ -21,9 +20,9 @@ No Cloudflare, cadastre as chaves reais antes do deploy; não copie as chaves de
 dos modelos para os ambientes publicados.
 
 Nunca coloque segredos em `VITE_*`: variáveis com esse prefixo podem entrar no
-JavaScript entregue ao navegador. Os dados do recebedor Pix são configurados no
-servidor, mas a chave e o nome aparecem no código de pagamento; prefira chave
-aleatória para evitar divulgar CPF ou telefone.
+JavaScript entregue ao navegador. Credenciais de recebimento devem ficar no servidor.
+A criação pública de contas permanece bloqueada até a integração de pagamento
+ser configurada; consulte [cadastro e investimento](./CADASTRO_E_INVESTIMENTO.md).
 
 Não há senha administrativa padrão. Senhas são definidas no cadastro ou na CLI.
 Senhas de usuários e tokens devem ser gerados individualmente e persistidos pelo

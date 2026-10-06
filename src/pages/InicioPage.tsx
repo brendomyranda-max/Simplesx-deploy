@@ -3,7 +3,7 @@
  * Responsabilidade: Implementa a tela InicioPage.tsx e coordena seus dados e ações.
  */
 
-import { Colaboracao } from '@/components/Colaboracao';
+import { Investimento } from '@/components/Investimento';
 import { useMemo } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -268,7 +268,7 @@ export function InicioPage() {
           </motion.div>
         )}
 
-        <Colaboracao />
+        <Investimento />
         <div className="mt-8 text-center">
           <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={sair} loading={saindo}>
             Sair
