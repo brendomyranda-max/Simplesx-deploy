@@ -1,5 +1,11 @@
 // Conteúdo editorial adaptado de Simplex_Apresentacao_Investidores.docx,
 // fornecido pelo fundador. Planos e dados em definição não são resultados obtidos.
+export const contatoInvestimento = {
+  telefone: '5511939417895',
+  telefoneFormatado: '(11) 93941-7895',
+  mensagem: 'Olá, Brendo! Li a apresentação da SimplesX e tenho interesse em investir. Gostaria de conversar sobre a proposta.',
+};
+
 export const pilares = [
   {
     id: 'pedidos', titulo: 'Pedidos para restaurantes',

@@ -2,10 +2,10 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowDown, ArrowLeft, ArrowRight, Boxes, CalendarClock, Check,
-  CircleDot, Globe2, Layers3, ScanBarcode, Target, UtensilsCrossed, Wallet,
+  CircleDot, Globe2, Layers3, MessageCircle, ScanBarcode, Target, UtensilsCrossed, Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
-import { dadosPendentes, diferenciais, etapas, expansao, pilares, prioridadesAporte } from '@/content/investidores';
+import { contatoInvestimento, dadosPendentes, diferenciais, etapas, expansao, pilares, prioridadesAporte } from '@/content/investidores';
 
 const iconesPilares = [UtensilsCrossed, ScanBarcode, Boxes, CalendarClock, Wallet];
 const navegacao = [
@@ -13,6 +13,15 @@ const navegacao = [
   ['receita', 'Modelo de receita'], ['aporte', 'O investimento'],
 ];
 const foco = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-500';
+const whatsappInvestimento = `https://wa.me/${contatoInvestimento.telefone}?text=${encodeURIComponent(contatoInvestimento.mensagem)}`;
+
+function BotaoInvestir() {
+  return <a href={whatsappInvestimento} target="_blank" rel="noopener noreferrer"
+    aria-label="Quero investir — conversar no WhatsApp (abre em nova aba)"
+    className={`inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-800 ${foco}`}>
+    <MessageCircle className="h-5 w-5" aria-hidden="true" /> Quero investir
+  </a>;
+}
 
 function TituloSecao({ numero, titulo, descricao }: { numero: string; titulo: string; descricao?: string }) {
   return <div className="mb-8 max-w-3xl">
@@ -175,6 +184,11 @@ export default function InvestidoresPage() {
               <h3 className="text-lg font-bold text-slate-900">Condições da proposta</h3>
               <p className="mt-3 text-sm leading-relaxed text-slate-600">A apresentação mostra o produto e a direção da empresa. Os termos da captação ainda serão completados.</p>
               <dl className="mt-6 divide-y divide-slate-100 text-sm">{['Valor do investimento buscado', 'Modalidade e condições', 'Orçamento e prazos', 'Metas de execução'].map((label) => <div key={label} className="flex flex-wrap justify-between gap-x-4 gap-y-1 py-3"><dt className="text-slate-600">{label}</dt><dd className="font-semibold text-brand-700">Em definição</dd></div>)}</dl>
+              <div className="mt-5 border-t border-slate-100 pt-5">
+                <p className="mb-4 text-sm leading-relaxed text-slate-600">Tem interesse em investir? Converse diretamente com Brendo Myranda pelo WhatsApp.</p>
+                <BotaoInvestir />
+                <p className="mt-3 text-xs text-slate-500">WhatsApp: {contatoInvestimento.telefoneFormatado}</p>
+              </div>
             </div>
           </div>
           <details className="group mt-10 rounded-2xl border border-slate-200 bg-white">
@@ -190,6 +204,11 @@ export default function InvestidoresPage() {
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-300">Nossa visão</p>
           <h2 className="mt-4 max-w-3xl text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">Começar pela gestão diária. Ampliar as possibilidades do comércio.</h2>
           <p className="mt-5 max-w-3xl leading-relaxed text-slate-300">Cinco pilares funcionais, com foco em restaurantes e mercados. O próximo passo é consolidar a operação, ampliar as integrações e validar um marketplace conectado à gestão. Queremos desenvolver essa expansão com metas mensuráveis e valor demonstrado aos clientes.</p>
+          <div className="mt-7">
+            <h3 className="mb-4 text-lg font-bold">Quer fazer parte do futuro da SimplesX?</h3>
+            <BotaoInvestir />
+            <p className="mt-3 text-sm text-slate-300">Fale com Brendo Myranda no WhatsApp: {contatoInvestimento.telefoneFormatado}.</p>
+          </div>
           <a href="#apresentacao" className={`mt-7 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-brand-200 hover:text-white ${foco}`}>Voltar ao início da apresentação <ArrowRight className="h-4 w-4" aria-hidden="true" /></a>
         </section>
       </div>

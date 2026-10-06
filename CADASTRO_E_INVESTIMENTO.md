@@ -54,6 +54,11 @@ O conteúdo editorial está em `src/content/investidores.ts`; sua apresentação
 está em `src/pages/InvestidoresPage.tsx`. A página é carregada separadamente
 para não acrescentar todo o conteúdo ao carregamento inicial do sistema.
 
+O botão **Quero investir**, nas condições da proposta e no encerramento da página,
+abre o WhatsApp de Brendo Myranda, **+55 (11) 93941-7895**, com uma mensagem de
+interesse preenchida. O visitante decide quando enviar a mensagem. O contato e
+o texto estão centralizados em `src/content/investidores.ts`.
+
 O formulário de contribuição, a rota `/api/colaboracao`, o gerador de Pix estático
 e as configurações `COLABORACAO_PIX_*` foram removidos.
 
