@@ -160,6 +160,7 @@ export interface ComandaPessoa {
 
 export interface ComandaItem {
   id: number;
+  versao: number;
   comanda_id: number;
   pessoa_id: number | null;
   produto_id: number | null;

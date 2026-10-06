@@ -226,6 +226,8 @@ export const comandaApi = {
     api.post<Comanda['itens'][0]>(`/comandas/${id}/itens`, b),
   updateItem: (id: number, itemId: number, b: { observacao?: string }) =>
     api.put<Comanda['itens'][0]>(`/comandas/${id}/itens/${itemId}`, b),
+  transferirItem: (id: number, itemId: number, b: { mesa_destino_id: number; comanda_destino_id: number | null; pessoa_destino_id: number | null; versao: number }) =>
+    api.post<{ ok: boolean; transferencia_id: string; comanda_destino_id: number; abriu_comanda: number }>(`/comandas/${id}/itens/${itemId}/transferir`, b),
   itemStatus: (id: number, itemId: number, status: string, responsavel?: string) =>
     api.post<{ ok: boolean }>(`/comandas/${id}/itens/${itemId}/status`, { status, responsavel }),
   fechar: (id: number, b: { tipo: 'unica' | 'divisao' | 'individual'; taxa_garcom_pct?: number; forma?: string; pagamentos?: { forma: string; valor: number }[]; responsavel?: string; pessoas_valores?: { pessoa_id: number | null; valor: number }[]; pre_fechar?: boolean }) =>

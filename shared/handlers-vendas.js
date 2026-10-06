@@ -743,23 +743,28 @@ export async function updateItemComandaHandler(c, env) {
   if (item.status !== 'novo') return c.json({ error: 'Somente itens ainda não enviados podem ser alterados' }, 409);
 
   const observacao = typeof b.observacao === 'string' ? b.observacao.trim() : '';
-  await env.DB.prepare('UPDATE comanda_itens SET observacao=? WHERE id=?')
-    .bind(observacao || null, item.id)
+  const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=? WHERE id=? AND comanda_id=? AND versao=?
+    AND status='novo' AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
+    .bind(observacao || null, item.id, item.comanda_id, item.versao, item.comanda_id)
     .run();
-  return c.json({ ...item, observacao: observacao || null });
+  if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
+  return c.json({ ...item, observacao: observacao || null, versao: item.versao + 1 });
 }
 
 export async function updateItemStatusHandler(c, env) {
   const b = await c.req.json();
-  const item = await env.DB.prepare('SELECT * FROM comanda_itens WHERE id=?').bind(c.params.item_id).first();
+  const item = await env.DB.prepare(`SELECT i.* FROM comanda_itens i JOIN comandas c ON c.id=i.comanda_id
+    WHERE i.id=? AND i.comanda_id=? AND c.status='aberta'`).bind(c.params.item_id, c.params.id).first();
   if (!item) return c.json({ error: 'Item não encontrado' }, 404);
   const novoStatus = b.status;
   const validos = ['novo', 'enviado', 'entregue', 'cancelado', 'perda'];
   if (!validos.includes(novoStatus)) return c.json({ error: 'Status inválido' }, 400);
 
-  await env.DB.prepare('UPDATE comanda_itens SET status=?, enviado_em=? WHERE id=?')
-    .bind(novoStatus, novoStatus === 'enviado' ? now() : item.enviado_em, item.id)
+  const updated = await env.DB.prepare(`UPDATE comanda_itens SET status=?, enviado_em=? WHERE id=? AND comanda_id=? AND versao=?
+    AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
+    .bind(novoStatus, novoStatus === 'enviado' ? now() : item.enviado_em, item.id, item.comanda_id, item.versao, item.comanda_id)
     .run();
+  if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
 
   if (novoStatus === 'cancelado') {
     const timeout = num(await getConfigValue(env, 'perda_timeout_min', '2'));
@@ -783,6 +788,23 @@ export async function updateItemStatusHandler(c, env) {
 }
 
 export async function fecharComandaHandler(c, env) {
+  // Reserva o fechamento antes de ler os itens: uma transferência não pode
+  // mudar a conta depois que seu total começou a ser calculado.
+  const until = new Date(Date.now() + 5 * 60_000).toISOString();
+  const acquired = await env.DB.prepare(`UPDATE comandas SET fechamento_bloqueado_ate=?
+    WHERE id=? AND status IN ('aberta','pre_fechamento')
+    AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?)`)
+    .bind(until, c.params.id, now()).run();
+  if (!acquired.meta.changes) return c.json({ error: 'Comanda fechada ou com fechamento em andamento. Atualize e tente novamente.' }, 409);
+  try {
+    return await fecharComandaReservada(c, env);
+  } finally {
+    await env.DB.prepare('UPDATE comandas SET fechamento_bloqueado_ate=NULL WHERE id=? AND fechamento_bloqueado_ate=?')
+      .bind(c.params.id, until).run();
+  }
+}
+
+async function fecharComandaReservada(c, env) {
   const b = await c.req.json();
   const com = await env.DB.prepare('SELECT * FROM comandas WHERE id=? AND status IN (?,?)')
     .bind(c.params.id, 'aberta', 'pre_fechamento')

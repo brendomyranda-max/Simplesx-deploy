@@ -10,24 +10,25 @@ import {
   UserPlus,
   Plus,
   Minus,
-  ScanBarcode,
   Printer,
   Send,
   CheckCheck,
   Trash2,
   HandCoins,
   Users,
-  Search,
+  ArrowRightLeft,
+  GripVertical,
+  MoreHorizontal,
   Pencil,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { RestaurantCatalog } from '@/components/RestaurantCatalog';
+import { TransferItemModal } from '@/components/TransferItemModal';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Toggle, useConfirm, useToast } from '@/components/ui';
-import { comandaApi, mesaApi, produtoApi, impressoraApi, configApi } from '@/lib/api';
-import type { Comanda, Produto, ComandaItem } from '@/lib/types';
+import { comandaApi, mesaApi, produtoApi, impressoraApi, configApi, categoriaApi } from '@/lib/api';
+import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
-import { useBarcodeScanner } from '@/lib/useBarcodeScanner';
 
 const CORES = ['#6366f1', '#16a34a', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444'];
 
@@ -41,10 +42,9 @@ export function ComandaPage() {
   const [comanda, setComanda] = useState<Comanda | null>(null);
   const [load, setLoad] = useState(true);
   const [pessoaSel, setPessoaSel] = useState<number | 'geral'>('geral');
-  const [codigo, setCodigo] = useState('');
-  const [filtro, setFiltro] = useState('');
   const [setor, setSetor] = useState('Cozinha');
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [setores, setSetores] = useState<string[]>(['Cozinha', 'Bar', 'Salão', 'Padaria', 'Etiquetas']);
   const [nomePessoa, setNomePessoa] = useState('');
   const [addPessoaAberto, setAddPessoaAberto] = useState(false);
@@ -60,6 +60,13 @@ export function ComandaPage() {
   const [imprimir, setImprimir] = useState<{ impressao: string; setor: string } | null>(null);
   const [addProduto, setAddProduto] = useState<Produto | null>(null);
   const [editandoItem, setEditandoItem] = useState<ComandaItem | null>(null);
+  const [acoesItem, setAcoesItem] = useState<ComandaItem | null>(null);
+  const [transferencia, setTransferencia] = useState<{ item: ComandaItem; mode: 'pessoa' | 'mesa' } | null>(null);
+  const [transferindo, setTransferindo] = useState(false);
+  const [arrastando, setArrastando] = useState<ComandaItem | null>(null);
+  const [sobrePessoa, setSobrePessoa] = useState<string | null>(null);
+  const transferenciaRef = useRef(false);
+  const loadSequence = useRef(0);
   const [addQtd, setAddQtd] = useState(1);
   const [addObsSel, setAddObsSel] = useState<string[]>([]);
   const [addObsUnidades, setAddObsUnidades] = useState<string[][]>([[]]);
@@ -68,24 +75,28 @@ export function ComandaPage() {
   const [addCustom, setAddCustom] = useState('');
   const [adicionando, setAdicionando] = useState(false);
   const [valoresIndiv, setValoresIndiv] = useState<Record<string, string>>({});
-  const bipRef = useRef<HTMLInputElement>(null);
   const impressaoRef = useRef<HTMLDivElement>(null);
 
   const loadComanda = async () => {
+    const sequence = ++loadSequence.current;
     try {
       const c = await comandaApi.get(comandaId);
+      if (sequence !== loadSequence.current) return;
       setComanda(c);
       if (!taxa) setTaxa(String(c.taxa_garcom_pct || 0));
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar comanda');
     } finally {
-      setLoad(false);
+      if (sequence === loadSequence.current) setLoad(false);
     }
   };
 
   useEffect(() => {
+    setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setArrastando(null);
     loadComanda();
-    produtoApi.list(undefined, 'restaurante').then(setProdutos).catch(() => {});
+    Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
+      setProdutos(ps); setCategorias(cs);
+    }).catch(() => toast('error', 'Não foi possível carregar o cardápio'));
     impressoraApi.setores().then((s) => setSetores(s.map((x) => x.nome))).catch(() => {});
     const iv = setInterval(loadComanda, 20000);
     return () => clearInterval(iv);
@@ -97,6 +108,45 @@ export function ComandaPage() {
   const itensNovos = ativos.filter((i) => i.status === 'novo');
   const subtotal = useMemo(() => ativos.reduce((s, i) => s + Number(i.quantidade) * Number(i.preco_unitario), 0), [ativos]);
   const locked = comanda?.status !== 'aberta';
+  const podeTransferir = (item: ComandaItem) => !locked && !transferindo && ['novo', 'enviado', 'entregue'].includes(item.status);
+
+  const transferirItem = async (item: ComandaItem, mesaId: number, destinoId: number | null, pessoaId: number | null) => {
+    if (transferenciaRef.current || locked) return false;
+    transferenciaRef.current = true;
+    setTransferindo(true);
+    try {
+      await comandaApi.transferirItem(comandaId, item.id, { mesa_destino_id: mesaId, comanda_destino_id: destinoId, pessoa_destino_id: pessoaId, versao: item.versao });
+      setTransferencia(null); setAcoesItem(null);
+      await loadComanda();
+      const nome = pessoaId ? pessoas.find((p) => p.id === pessoaId)?.nome : 'Conta geral';
+      toast('success', destinoId === comandaId ? `${item.nome} transferido para ${nome || 'outra pessoa'}` : `${item.nome} transferido para a mesa selecionada`);
+      return true;
+    } catch (e: any) {
+      toast('error', e?.error || 'Não foi possível transferir o pedido');
+      setTransferencia(null);
+      await loadComanda();
+      return false;
+    } finally { transferenciaRef.current = false; setTransferindo(false); }
+  };
+
+  const destinoPessoa = (pessoaId: number | null) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!arrastando || !podeTransferir(arrastando) || arrastando.pessoa_id === pessoaId) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setSobrePessoa(String(pessoaId));
+    },
+    onDragLeave: () => setSobrePessoa(null),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault(); setSobrePessoa(null); setArrastando(null);
+      if (arrastando && podeTransferir(arrastando) && arrastando.pessoa_id !== pessoaId && comanda) {
+        void transferirItem(arrastando, comanda.mesa_id, comanda.id, pessoaId);
+      }
+    },
+  });
+
+  const abrirTransferencia = (item: ComandaItem, mode: 'pessoa' | 'mesa') => {
+    if (!podeTransferir(item)) return;
+    setAcoesItem(null); setTransferencia({ item, mode });
+  };
 
   const nomePessoaDe = (pessoaId: number | null) => {
     if (!pessoaId) return null;
@@ -206,31 +256,6 @@ export function ComandaPage() {
       setAdicionando(false);
     }
   };
-
-  const adicionarPorCodigo = async (valor: string) => {
-    const c = valor.trim();
-    if (!c) return;
-    try {
-      const p = await produtoApi.buscar(c, 'restaurante');
-      abrirAdicionar(p);
-      toast('success', `${p.nome} localizado`);
-    } catch {
-      toast('error', `Código ${c} não encontrado`);
-    }
-    setCodigo('');
-    bipRef.current?.focus();
-  };
-
-  const adicionarCodigo = (e: React.FormEvent) => {
-    e.preventDefault();
-    adicionarPorCodigo(codigo);
-  };
-
-  useBarcodeScanner(adicionarPorCodigo, { enabled: !load && !locked && !addProduto });
-
-  useEffect(() => {
-    if (!load && !locked && !addProduto) bipRef.current?.focus();
-  }, [load, locked, addProduto]);
 
   const mudarStatus = async (item: ComandaItem, status: string) => {
     if (status === 'cancelado') {
@@ -342,6 +367,7 @@ export function ComandaPage() {
   };
 
   const abrirFechamento = () => {
+    if (transferenciaRef.current) return;
     iniciaValores();
     setFechar(true);
   };
@@ -486,7 +512,7 @@ export function ComandaPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Select className="w-40" value={setor} onChange={(e) => setSetor(e.target.value)} disabled={locked}>
             {setores.map((s) => (
               <option key={s} value={s}>{s}</option>
@@ -557,42 +583,7 @@ export function ComandaPage() {
         {/* Produtos */}
         <div className="lg:col-span-2">
           {!locked && (
-            <Card className="mb-4 p-4">
-              <form onSubmit={adicionarCodigo} className="flex gap-2">
-                <div className="relative flex-1">
-                  <ScanBarcode className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-500" />
-                  <Input
-                    ref={bipRef as any}
-                    className="h-11 pl-10 font-mono"
-                    placeholder="Passe o código de barras e ENTER"
-                    value={codigo}
-                    onChange={(e) => setCodigo(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="h-11">Adicionar</Button>
-              </form>
-              <div className="relative mt-2">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input className="pl-9" placeholder="Filtrar produtos..." value={filtro} onChange={(e) => setFiltro(e.target.value)} />
-              </div>
-              <div className="mt-3 grid max-h-80 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-                {produtos
-                  .filter((p) => p.ativo && (!filtro || p.nome.toLowerCase().includes(filtro.toLowerCase())))
-                  .slice(0, 24)
-                  .map((p) => (
-                    <motion.button
-                      key={p.id}
-                      whileHover={{ y: -2 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => abrirAdicionar(p)}
-                      className="rounded-xl border border-slate-200 p-2.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40"
-                    >
-                      <p className="text-sm font-bold leading-tight text-slate-800">{p.nome}</p>
-                      <p className="mt-0.5 text-xs font-bold text-brand-600">{p.preco != null ? fmtBRL(p.preco) : '—'}</p>
-                    </motion.button>
-                  ))}
-              </div>
-            </Card>
+            <RestaurantCatalog products={produtos} categories={categorias} onSelect={abrirAdicionar} />
           )}
 
           {/* Pessoas */}
@@ -601,8 +592,9 @@ export function ComandaPage() {
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="text-sm font-bold text-slate-700">Pessoas:</span>
                 <button
+                  {...destinoPessoa(null)}
                   onClick={() => setPessoaSel('geral')}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${pessoaSel === 'geral' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${sobrePessoa === 'null' ? 'ring-2 ring-brand-500 ring-offset-2' : ''} ${pessoaSel === 'geral' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}
                 >
                   Conta geral
                 </button>
@@ -630,10 +622,12 @@ export function ComandaPage() {
                   ) : (
                     <div
                       key={p.id}
+                      {...(p.status !== 'baixado' ? destinoPessoa(p.id) : {})}
                       role="button"
                       tabIndex={0}
                       onClick={() => setPessoaSel(p.id)}
-                      className={`group flex cursor-pointer items-center gap-1.5 rounded-full py-1 pl-3 pr-1 text-xs font-semibold ${pessoaSel === p.id ? 'text-white' : 'bg-slate-100 text-slate-600'}`}
+                      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setPessoaSel(p.id); } }}
+                      className={`group flex cursor-pointer items-center gap-1.5 rounded-full py-1 pl-3 pr-1 text-xs font-semibold ${sobrePessoa === String(p.id) ? 'ring-2 ring-brand-500 ring-offset-2' : ''} ${pessoaSel === p.id ? 'text-white' : 'bg-slate-100 text-slate-600'}`}
                       style={pessoaSel === p.id ? { backgroundColor: p.cor } : undefined}
                       title="Clique para selecionar · clique no lápis para renomear"
                     >
@@ -685,6 +679,7 @@ export function ComandaPage() {
                 </Button>
               )}
             </div>
+            {!locked && ativos.length > 0 && <p className="mb-3 text-xs text-slate-500">Clique em um pedido para alterar ou transferir. No computador, arraste para a pessoa desejada.</p>}
             {ativos.length === 0 ? (
               <EmptyState icon={<Plus className="h-6 w-6" />} title="Nenhum item na comanda" subtitle="Adicione produtos ao lado" />
             ) : (
@@ -692,16 +687,22 @@ export function ComandaPage() {
                 {itens.map((item) => {
                   const pessoa = nomePessoaDe(item.pessoa_id);
                   return (
-                    <div key={item.id} className="rounded-xl bg-slate-50 px-3 py-2">
-                      <div
-                        className={`flex items-center justify-between gap-2 ${!locked && item.status === 'novo' && item.produto_id ? 'cursor-pointer rounded-lg hover:bg-slate-100' : ''}`}
-                        onClick={() => abrirEditarItem(item)}
-                        role={!locked && item.status === 'novo' && item.produto_id ? 'button' : undefined}
-                        tabIndex={!locked && item.status === 'novo' && item.produto_id ? 0 : undefined}
-                        onKeyDown={(e) => {
-                          if ((e.key === 'Enter' || e.key === ' ') && !locked && item.status === 'novo' && item.produto_id) abrirEditarItem(item);
-                        }}
+                    <div key={item.id} className={`rounded-xl bg-slate-50 px-3 py-2 ${arrastando?.id === item.id ? 'opacity-50' : ''}`}
+                      draggable={podeTransferir(item)}
+                      onDragStart={(e) => {
+                        if (!podeTransferir(item)) { e.preventDefault(); return; }
+                        setArrastando(item); e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('application/x-simplesx-item', String(item.id));
+                      }}
+                      onDragEnd={() => { setArrastando(null); setSobrePessoa(null); }}
+                    >
+                      <button type="button"
+                        className={`flex w-full items-center justify-between gap-2 rounded-lg text-left ${podeTransferir(item) ? 'hover:bg-slate-100' : ''}`}
+                        disabled={!podeTransferir(item)}
+                        aria-label={`Alterar pedido: ${item.nome}, ${pessoa?.nome || 'Conta geral'}`}
+                        onClick={() => setAcoesItem(item)}
                       >
+                        {podeTransferir(item) && <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-slate-400" aria-hidden="true" />}
                         <div className="min-w-0 flex-1">
                           <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                             <span>{item.nome}</span>
@@ -722,9 +723,10 @@ export function ComandaPage() {
                           <span className="w-16 text-right text-sm font-bold text-slate-700">
                             {fmtNum(item.quantidade)}x {fmtBRL(item.preco_unitario * item.quantidade)}
                           </span>
+                          {podeTransferir(item) && <MoreHorizontal className="h-4 w-4 shrink-0 text-slate-500" />}
                         </div>
-                      </div>
-                      {!locked && item.status !== 'entregue' && (
+                      </button>
+                      {!locked && !transferindo && ['novo', 'enviado'].includes(item.status) && (
                         <div className="mt-1.5 flex gap-1.5">
                           {item.status === 'novo' && (
                             <Button size="sm" variant="secondary" icon={<Send className="h-3 w-3" />} onClick={() => mudarStatus(item, 'enviado')}>
@@ -770,6 +772,26 @@ export function ComandaPage() {
               </div>
             </div>
 
+            {!locked && (
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Por pessoa</h3>
+                <div className="space-y-2">
+                  {[{ id: null, nome: 'Conta geral', cor: '#64748b', status: 'pendente' }, ...pessoas].map((p) => {
+                    const personItems = ativos.filter((i) => i.pessoa_id === p.id);
+                    const total = personItems.reduce((sum, i) => sum + i.quantidade * i.preco_unitario, 0);
+                    return <div key={p.id ?? 'geral'} {...(p.status !== 'baixado' ? destinoPessoa(p.id) : {})}
+                      className={`rounded-xl border-2 p-3 transition-colors ${sobrePessoa === String(p.id) ? 'border-brand-500 bg-brand-50' : 'border-slate-100 bg-slate-50'}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="flex items-center gap-2 font-semibold text-slate-700"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.cor }} />{p.nome}</span>
+                        <span className="font-bold text-slate-800">{fmtBRL(total)}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{arrastando && arrastando.pessoa_id !== p.id ? 'Solte aqui para transferir' : `${personItems.length} lançamento(s)`}</p>
+                    </div>;
+                  })}
+                </div>
+              </div>
+            )}
+
             {!locked ? (
               <Button variant="success" className="mt-4 w-full" size="lg" icon={<HandCoins className="h-5 w-5" />} onClick={abrirFechamento}>
                 Fechar conta
@@ -792,6 +814,18 @@ export function ComandaPage() {
           </Card>
         </div>
       </div>
+
+      <Modal open={!!acoesItem} onClose={() => setAcoesItem(null)} title="Alterar pedido">
+        {acoesItem && <div className="space-y-3">
+          <p className="font-bold text-slate-800">{fmtNum(acoesItem.quantidade)} × {acoesItem.nome}</p>
+          <p className="text-sm text-slate-500">{nomePessoaDe(acoesItem.pessoa_id)?.nome || 'Conta geral'} · {acoesItem.status}</p>
+          {acoesItem.status === 'novo' && !!acoesItem.produto_id && <Button className="w-full" variant="secondary" icon={<Pencil className="h-4 w-4" />} onClick={() => { setAcoesItem(null); void abrirEditarItem(acoesItem); }}>Editar observações</Button>}
+          <Button className="w-full" variant="secondary" icon={<Users className="h-4 w-4" />} onClick={() => abrirTransferencia(acoesItem, 'pessoa')}>Transferir para outra pessoa</Button>
+          <Button className="w-full" variant="secondary" icon={<ArrowRightLeft className="h-4 w-4" />} onClick={() => abrirTransferencia(acoesItem, 'mesa')}>Transferir para outra mesa</Button>
+        </div>}
+      </Modal>
+      {transferencia && <TransferItemModal item={transferencia.item} source={comanda} initialMode={transferencia.mode} busy={transferindo}
+        onClose={() => setTransferencia(null)} onTransfer={transferirItem} />}
 
       {/* Fechamento */}
       <Modal open={fechar} onClose={() => setFechar(false)} title="Fechamento da comanda" width="max-w-2xl">

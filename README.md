@@ -101,6 +101,26 @@ Credenciais e certificados não devem ser gravados no D1. O banco armazena apena
 o identificador da empresa no provedor; segredos globais pertencem aos secrets do
 Worker/Cloudflare.
 
+## Pedidos do restaurante
+
+O cardápio permite navegar por categorias e subcategorias, buscar pelo nome e
+ver todos os produtos da categoria principal. A tela do restaurante não usa EAN.
+
+Clique em um lançamento para transferi-lo para outra pessoa ou mesa. No
+computador, também é possível arrastá-lo para uma pessoa da própria comanda.
+A transferência move o lançamento inteiro, incluindo sua quantidade, e preserva
+preço, observações e status de preparo, mesmo após envio ou entrega. Ela não
+reimprime o pedido nem gera outra movimentação de estoque ou venda.
+
+Uma mesa livre é aberta automaticamente ao receber um lançamento; a mesa de
+origem permanece aberta. Contas em pagamento ou fechadas e pessoas já pagas
+não aceitam transferências. Alterações simultâneas são verificadas pela versão
+do item e cada transferência fica registrada no histórico do banco.
+
+Antes de publicar o backend, aplique `0022_transferencias_pedidos.sql` usando
+`npm run db:migrate`. A migração adiciona o histórico, a versão dos itens e a
+reserva temporária durante o fechamento, preservando os pedidos existentes.
+
 ## Gestor Local v2
 
 A tela **Impressoras** permite editar e excluir impressoras, modelos de etiqueta

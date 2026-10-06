@@ -10,6 +10,7 @@ import * as fin from './handlers-financeiro.js';
 import * as cad from './handlers-cadastros.js';
 import * as gestor from './handlers-gestor.js';
 import * as devices from './handlers-devices.js';
+import { transferirItemHandler } from './handlers-transferencias.js';
 import * as fiscal from './handlers-fiscal.js';
 import { TenantDb } from './tenant-db.js';
 
@@ -96,6 +97,7 @@ const routes = [
   { m: 'PUT', p: '/api/comandas/:id/pessoas/:pid', h: ven.updatePessoaComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/itens', h: ven.addItemComandaHandler },
   { m: 'PUT', p: '/api/comandas/:id/itens/:item_id', h: ven.updateItemComandaHandler },
+  { m: 'POST', p: '/api/comandas/:id/itens/:item_id/transferir', h: transferirItemHandler },
   { m: 'POST', p: '/api/comandas/:id/itens/:item_id/status', h: ven.updateItemStatusHandler },
   { m: 'POST', p: '/api/comandas/:id/fechar', h: ven.fecharComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/reabrir', h: ven.reabrirComandaHandler },
