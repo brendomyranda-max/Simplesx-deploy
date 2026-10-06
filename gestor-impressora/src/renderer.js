@@ -27,7 +27,7 @@ function render(status) {
   $('porta').textContent = `127.0.0.1:${status.portaLocal}`
   $('erro').textContent = status.ultimoErro || ''
   $('versao').textContent = `Versão ${status.version || '—'}`
-  $('estado').textContent = status.online ? 'Online' : 'Offline'
+  $('estado').textContent = status.online ? 'Online' : status.conectado === false ? 'Desconectado' : 'Offline'
   $('estado').className = `badge ${status.online ? 'online' : 'offline'}`
   const j = status.ultimoJob
   $('job').textContent = j ? `#${j.id} · ${j.impressora} · ${j.status} · ${dataHora(j.em)}` : 'Nenhum'
@@ -114,6 +114,15 @@ $('salvarTamanho').onclick = async (event) => {
 }
 
 $('copiar').onclick = async () => { await navigator.clipboard.writeText($('token').textContent); toast('Token copiado') }
+$('desconectar').onclick = async () => {
+  $('desconectar').disabled = true
+  try {
+    render(await window.simplesx.desconectar())
+    toast('Servidor desconectado. Ele já pode ser vinculado a outro estabelecimento.')
+  } catch (error) {
+    toast(`${error.message}. A recepção foi pausada; a sessão expira após 90 segundos sem contato.`)
+  } finally { $('desconectar').disabled = false }
+}
 $('atualizar').onclick = async () => {
   $('atualizar').disabled = true
   $('scanResultado').textContent = 'Buscando impressoras…'

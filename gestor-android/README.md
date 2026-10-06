@@ -34,6 +34,12 @@ Gradle e use **Build → Build APK(s)**. O APK de desenvolvimento será criado e
 6. Toque em **Salvar rota e imprimir teste**.
 7. Ative **Receber impressões** e permita notificações/Bluetooth.
 
+Para trocar de estabelecimento, toque em **Desconectar e trocar de conta**, aguarde
+os trabalhos em andamento e faça um novo pareamento com o código da outra conta.
+Desligar **Receber impressões** libera a sessão e mantém a credencial para retomar
+na mesma conta. Um novo pareamento ou uma exclusão pelo painel são recusados enquanto
+a sessão estiver ativa. Em perda de rede, aguarde 90 segundos sem contato.
+
 Em rotas de etiqueta, escolha o tipo de papel: **Contínuo** usa altura automática e
 avança somente o conteúdo; **Etiqueta** usa o espaço (GAP) e a altura física da
 etiqueta; **Marca** usa o sensor de marca preta. Uma escolha incorreta pode fazer

@@ -339,6 +339,33 @@ export async function listEtiquetasHandler(c, env) {
   return c.json(rows.results);
 }
 
+export async function deleteAgenteHandler(c, env) {
+  const atual = await env.DB.prepare('SELECT id FROM impressora_agentes WHERE id=?').bind(c.params.id).first();
+  if (!atual) return c.json({ error: 'Impressora não encontrada' }, 404);
+  await env.DB.batch([
+    env.DB.prepare('UPDATE categorias SET impressora_agente_id=NULL WHERE impressora_agente_id=?').bind(atual.id),
+    env.DB.prepare('DELETE FROM impressora_agentes WHERE id=?').bind(atual.id),
+  ]);
+  return c.json({ ok: true });
+}
+
+export async function updateEtiquetaHandler(c, env) {
+  const b = await c.req.json();
+  const nome = String(b?.nome || '').trim();
+  if (!nome) return c.json({ error: 'Nome obrigatório' }, 400);
+  if (!(num(b.largura_mm) > 0 && num(b.altura_mm) > 0)) return c.json({ error: 'Informe dimensões positivas' }, 400);
+  const result = await env.DB.prepare('UPDATE impressora_etiquetas SET nome=?, largura_mm=?, altura_mm=? WHERE id=?')
+    .bind(nome, num(b.largura_mm), num(b.altura_mm), c.params.id).run();
+  if (!result.meta.changes) return c.json({ error: 'Modelo não encontrado' }, 404);
+  return c.json({ ok: true });
+}
+
+export async function deleteEtiquetaHandler(c, env) {
+  const result = await env.DB.prepare('DELETE FROM impressora_etiquetas WHERE id=?').bind(c.params.id).run();
+  if (!result.meta.changes) return c.json({ error: 'Modelo não encontrado' }, 404);
+  return c.json({ ok: true });
+}
+
 export async function createEtiquetaHandler(c, env) {
   const b = await c.req.json();
   if (!b.nome) return c.json({ error: 'Nome obrigatório' }, 400);

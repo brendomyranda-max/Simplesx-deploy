@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -39,6 +40,7 @@ class PrintSyncService : Service() {
     private var loop: Job? = null
     private lateinit var config: AppConfig
     private var wakeLock: PowerManager.WakeLock? = null
+    private var forgetPairingOnStop = false
 
     override fun onCreate() {
         super.onCreate()
@@ -51,12 +53,25 @@ class PrintSyncService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            config.serviceEnabled = false
+            forgetPairingOnStop = intent.getBooleanExtra("forget_pairing", false)
+            config.lastStatus = "Desconectando…"
+        }
         if (loop?.isActive != true) loop = scope.launch { syncLoop() }
-        return START_STICKY
+        return if (config.serviceEnabled) START_STICKY else START_NOT_STICKY
     }
 
     private suspend fun syncLoop() {
         var heartbeatCounter = 0
+        // A impressão pode bloquear por mais tempo que o polling. Mantenha a
+        // sessão enquanto termina os trabalhos, inclusive ao desconectar.
+        val heartbeat = scope.launch {
+            while (isActive) {
+                delay(20_000)
+                runCatching { SimplesXApi(config).heartbeat() }
+            }
+        }
         while (scope.isActive && config.serviceEnabled) {
             try {
                 check(config.deviceToken.isNotBlank()) { "Pareie este aparelho com o SimplesX" }
@@ -74,6 +89,15 @@ class PrintSyncService : Service() {
             }
             delay(3_000)
         }
+        heartbeat.cancelAndJoin()
+        val disconnected = runCatching {
+            if (config.deviceToken.isNotBlank()) SimplesXApi(config).heartbeat("disconnected")
+        }.isSuccess
+        if (forgetPairingOnStop) {
+            config.deviceToken = ""
+            config.tokenExpiresAt = ""
+        }
+        config.lastStatus = if (disconnected) "Desconectado" else "Recepção parada. A sessão expira após 90 segundos sem contato."
         stopSelf()
     }
 
@@ -155,6 +179,7 @@ class PrintSyncService : Service() {
     companion object {
         private const val CHANNEL_ID = "simplesx_print_sync"
         private const val NOTIFICATION_ID = 8410
+        private const val ACTION_STOP = "br.com.simplesx.gestor.STOP"
 
         fun start(context: Context) {
             val config = AppConfig(context)
@@ -162,9 +187,10 @@ class PrintSyncService : Service() {
             context.startForegroundService(Intent(context, PrintSyncService::class.java))
         }
 
-        fun stop(context: Context) {
+        fun stop(context: Context, forgetPairing: Boolean = false) {
             AppConfig(context).serviceEnabled = false
-            context.stopService(Intent(context, PrintSyncService::class.java))
+            context.startForegroundService(Intent(context, PrintSyncService::class.java)
+                .setAction(ACTION_STOP).putExtra("forget_pairing", forgetPairing))
         }
     }
 }

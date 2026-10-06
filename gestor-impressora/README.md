@@ -11,6 +11,18 @@ npm start
 
 O gestor gera um token na primeira execução. Copie-o para **Configurações → Impressoras** no sistema web. O aplicativo registra-se no deploy, consulta trabalhos a cada três segundos, imprime silenciosamente e confirma o resultado ao servidor.
 
+A partir da versão 1.5.8, cada execução usa uma sessão exclusiva. Outro computador
+com o mesmo token só consegue conectar após a sessão atual desconectar ou ficar
+90 segundos sem contato. Use **Desconectar** para liberar o servidor; os trabalhos
+já recebidos terminam antes da liberação. **Salvar e conectar** retoma a recepção.
+Fechar pela bandeja também libera a sessão; fechar apenas a janela mantém o gestor
+funcionando em segundo plano.
+
+Para trocar de estabelecimento, desconecte, cole o token na outra conta e salve;
+depois conecte o aplicativo novamente. Você também pode excluir o cadastro antigo
+na tela Impressoras. A exclusão remove as rotas e destinos associados. Ao reutilizar
+um cadastro excluído, conecte o aplicativo e vincule o token na nova conta.
+
 No Linux, as impressoras devem estar cadastradas no CUPS. No Windows, devem estar instaladas em **Impressoras e scanners**.
 
 Selecione a impressora e use **⚙ Configurar** para escolher o protocolo Driver,

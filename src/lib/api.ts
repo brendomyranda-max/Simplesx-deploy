@@ -302,6 +302,9 @@ export const impressoraApi = {
   criarAgente: (b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null }) => api.post<any>('/impressora-agentes', b),
   atualizarAgente: (id: number, b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null; ativo?: boolean }) => api.put<{ ok: boolean }>(`/impressora-agentes/${id}`, b),
   etiquetas: () => api.get<any[]>('/impressora-etiquetas'),
+  excluirAgente: (id: number) => api.del<{ ok: boolean }>(`/impressora-agentes/${id}`),
+  atualizarEtiqueta: (id: number, b: { nome: string; largura_mm: number; altura_mm: number }) => api.put<{ ok: boolean }>(`/impressora-etiquetas/${id}`, b),
+  excluirEtiqueta: (id: number) => api.del<{ ok: boolean }>(`/impressora-etiquetas/${id}`),
   criarEtiqueta: (b: { nome: string; largura_mm?: number; altura_mm?: number }) => api.post<any>('/impressora-etiquetas', b),
   imprimirComanda: (comanda_id: number, b?: { setor?: string; agente?: string; tipo?: 'cozinha' | 'conta' }) =>
     api.post<{ impressao: string; itens: number; setor: string; tipo?: string; jobs?: any[]; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] }>(`/impressao/comanda?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, ...b }),
@@ -312,6 +315,8 @@ export const impressoraApi = {
 
 export const gestorApi = {
   list: () => api.get<any[]>('/gestores'),
+  update: (id: number, nome: string) => api.put<{ ok: boolean }>(`/gestores/${id}`, { nome }),
+  remove: (id: number) => api.del<{ ok: boolean }>(`/gestores/${id}`),
   enviar: (b: {
     tipo?: 'texto' | 'html';
     conteudo: string;
@@ -326,6 +331,7 @@ export const gestorApi = {
 };
 
 export const deviceApi = {
+  update: (id: string, nome: string) => api.put<{ ok: boolean }>(`/devices/${encodeURIComponent(id)}`, { nome }),
   pairingCode: () => api.post<{ pairing_id: string; code: string; expires_at: string }>('/devices/pairing-codes'),
   list: () => api.get<Array<{ id: string; nome: string; plataforma: string; versao?: string; status: string; ultima_conexao?: string; ultimo_erro?: string }>>('/devices'),
   test: (deviceId: string) => api.post<{ task: { id: string; status: string } }>('/device-tasks', {

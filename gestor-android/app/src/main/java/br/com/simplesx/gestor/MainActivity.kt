@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val config = AppConfig(this)
-        if (config.deviceToken.isNotBlank()) PrintSyncService.start(this)
+        if (config.deviceToken.isNotBlank() && config.serviceEnabled) PrintSyncService.start(this)
         setContent { MaterialTheme { GestorScreen() } }
     }
 }
@@ -91,6 +91,8 @@ private fun GestorScreen() {
     var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
+    var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
+    var disconnecting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf(config.lastStatus) }
     var bluetoothPrinters by remember { mutableStateOf(PrinterTransport.pairedBluetooth(context)) }
     var bluetoothExpanded by remember { mutableStateOf(false) }
@@ -149,16 +151,27 @@ private fun GestorScreen() {
         }
     }
 
-    LaunchedEffect(config.deviceToken) { refreshCategories() }
+    LaunchedEffect(paired) { refreshCategories() }
+    LaunchedEffect(Unit) {
+        while (true) {
+            serviceEnabled = config.serviceEnabled
+            paired = config.deviceToken.isNotBlank()
+            if (disconnecting && (config.lastStatus == "Desconectado" || config.lastStatus.startsWith("Recepção parada"))) {
+                message = config.lastStatus
+                disconnecting = false
+            }
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("SimplesX Gestor") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusCard(serviceEnabled, config.deviceToken.isNotBlank(), message, config.lastJob)
 
             Section("Conexão com o SimplesX") {
-                OutlinedTextField(deployUrl, { deployUrl = it }, label = { Text("Endereço do SimplesX") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço do SimplesX") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(deviceName, { deviceName = it }, label = { Text("Nome deste gestor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (config.deviceToken.isBlank()) {
+                if (!paired) {
                     OutlinedTextField(pairingId, { pairingId = it }, label = { Text("ID do pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(pairingCode, { pairingCode = it.uppercase() }, label = { Text("Código de pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Button(onClick = {
@@ -169,7 +182,15 @@ private fun GestorScreen() {
                             "Pareamento concluído e recepção iniciada"
                         }
                     }, modifier = Modifier.fillMaxWidth()) { Text("Parear aparelho") }
-                } else Text("Aparelho pareado · ${config.deviceId}", color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Text("Aparelho pareado · ${config.deviceId}", color = MaterialTheme.colorScheme.primary)
+                    OutlinedButton(onClick = {
+                        disconnecting = true
+                        PrintSyncService.stop(context, forgetPairing = true)
+                        serviceEnabled = false
+                        message = "Desconectando. Aguarde os trabalhos em andamento para parear em outra conta."
+                    }, enabled = !disconnecting) { Text(if (disconnecting) "Desconectando…" else "Desconectar e trocar de conta") }
+                }
             }
 
             Section("Impressoras") {
@@ -489,10 +510,13 @@ private fun GestorScreen() {
             Section("Serviço em segundo plano") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column { Text("Receber impressões"); Text("Mantém uma notificação ativa", style = MaterialTheme.typography.bodySmall) }
-                    Switch(serviceEnabled, onCheckedChange = {
+                    Switch(serviceEnabled, enabled = paired && !disconnecting, onCheckedChange = {
                         requestPermissions(); config.deployUrl = deployUrl; config.deviceName = deviceName; config.printers = printers
                         serviceEnabled = it
-                        if (it) PrintSyncService.start(context) else PrintSyncService.stop(context)
+                        if (it) PrintSyncService.start(context) else {
+                            disconnecting = true
+                            PrintSyncService.stop(context)
+                        }
                     })
                 }
             }

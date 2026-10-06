@@ -3,8 +3,9 @@
  * Responsabilidade: Mantém o protocolo legado da fila de impressão.
  */
 
-import { now, num, gerarToken, getConfigValue } from './util.js';
+import { now, num, gerarToken, getConfigValue, estabelecimentoId } from './util.js';
 import { createDeviceTask } from './handlers-devices.js';
+import { cleanupServerStatements, serverCutoff, SESSION_CONFLICT } from './print-servers.js';
 
 // ============================ GESTOR LOCAL (conexão direta com o deploy) ============================
 
@@ -22,6 +23,9 @@ export async function registerGestorHandler(c, env) {
   if (!b || typeof b !== 'object') return c.json({ error: 'Corpo JSON obrigatório' }, 400);
 
   const token = (b.token && String(b.token).trim()) || gerarToken();
+  const sessionId = String(b.session_id || '').trim();
+  if (!sessionId || sessionId.length > 100) return c.json({ error: 'Atualize o Gestor de Impressoras para conectar com uma sessão segura.' }, 400);
+  if (token.length > 256) return c.json({ error: 'Token inválido' }, 400);
   const nome = (b.nome && String(b.nome).trim()) || 'Gestor';
   const ip = (b.ip && String(b.ip).trim()) || '';
   const printers = Array.isArray(b.printers) ? b.printers.slice(0, 100).map((p) => ({
@@ -30,16 +34,15 @@ export async function registerGestorHandler(c, env) {
     isDefault: !!p?.isDefault,
   })).filter((p) => p.name) : [];
 
-  const existe = await env.DB.prepare('SELECT id FROM gestores WHERE token=?').bind(token).first();
-  if (existe) {
-    await env.DB.prepare('UPDATE gestores SET nome=?, ip=?, printers_json=?, ultima_conexao=? WHERE token=?')
-      .bind(nome, ip, JSON.stringify(printers), now(), token)
-      .run();
-  } else {
-    await env.DB.prepare('INSERT INTO gestores (token, nome, ip, printers_json, ultima_conexao, criado_em, ativo) VALUES (?,?,?,?,?,?,1)')
-      .bind(token, nome, ip, JSON.stringify(printers), now(), now())
-      .run();
-  }
+  const result = await env.DB.prepare(`INSERT INTO gestores
+      (token, nome, ip, printers_json, ultima_conexao, criado_em, ativo, sessao_id)
+      VALUES (?,?,?,?,?,?,1,?)
+      ON CONFLICT(token) DO UPDATE SET nome=excluded.nome, ip=excluded.ip,
+        printers_json=excluded.printers_json, ultima_conexao=excluded.ultima_conexao,
+        ativo=1, sessao_id=excluded.sessao_id
+      WHERE gestores.sessao_id=excluded.sessao_id OR gestores.ultima_conexao IS NULL OR gestores.ultima_conexao<=?`)
+    .bind(token, nome, ip, JSON.stringify(printers), now(), now(), sessionId, serverCutoff()).run();
+  if (!result.meta.changes) return c.json({ error: SESSION_CONFLICT }, 409);
   return c.json({ ok: true, token, nome, ip });
 }
 
@@ -54,10 +57,10 @@ export async function pullGestorJobsHandler(c, env) {
   const token = b?.token ? String(b.token).trim() : '';
   if (!token) return c.json({ error: 'Token do gestor obrigatório' }, 401);
 
-  const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND ativo=1').bind(token).first();
-  if (!gestor) return c.json({ error: 'Gestor não reconhecido' }, 401);
-
-  await env.DB.prepare('UPDATE gestores SET ultima_conexao=? WHERE token=?').bind(now(), token).run();
+  const sessionId = String(b?.session_id || '');
+  const lease = await env.DB.prepare('UPDATE gestores SET ultima_conexao=? WHERE token=? AND sessao_id=? AND ativo=1')
+    .bind(now(), token, sessionId).run();
+  if (!sessionId || !lease.meta.changes) return c.json({ error: 'Sessão do gestor não autorizada. Conecte novamente.' }, 401);
 
   // Trabalhos reclamados mas não confirmados a tempo voltam para a fila.
   await env.DB.prepare(
@@ -74,9 +77,10 @@ export async function pullGestorJobsHandler(c, env) {
 
   const jobs = [];
   for (const j of pendentes.results) {
-    await env.DB.prepare("UPDATE gestor_jobs SET status='enviado', enviado_em=? WHERE id=? AND status='pendente'")
+    const claimed = await env.DB.prepare("UPDATE gestor_jobs SET status='enviado', enviado_em=? WHERE id=? AND status='pendente'")
       .bind(now(), j.id)
       .run();
+    if (!claimed.meta.changes) continue;
     jobs.push({
       id: j.id,
       tipo: j.tipo || 'texto',
@@ -104,7 +108,8 @@ export async function gestorJobStatusHandler(c, env) {
   const token = b?.token ? String(b.token).trim() : '';
   if (!token) return c.json({ error: 'Token do gestor obrigatório' }, 401);
 
-  const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND ativo=1').bind(token).first();
+  const gestor = await env.DB.prepare('SELECT id FROM gestores WHERE token=? AND sessao_id=? AND ativo=1')
+    .bind(token, String(b?.session_id || '')).first();
   if (!gestor) return c.json({ error: 'Gestor não reconhecido' }, 401);
 
   const status = b?.status === 'erro' ? 'erro' : 'feito';
@@ -120,9 +125,53 @@ export async function gestorJobStatusHandler(c, env) {
 /** Lista os gestores cadastrados (para o pareamento na tela de Impressoras). */
 export async function listGestoresHandler(c, env) {
   const rows = await env.DB.prepare(
-    "SELECT id, nome, ip, ultima_conexao, ativo, printers_json, '••••' || SUBSTR(token, -4) AS token_final FROM gestores ORDER BY nome"
-  ).all();
-  return c.json(rows.results.map((row) => ({ ...row, printers: JSON.parse(row.printers_json || '[]') })));
+    `SELECT id, COALESCE(nome_personalizado,nome) AS nome, ip, ultima_conexao, ativo, printers_json,
+      '••••' || SUBSTR(token, -4) AS token_final,
+      token=(SELECT valor FROM empresa_config WHERE estabelecimento_id=? AND chave='gestor_token') AS padrao
+      FROM gestores WHERE ativo=1 ORDER BY nome`
+  ).bind(estabelecimentoId(env)).all();
+  return c.json(rows.results.map((row) => ({ ...row, online: !!row.ultima_conexao && row.ultima_conexao > serverCutoff(), printers: JSON.parse(row.printers_json || '[]') })));
+}
+
+export async function disconnectGestorHandler(c, env) {
+  const b = await c.req.json();
+  const result = await env.DB.prepare('UPDATE gestores SET sessao_id=NULL, ultima_conexao=NULL WHERE token=? AND sessao_id=? AND ativo=1')
+    .bind(String(b?.token || ''), String(b?.session_id || '')).run();
+  if (!result.meta.changes) return c.json({ error: 'Sessão do gestor não autorizada' }, 401);
+  return c.json({ ok: true });
+}
+
+export async function heartbeatGestorHandler(c, env) {
+  const b = await c.req.json();
+  const result = await env.DB.prepare('UPDATE gestores SET ultima_conexao=? WHERE token=? AND sessao_id=? AND ativo=1')
+    .bind(now(), String(b?.token || ''), String(b?.session_id || '')).run();
+  if (!result.meta.changes) return c.json({ error: 'Sessão do gestor não autorizada' }, 401);
+  return c.json({ ok: true });
+}
+
+export async function updateGestorHandler(c, env) {
+  const b = await c.req.json();
+  const nome = String(b?.nome || '').trim();
+  if (!nome || nome.length > 120) return c.json({ error: 'Informe um nome de até 120 caracteres' }, 400);
+  const result = await env.DB.prepare('UPDATE gestores SET nome_personalizado=? WHERE id=? AND ativo=1').bind(nome, c.params.id).run();
+  if (!result.meta.changes) return c.json({ error: 'Servidor não encontrado' }, 404);
+  return c.json({ ok: true });
+}
+
+export async function deleteGestorHandler(c, env) {
+  const tenantId = estabelecimentoId(env);
+  const gestor = await env.DB.prepare('SELECT * FROM gestores WHERE id=? AND ativo=1').bind(c.params.id).first();
+  if (!gestor) return c.json({ error: 'Servidor não encontrado' }, 404);
+  const marker = gerarToken();
+  const results = await env.rawDB.batch([
+    env.rawDB.prepare(`UPDATE gestores SET ativo=0, estabelecimento_id=0, sessao_id=?, ultima_conexao=NULL, nome_personalizado=NULL
+      WHERE id=? AND estabelecimento_id=? AND ativo=1 AND (ultima_conexao IS NULL OR ultima_conexao<=?)`)
+      .bind(marker, gestor.id, tenantId, serverCutoff()),
+    ...cleanupServerStatements(env.rawDB, tenantId, 'desktop', gestor.id, gestor.token,
+      'EXISTS (SELECT 1 FROM gestores WHERE id=? AND sessao_id=? AND ativo=0)', [gestor.id, marker]),
+  ]);
+  if (!results[0].meta.changes) return c.json({ error: SESSION_CONFLICT }, 409);
+  return c.json({ ok: true, padrao_removido: true });
 }
 
 /**

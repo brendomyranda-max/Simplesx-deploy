@@ -31,6 +31,9 @@ export function ImpressorasPage() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<any>({});
   const [editandoAgente, setEditandoAgente] = useState<number | null>(null);
+  const [editandoEtiqueta, setEditandoEtiqueta] = useState<number | null>(null);
+  const [editandoServidor, setEditandoServidor] = useState<{ tipo: 'desktop' | 'android'; id: string; nome: string } | null>(null);
+  const [salvando, setSalvando] = useState(false);
   const [bobina, setBobinaState] = useState<Bobina>(getBobina());
   const [cupsOnline, setCupsOnline] = useState<boolean | null>(null);
   const [cupsList, setCupsList] = useState<CupsPrinter[]>([]);
@@ -48,7 +51,7 @@ export function ImpressorasPage() {
 
   const servidores = [
     ...devices.map((device) => ({ key: `android:${device.id}`, tipo: 'android', id: String(device.id), nome: device.nome, plataforma: 'Android', printers: device.printers || [], online: device.status === 'online' })),
-    ...gestores.map((gestor) => ({ key: `desktop:${gestor.id}`, tipo: 'desktop', id: String(gestor.id), nome: gestor.nome, plataforma: 'Windows/Linux', printers: gestor.printers || [], online: !!gestor.ultima_conexao && Date.now() - new Date(gestor.ultima_conexao).getTime() < 60_000 })),
+    ...gestores.map((gestor) => ({ key: `desktop:${gestor.id}`, tipo: 'desktop', id: String(gestor.id), nome: gestor.nome, plataforma: 'Windows/Linux', printers: gestor.printers || [], online: gestor.online })),
   ];
   const servidorSelecionado = servidores.find((servidor) => servidor.tipo === form.servidor_tipo && servidor.id === String(form.servidor_id || ''));
 
@@ -130,19 +133,48 @@ export function ImpressorasPage() {
     }
   };
 
-  const removerDevice = async (device: any) => {
-    if (!window.confirm(`Excluir o gestor Android "${device.nome}"? O aplicativo precisará ser pareado novamente.`)) return;
+  const removerServidor = async (servidor: any, tipo: 'desktop' | 'android') => {
+    if (!window.confirm(`Excluir o servidor "${servidor.nome}"? As rotas e os destinos de impressão vinculados serão removidos. Será necessário vincular o servidor novamente para utilizá-lo.`)) return;
     try {
-      await deviceApi.remove(device.id);
-      if (gestorDeviceId === device.id) {
-        await configApi.update({ gestor_device_id: '' });
-        setGestorDeviceId('');
+      if (tipo === 'android') await deviceApi.remove(servidor.id);
+      else {
+        await gestorApi.remove(servidor.id);
+        if (servidor.padrao) {
+          setGestorToken('');
+          setGestorTokenState('');
+        }
       }
-      setDevices((current) => current.filter((item) => item.id !== device.id));
-      toast('success', 'Gestor Android excluído');
+      await loadAll();
+      toast('success', 'Servidor excluído');
     } catch (err: any) {
-      toast('error', err?.error || 'Não foi possível excluir o gestor Android');
+      toast('error', err?.error || 'Não foi possível excluir o servidor');
     }
+  };
+
+  const salvarServidor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editandoServidor) return;
+    setSalvando(true);
+    try {
+      const { tipo, id, nome } = editandoServidor;
+      if (tipo === 'android') await deviceApi.update(id, nome.trim());
+      else await gestorApi.update(Number(id), nome.trim());
+      setEditandoServidor(null);
+      await loadAll();
+      toast('success', 'Servidor atualizado');
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível editar o servidor');
+    } finally { setSalvando(false); }
+  };
+
+  const removerImpressora = async (item: any, etiqueta = false) => {
+    if (!window.confirm(etiqueta ? `Excluir o modelo "${item.nome}"?` : `Excluir a impressora "${item.nome}"? As categorias vinculadas ficarão sem essa rota de impressão.`)) return;
+    try {
+      if (etiqueta) await impressoraApi.excluirEtiqueta(item.id);
+      else await impressoraApi.excluirAgente(item.id);
+      await loadAll();
+      toast('success', etiqueta ? 'Modelo excluído' : 'Impressora excluída');
+    } catch (err: any) { toast('error', err?.error || 'Não foi possível excluir'); }
   };
 
   const selecionarDevice = async (deviceId: string) => {
@@ -186,8 +218,8 @@ export function ImpressorasPage() {
     setSalvandoGestor(true);
     try {
       const t = gestorToken.trim();
-      setGestorToken(t);
       await configApi.update({ gestor_token: t });
+      setGestorToken(t);
       const g = await gestorApi.list().catch(() => []);
       setGestores(g);
       toast('success', t ? 'Token do gestor salvo' : 'Token removido — impressões voltam ao modo local');
@@ -218,12 +250,14 @@ export function ImpressorasPage() {
     loadAll();
     const timer = window.setInterval(() => {
       deviceApi.list().then(setDevices).catch(() => undefined);
+      gestorApi.list().then(setGestores).catch(() => undefined);
     }, 10_000);
     return () => window.clearInterval(timer);
   }, []);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSalvando(true);
     try {
       if (tab === 'agentes') {
         if (!form.nome) return toast('error', 'Informe o nome da rota');
@@ -253,20 +287,24 @@ export function ImpressorasPage() {
         toast('success', editandoAgente ? 'Rota de impressão atualizada' : 'Rota de impressão criada');
       } else {
         if (!form.nome) return toast('error', 'Informe o nome do modelo');
-        await impressoraApi.criarEtiqueta({ nome: form.nome, largura_mm: Number(form.largura_mm) || 58, altura_mm: Number(form.altura_mm) || 40 });
-        toast('success', 'Modelo criado');
+        const payload = { nome: form.nome, largura_mm: Number(form.largura_mm) || 58, altura_mm: Number(form.altura_mm) || 40 };
+        if (editandoEtiqueta) await impressoraApi.atualizarEtiqueta(editandoEtiqueta, payload);
+        else await impressoraApi.criarEtiqueta(payload);
+        toast('success', editandoEtiqueta ? 'Modelo atualizado' : 'Modelo criado');
       }
       setModal(false);
       setEditandoAgente(null);
+      setEditandoEtiqueta(null);
       setForm({});
       loadAll();
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao salvar');
-    }
+    } finally { setSalvando(false); }
   };
 
   const abrir = () => {
     setEditandoAgente(null);
+    setEditandoEtiqueta(null);
     setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, imprime_venda: false, imprime_validade: false, largura_mm: '80', altura_mm: '40', servidor_tipo: '', servidor_id: '', impressora_destino: '' });
     setModal(true);
   };
@@ -354,6 +392,7 @@ export function ImpressorasPage() {
             <p className="mt-1 text-sm font-medium text-emerald-700">
               Para várias impressoras, use no APK os mesmos nomes das rotas cadastradas abaixo (por exemplo: Cozinha, Bar e Caixa).
             </p>
+            <p className="mt-1 text-sm text-slate-500">Para excluir ou trocar de conta, desconecte no aplicativo. Em caso de perda de rede, aguarde 90 segundos sem contato.</p>
           </div>
           <Button variant="secondary" onClick={gerarPareamento} disabled={gerandoPairing}>
             {gerandoPairing ? 'Gerando…' : 'Gerar pareamento'}
@@ -395,7 +434,8 @@ export function ImpressorasPage() {
                 <Button size="sm" variant="secondary" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => testarDevice(device)}>
                   Testar
                 </Button>
-                <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerDevice(device)}>
+                <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditandoServidor({ tipo: 'android', id: device.id, nome: device.nome })}>Editar</Button>
+                <Button size="sm" variant="danger" disabled={device.online} title={device.online ? 'Desconecte o servidor no aplicativo antes de excluir' : 'Excluir servidor'} icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerServidor(device, 'android')}>
                   Excluir
                 </Button>
               </div>
@@ -512,7 +552,7 @@ export function ImpressorasPage() {
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <p className="font-bold text-slate-800">Conexão direta com o deploy (gestor central)</p>
+            <p className="font-bold text-slate-800">Servidores Windows/Linux</p>
             {gestores.length === 0 ? (
               <Badge color="slate">sem gestor pareado</Badge>
             ) : (
@@ -521,9 +561,8 @@ export function ImpressorasPage() {
           </div>
         </div>
         <p className="mt-1 text-sm leading-relaxed text-slate-500">
-          Todos os prints do app passam pelo servidor e chegam ao gestor local (identificado pelo IP), que imprime
-          via CUPS — funciona de qualquer dispositivo conectado, mesmo fora da mesma rede. Cole aqui o token que o
-          gestor mostra ao iniciar.
+          Cole o token exibido pelo Gestor para vincular este computador. Para usar o servidor em outro estabelecimento,
+          desconecte a sessão atual no aplicativo. Uma conexão ativa não pode ser substituída nem excluída.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2 flex items-end gap-2">
@@ -552,12 +591,16 @@ export function ImpressorasPage() {
             ) : (
               <ul className="space-y-1">
                 {gestores.map((g) => {
-                  const online = g.ultima_conexao && Date.now() - new Date(g.ultima_conexao).getTime() < 60_000;
-                  const atual = g.token === (gestorToken.trim() || undefined);
+                  const online = g.online;
+                  const atual = g.padrao;
                   return (
-                    <li key={g.id} className="flex items-center justify-between gap-2">
+                    <li key={g.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2">
                       <span className="font-semibold text-slate-700">
                         {g.nome} <span className="font-mono text-xs text-slate-500">{g.ip}</span>
+                      </span>
+                      <span className="flex gap-2">
+                        <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditandoServidor({ tipo: 'desktop', id: String(g.id), nome: g.nome })}>Editar</Button>
+                        <Button size="sm" variant="danger" disabled={online} title={online ? 'Desconecte o servidor no aplicativo antes de excluir' : 'Excluir servidor'} icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerServidor(g, 'desktop')}>Excluir</Button>
                       </span>
                       <span className="flex items-center gap-2">
                         {atual && <Badge color="blue">usando</Badge>}
@@ -622,7 +665,10 @@ export function ImpressorasPage() {
                           </td>
                           <td className="td">{a.largura_mm || 80}mm</td>
                           <td className="td text-right">
+                            <div className="flex justify-end gap-2">
                             <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => editarAgente(a)}>Editar</Button>
+                            <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerImpressora(a)}>Excluir</Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -642,6 +688,10 @@ export function ImpressorasPage() {
                   <Card key={e.id} className="p-4">
                     <p className="font-bold text-slate-800">{e.nome}</p>
                     <p className="mt-1 text-sm text-slate-500">{e.largura_mm} × {e.altura_mm} mm</p>
+                    <div className="mt-3 flex gap-2">
+                      <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => { setEditandoEtiqueta(e.id); setForm({ ...e }); setModal(true); }}>Editar</Button>
+                      <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerImpressora(e, true)}>Excluir</Button>
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -650,7 +700,19 @@ export function ImpressorasPage() {
         </div>
       )}
 
-      <Modal open={modal} onClose={() => { setModal(false); setEditandoAgente(null); }} title={tab === 'agentes' ? (editandoAgente ? 'Editar impressora' : 'Nova impressora') : 'Novo modelo de etiqueta'}>
+      <Modal open={!!editandoServidor} onClose={() => { if (!salvando) setEditandoServidor(null); }} title="Editar servidor">
+        <form onSubmit={salvarServidor} className="space-y-4">
+          <Field label="Nome do servidor">
+            <Input value={editandoServidor?.nome || ''} required maxLength={120} autoFocus onChange={(e) => setEditandoServidor((atual) => atual ? { ...atual, nome: e.target.value } : null)} />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" disabled={salvando} onClick={() => setEditandoServidor(null)}>Cancelar</Button>
+            <Button type="submit" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={modal} onClose={() => { if (!salvando) { setModal(false); setEditandoAgente(null); setEditandoEtiqueta(null); } }} title={tab === 'agentes' ? (editandoAgente ? 'Editar impressora' : 'Nova impressora') : (editandoEtiqueta ? 'Editar modelo de etiqueta' : 'Novo modelo de etiqueta')}>
         <form onSubmit={salvar} className="space-y-4">
           {tab !== 'agentes' && (
             <Field label="Nome do modelo *">
@@ -738,7 +800,7 @@ export function ImpressorasPage() {
           )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setModal(false)}>Cancelar</Button>
-            <Button type="submit">Salvar</Button>
+            <Button type="submit" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
           </div>
         </form>
       </Modal>

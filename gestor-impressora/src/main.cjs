@@ -23,7 +23,11 @@ let tray
 let encerrando = false
 let config
 let timer
+let heartbeatTimer
 let sincronizando = false
+let sincronizacaoAtual = null
+let sessaoId = crypto.randomUUID()
+let fechando = false
 let servidorLocal
 let ultimoErro = ''
 let ultimoContato = null
@@ -54,6 +58,7 @@ function configPadrao() {
     dpisImpressoras: {},
     protocolosImpressoras: {},
     iniciarComSistema: true,
+    conectado: true,
   }
 }
 
@@ -89,6 +94,7 @@ async function salvarConfig(novaConfig) {
     dpisImpressoras: normalizarDpis(novaConfig.dpisImpressoras || config?.dpisImpressoras),
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
+    conectado: novaConfig.conectado ?? config?.conectado ?? true,
   }
   await fs.mkdir(path.dirname(arquivoConfig()), { recursive: true })
   await fs.writeFile(arquivoConfig(), JSON.stringify(config, null, 2), 'utf8')
@@ -143,7 +149,7 @@ function statusAtual() {
   return {
     ...config,
     version: app.getVersion(),
-    online: !!ultimoContato && Date.now() - new Date(ultimoContato).getTime() < 15000,
+    online: config.conectado && !!ultimoContato && Date.now() - new Date(ultimoContato).getTime() < 15000,
     ultimoContato,
     ultimoJob,
     ultimoErro,
@@ -160,7 +166,7 @@ async function api(endpoint, body) {
   const resposta = await fetch(`${config.deployUrl}/api${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, session_id: sessaoId }),
     signal: AbortSignal.timeout(15000),
   })
   const contentType = resposta.headers.get('content-type') || ''
@@ -428,8 +434,28 @@ async function confirmarJob(job, status, erro) {
   await api(`/gestor/jobs/${job.id}/status`, { token: config.token, status, erro })
 }
 
-async function sincronizar() {
-  if (sincronizando || !config?.token || !config?.deployUrl) return
+function sincronizar() {
+  if (!sincronizacaoAtual) sincronizacaoAtual = sincronizarAgora().finally(() => { sincronizacaoAtual = null })
+  return sincronizacaoAtual
+}
+
+async function desconectar() {
+  if (!config) return
+  await salvarConfig({ ...config, conectado: false })
+  // Termina os trabalhos já recebidos antes de liberar a sessão.
+  await sincronizacaoAtual
+  try {
+    await api('/gestor/disconnect', { token: config.token })
+  } finally {
+    ultimoContato = null
+    sessaoId = crypto.randomUUID()
+    notificarStatus()
+  }
+  return statusAtual()
+}
+
+async function sincronizarAgora() {
+  if (sincronizando || !config?.conectado || !config?.token || !config?.deployUrl) return
   sincronizando = true
   try {
     await registrar()
@@ -558,13 +584,20 @@ function criarTray() {
     { label: 'Abrir SimplesX Gestor', click: () => janela.show() },
     { type: 'separator' },
     { label: 'Sincronizar agora', click: sincronizar },
-    { label: 'Sair', click: () => { encerrando = true; app.quit() } },
+    { label: 'Sair', click: () => app.quit() },
   ]))
   tray.on('double-click', () => janela.show())
 }
 
 ipcMain.handle('status', () => statusAtual())
-ipcMain.handle('salvar-config', async (_e, value) => salvarConfig(value))
+ipcMain.handle('salvar-config', async (_e, value) => {
+  if (String(value.deployUrl || '').replace(/\/$/, '') !== config.deployUrl) await desconectar()
+  await sincronizacaoAtual
+  await salvarConfig({ ...value, conectado: true })
+  await sincronizar()
+  return statusAtual()
+})
+ipcMain.handle('desconectar', desconectar)
 ipcMain.handle('listar-impressoras', listarImpressoras)
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
   await imprimirRaw({ texto: 'SIMPLESX - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
@@ -597,6 +630,9 @@ if (instanciaUnica) {
     criarJanela()
     criarTray()
     iniciarServidorLocal()
+    heartbeatTimer = setInterval(() => {
+      if ((config?.conectado || sincronizando) && ultimoContato) api('/gestor/heartbeat', { token: config.token }).catch(() => {})
+    }, 20_000)
     await sincronizar()
     timer = setInterval(sincronizar, INTERVALO_POLL)
   }).catch((erro) => {
@@ -610,8 +646,19 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => janela?.show())
-app.on('before-quit', () => {
-  encerrando = true
+app.on('before-quit', (event) => {
+  if (encerrando) return
+  event.preventDefault()
+  if (fechando) return
+  fechando = true
   clearInterval(timer)
   servidorLocal?.close()
+  // Fechar o app libera a sessão, mas preserva a preferência de conectar ao abrir.
+  const reconectar = config?.conectado
+  desconectar().catch(() => {}).finally(async () => {
+    clearInterval(heartbeatTimer)
+    if (config) await salvarConfig({ ...config, conectado: reconectar }).catch(() => {})
+    encerrando = true
+    app.quit()
+  })
 })

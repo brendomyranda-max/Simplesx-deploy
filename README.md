@@ -103,8 +103,23 @@ Worker/Cloudflare.
 
 ## Gestor Local v2
 
+A tela **Impressoras** permite editar e excluir impressoras, modelos de etiqueta
+e servidores Android/Windows/Linux. Editar um servidor altera seu nome no painel.
+Excluir um servidor remove suas rotas, libera as categorias e cancela os trabalhos
+pendentes. O histórico de trabalhos concluídos é preservado.
+
+Servidores ativos não podem ser excluídos, pareados novamente ou vinculados a outro
+estabelecimento por outra conexão. Primeiro use **Desconectar** no desktop ou
+**Desconectar e trocar de conta** no Android. Sem rede, a sessão expira após 90
+segundos sem contato. Uma tentativa recusada não consome o código de pareamento.
+
+Para publicar esta mudança, aplique `0021_sessoes_servidores.sql` e distribua os
+Gestores **1.5.8** junto com o backend. O desktop exige `session_id` nas chamadas
+de registro, heartbeat, polling, confirmação e desconexão; versões anteriores
+precisam ser atualizadas. O Android mantém o contrato de autenticação por token.
+
 O backend possui uma fila segura e idempotente para a evolução do Gestor Local.
-O gestor legado continua disponível durante a transição. Novas instalações devem
+O protocolo desktop continua disponível com sessão exclusiva. Instalações Android devem
 ser vinculadas por um código temporário criado por um usuário com módulo Gestor;
 o código expira em dez minutos e só pode ser usado uma vez. O token devolvido ao
 dispositivo é mostrado apenas no pareamento e armazenado no banco somente como hash.

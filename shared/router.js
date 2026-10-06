@@ -109,9 +109,13 @@ const routes = [
 
   // gestor local (conexão direta com o deploy)
   { m: 'POST', p: '/api/gestor/register', h: gestor.registerGestorHandler, pub: true },
+  { m: 'POST', p: '/api/gestor/disconnect', h: gestor.disconnectGestorHandler, pub: true },
+  { m: 'POST', p: '/api/gestor/heartbeat', h: gestor.heartbeatGestorHandler, pub: true },
   { m: 'POST', p: '/api/gestor/pull', h: gestor.pullGestorJobsHandler, pub: true },
   { m: 'POST', p: '/api/gestor/jobs/:id/status', h: gestor.gestorJobStatusHandler, pub: true },
   { m: 'GET', p: '/api/gestores', h: gestor.listGestoresHandler, mod: 'gestor' },
+  { m: 'PUT', p: '/api/gestores/:id', h: gestor.updateGestorHandler, mod: 'gestor' },
+  { m: 'DELETE', p: '/api/gestores/:id', h: gestor.deleteGestorHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/impressao/enviar', h: gestor.enviarImpressaoHandler },
 
   // gestor local v2: pareamento administrado e autenticação própria do dispositivo
@@ -124,6 +128,7 @@ const routes = [
   { m: 'POST', p: '/api/device/tasks/pull', h: devices.pullDeviceTasksHandler, pub: true },
   { m: 'POST', p: '/api/device/tasks/:id/status', h: devices.updateDeviceTaskStatusHandler, pub: true },
   { m: 'GET', p: '/api/devices', h: devices.listDevicesHandler, mod: 'gestor' },
+  { m: 'PUT', p: '/api/devices/:id', h: devices.updateDeviceHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/devices/:id', h: devices.revokeDeviceHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/device-tasks', h: devices.createDeviceTaskHandler },
   { m: 'POST', p: '/api/device-tasks/:id/cancel', h: devices.cancelDeviceTaskHandler, mod: 'gestor' },
@@ -172,8 +177,11 @@ const routes = [
   { m: 'GET', p: '/api/impressora-agentes', h: cad.listAgentesHandler },
   { m: 'POST', p: '/api/impressora-agentes', h: cad.createAgenteHandler, mod: 'gestor' },
   { m: 'PUT', p: '/api/impressora-agentes/:id', h: cad.updateAgenteHandler, mod: 'gestor' },
+  { m: 'DELETE', p: '/api/impressora-agentes/:id', h: cad.deleteAgenteHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/impressora-etiquetas', h: cad.listEtiquetasHandler },
   { m: 'POST', p: '/api/impressora-etiquetas', h: cad.createEtiquetaHandler, mod: 'gestor' },
+  { m: 'PUT', p: '/api/impressora-etiquetas/:id', h: cad.updateEtiquetaHandler, mod: 'gestor' },
+  { m: 'DELETE', p: '/api/impressora-etiquetas/:id', h: cad.deleteEtiquetaHandler, mod: 'gestor' },
 ];
 
 // Permissões de área são gravadas junto aos módulos como `area:vendas`, etc.

@@ -4,6 +4,7 @@
  */
 
 import { estabelecimentoId, gerarToken, httpError, kvGet, kvPut, now, num, sha256, temModulo } from './util.js';
+import { cleanupServerStatements, serverCutoff, SESSION_CONFLICT } from './print-servers.js';
 
 export const DEVICE_TASK_TYPES = new Set([
   'PRINT_ORDER',
@@ -113,7 +114,7 @@ async function audit(db, tenantId, taskId, deviceId, event, from, to, actorType,
     actorType, actorId ? String(actorId) : null, now()).run();
 }
 
-async function authenticateDevice(c, env) {
+async function authenticateDevice(c, env, renew = false) {
   const authorization = String(c.req.header('authorization') || '');
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
   const deviceId = text(c.req.header('x-device-id'), 100, 'deviceId', true);
@@ -123,6 +124,12 @@ async function authenticateDevice(c, env) {
      WHERE id=? AND token_hash=? AND token_expira_em>? AND revogado_em IS NULL`
   ).bind(deviceId, await sha256(token), now()).first();
   if (!device) throw httpError(401, 'Dispositivo não autorizado');
+  if (renew) {
+    const renewed = await env.DB.prepare(`UPDATE devices SET ultima_conexao=?, status=CASE WHEN status='error' THEN status ELSE 'online' END
+    WHERE id=? AND token_hash=? AND estabelecimento_id=? AND revogado_em IS NULL AND token_expira_em>?`)
+    .bind(now(), device.id, device.token_hash, device.estabelecimento_id, now()).run();
+    if (!renewed.meta.changes) throw httpError(401, 'Dispositivo não autorizado');
+  }
   return device;
 }
 
@@ -166,30 +173,32 @@ export async function pairDeviceHandler(c, env) {
   }
 
   const consumedAt = now();
-  const consumed = await env.DB.prepare(
-    'UPDATE device_pairing_codes SET usado_em=? WHERE id=? AND usado_em IS NULL AND expira_em>?'
-  ).bind(consumedAt, pairingId, consumedAt).run();
-  if (!consumed.meta.changes) return c.json({ error: 'Código de pareamento já utilizado' }, 409);
-
-  const existing = await env.DB.prepare('SELECT id, estabelecimento_id FROM devices WHERE id=?').bind(deviceId).first();
-  if (existing && num(existing.estabelecimento_id) !== num(pairing.estabelecimento_id)) {
-    return c.json({ error: 'Este dispositivo já pertence a outro estabelecimento' }, 409);
-  }
+  const existing = await env.DB.prepare('SELECT * FROM devices WHERE id=?').bind(deviceId).first();
   const token = gerarToken() + gerarToken();
+  const tokenHash = await sha256(token);
   const tokenExpiresAt = isoAfter(TOKEN_TTL_MS);
-  if (existing) {
-    await env.DB.prepare(
-      `UPDATE devices SET nome=?, plataforma=?, versao=?, token_hash=?, token_versao=token_versao+1,
-       token_expira_em=?, status='offline', ultimo_erro=NULL, revogado_em=NULL, atualizado_em=? WHERE id=?`
-    ).bind(name, platform, version || null, await sha256(token), tokenExpiresAt, consumedAt, deviceId).run();
-  } else {
-    await env.DB.prepare(
-      `INSERT INTO devices
-       (id, estabelecimento_id, nome, plataforma, versao, token_hash, token_expira_em, status, criado_em, atualizado_em)
-       VALUES (?,?,?,?,?,?,?,'offline',?,?)`
-    ).bind(deviceId, pairing.estabelecimento_id, name, platform, version || null, await sha256(token), tokenExpiresAt,
-      consumedAt, consumedAt).run();
+  const won = 'EXISTS (SELECT 1 FROM devices WHERE id=? AND token_hash=?)';
+  const statements = [env.DB.prepare(`INSERT INTO devices
+      (id, estabelecimento_id, nome, plataforma, versao, token_hash, token_expira_em, status, ultima_conexao, criado_em, atualizado_em)
+      SELECT ?,?,?,?,?,?,?,'online',?,?,? FROM device_pairing_codes
+      WHERE id=? AND code_hash=? AND usado_em IS NULL AND expira_em>?
+      ON CONFLICT(id) DO UPDATE SET estabelecimento_id=excluded.estabelecimento_id, nome=excluded.nome,
+        plataforma=excluded.plataforma, versao=excluded.versao, token_hash=excluded.token_hash,
+        token_versao=devices.token_versao+1, token_expira_em=excluded.token_expira_em,
+        status='online', ultima_conexao=excluded.ultima_conexao, ultimo_erro=NULL, revogado_em=NULL,
+        printers_json='[]', atualizado_em=excluded.atualizado_em
+      WHERE devices.revogado_em IS NOT NULL OR devices.status IN ('offline','disconnected')
+        OR devices.ultima_conexao IS NULL OR devices.ultima_conexao<=? OR devices.token_expira_em<=?`)
+    .bind(deviceId, pairing.estabelecimento_id, name, platform, version || null, tokenHash, tokenExpiresAt,
+      consumedAt, consumedAt, consumedAt, pairingId, await sha256(code), consumedAt, serverCutoff(), consumedAt),
+    env.DB.prepare(`UPDATE device_pairing_codes SET usado_em=? WHERE id=? AND usado_em IS NULL AND ${won}`)
+      .bind(consumedAt, pairingId, deviceId, tokenHash),
+  ];
+  if (existing && num(existing.estabelecimento_id) !== num(pairing.estabelecimento_id)) {
+    statements.push(...cleanupServerStatements(env.DB, existing.estabelecimento_id, 'android', deviceId, null, won, [deviceId, tokenHash]));
   }
+  const results = await env.DB.batch(statements);
+  if (!results[0].meta.changes) return c.json({ error: SESSION_CONFLICT + ' O código também pode já ter sido utilizado.' }, 409);
   await kvPut(env, rateKey, '0', { expirationTtl: 900 });
   await deviceAudit(env.DB, pairing.estabelecimento_id, deviceId, 'device_paired', 'device', deviceId,
     { name, platform, version: version || null });
@@ -202,24 +211,26 @@ export async function rotateDeviceTokenHandler(c, env) {
   const token = gerarToken() + gerarToken();
   const expiresAt = isoAfter(TOKEN_TTL_MS);
   const updatedAt = now();
-  await env.DB.prepare(
+  const updated = await env.DB.prepare(
     `UPDATE devices SET token_hash=?, token_versao=token_versao+1, token_expira_em=?, atualizado_em=?
-     WHERE id=? AND estabelecimento_id=? AND revogado_em IS NULL`
-  ).bind(await sha256(token), expiresAt, updatedAt, device.id, device.estabelecimento_id).run();
+     WHERE id=? AND estabelecimento_id=? AND revogado_em IS NULL AND token_hash=?`
+  ).bind(await sha256(token), expiresAt, updatedAt, device.id, device.estabelecimento_id, device.token_hash).run();
+  if (!updated.meta.changes) throw httpError(401, 'Dispositivo não autorizado');
   await deviceAudit(env.DB, device.estabelecimento_id, device.id, 'device_token_rotated', 'device', device.id,
     { expires_at: expiresAt });
   return c.json({ device_token: token, token_expires_at: expiresAt });
 }
 
 export async function heartbeatDeviceHandler(c, env) {
-  const device = await authenticateDevice(c, env);
+  const device = await authenticateDevice(c, env, true);
   const body = await c.req.json();
   const status = DEVICE_STATUSES.has(body?.status) ? body.status : 'online';
   const error = status === 'error' ? text(body?.error, 1000, 'Erro') : '';
   const printers = printerList(body?.printers);
-  await env.DB.prepare(
-    'UPDATE devices SET status=?, ultima_conexao=?, ultimo_erro=?, versao=COALESCE(?,versao), printers_json=?, atualizado_em=? WHERE id=? AND estabelecimento_id=?'
-  ).bind(status, now(), error || null, text(body?.version, 40, 'Versão') || null, JSON.stringify(printers), now(), device.id, device.estabelecimento_id).run();
+  const updated = await env.DB.prepare(
+    'UPDATE devices SET status=?, ultima_conexao=?, ultimo_erro=?, versao=COALESCE(?,versao), printers_json=?, atualizado_em=? WHERE id=? AND estabelecimento_id=? AND token_hash=? AND revogado_em IS NULL'
+  ).bind(status, now(), error || null, text(body?.version, 40, 'Versão') || null, JSON.stringify(printers), now(), device.id, device.estabelecimento_id, device.token_hash).run();
+  if (!updated.meta.changes) throw httpError(401, 'Dispositivo não autorizado');
   return c.json({ ok: true, server_time: now(), token_expires_at: device.token_expira_em });
 }
 
@@ -356,7 +367,7 @@ export async function cancelDeviceTaskHandler(c, env) {
 }
 
 export async function pullDeviceTasksHandler(c, env) {
-  const device = await authenticateDevice(c, env);
+  const device = await authenticateDevice(c, env, true);
   const current = now();
   const expired = await env.DB.prepare(
     `SELECT id FROM device_tasks WHERE device_id=? AND estabelecimento_id=?
@@ -401,7 +412,7 @@ export async function pullDeviceTasksHandler(c, env) {
 }
 
 export async function updateDeviceTaskStatusHandler(c, env) {
-  const device = await authenticateDevice(c, env);
+  const device = await authenticateDevice(c, env, true);
   const body = await c.req.json();
   const requested = text(body?.status, 20, 'Status', true).toLowerCase();
   if (!TASK_RESULT_STATUSES.has(requested)) return c.json({ error: 'Status de tarefa inválido' }, 400);
@@ -445,8 +456,8 @@ export async function listDevicesHandler(c, env) {
      FROM devices WHERE revogado_em IS NULL ORDER BY nome`
   ).all();
   return c.json(rows.results.map((row) => {
-    const connected = row.ultima_conexao && Date.now() - new Date(row.ultima_conexao).getTime() < 90_000;
-    return { ...row, status: connected ? row.status : 'offline', printers: JSON.parse(row.printers_json || '[]') };
+    const connected = row.ultima_conexao > serverCutoff() && row.token_expira_em > now() && !['offline', 'disconnected'].includes(row.status);
+    return { ...row, online: connected, status: connected ? row.status : 'offline', printers: JSON.parse(row.printers_json || '[]') };
   }));
 }
 
@@ -467,15 +478,27 @@ export async function listDeviceTasksHandler(c, env) {
 export async function revokeDeviceHandler(c, env) {
   const tenantId = estabelecimentoId(env);
   const current = now();
-  const result = await env.rawDB.prepare(
+  const device = await env.DB.prepare('SELECT id FROM devices WHERE id=? AND revogado_em IS NULL').bind(c.params.id).first();
+  if (!device) return c.json({ error: 'Dispositivo não encontrado' }, 404);
+  const marker = await sha256(gerarToken() + gerarToken());
+  const results = await env.rawDB.batch([env.rawDB.prepare(
     `UPDATE devices SET status='disconnected', revogado_em=?, token_hash=?, atualizado_em=?
-     WHERE id=? AND estabelecimento_id=? AND revogado_em IS NULL`
-  ).bind(current, await sha256(gerarToken() + gerarToken()), current, c.params.id, tenantId).run();
-  if (!result.meta.changes) return c.json({ error: 'Dispositivo não encontrado' }, 404);
-  await env.rawDB.prepare(
-    `UPDATE device_tasks SET status='cancelled', cancelado_em=?, atualizado_em=?
-     WHERE device_id=? AND estabelecimento_id=? AND status IN ('pending','sent')`
-  ).bind(current, current, c.params.id, tenantId).run();
+     WHERE id=? AND estabelecimento_id=? AND revogado_em IS NULL
+     AND (status IN ('offline','disconnected') OR ultima_conexao IS NULL OR ultima_conexao<=? OR token_expira_em<=?)`
+  ).bind(current, marker, current, c.params.id, tenantId, serverCutoff(), current),
+  ...cleanupServerStatements(env.rawDB, tenantId, 'android', c.params.id, null,
+    'EXISTS (SELECT 1 FROM devices WHERE id=? AND token_hash=? AND revogado_em IS NOT NULL)', [c.params.id, marker]),
+  ]);
+  if (!results[0].meta.changes) return c.json({ error: SESSION_CONFLICT }, 409);
   await deviceAudit(env.rawDB, tenantId, c.params.id, 'device_revoked', 'user', c.user.id, null);
+  return c.json({ ok: true });
+}
+
+export async function updateDeviceHandler(c, env) {
+  const b = await c.req.json();
+  const nome = text(b?.nome, 120, 'Nome', true);
+  const result = await env.DB.prepare('UPDATE devices SET nome=?, atualizado_em=? WHERE id=? AND revogado_em IS NULL')
+    .bind(nome, now(), c.params.id).run();
+  if (!result.meta.changes) return c.json({ error: 'Servidor não encontrado' }, 404);
   return c.json({ ok: true });
 }

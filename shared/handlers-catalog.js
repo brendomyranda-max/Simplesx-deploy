@@ -3,6 +3,7 @@
  * Responsabilidade: Implementa categorias, fornecedores, produtos, estoque, lotes e validades.
  */
 
+import { cleanupServerStatements, serverCutoff, SESSION_CONFLICT } from './print-servers.js';
 import {
   now,
   hoje,
@@ -87,13 +88,22 @@ export async function putConfigHandler(c, env) {
         continue;
       }
       if (k === 'gestor_token' && v) {
-        const gestor = await env.rawDB.prepare('SELECT estabelecimento_id FROM gestores WHERE token=? AND ativo=1').bind(String(v)).first();
+        const gestor = await env.rawDB.prepare('SELECT * FROM gestores WHERE token=? AND ativo=1').bind(String(v).trim()).first();
         if (!gestor) return c.json({ error: 'Gestor não encontrado ou inativo' }, 400);
-        if (num(gestor.estabelecimento_id) && num(gestor.estabelecimento_id) !== estabelecimentoId(env)) {
-          return c.json({ error: 'Este gestor já pertence a outro estabelecimento' }, 409);
-        }
-        await env.rawDB.prepare('UPDATE gestores SET estabelecimento_id=? WHERE token=?')
-          .bind(estabelecimentoId(env), String(v)).run();
+        const tenantId = estabelecimentoId(env);
+        const transfer = num(gestor.estabelecimento_id) > 0 && num(gestor.estabelecimento_id) !== tenantId;
+        const statements = [env.rawDB.prepare(`UPDATE gestores SET estabelecimento_id=?,
+            sessao_id=CASE WHEN ? THEN NULL ELSE sessao_id END,
+            nome_personalizado=CASE WHEN ? THEN NULL ELSE nome_personalizado END
+          WHERE id=? AND estabelecimento_id=? AND ativo=1
+            AND (?=0 OR ultima_conexao IS NULL OR ultima_conexao<=?)`)
+          .bind(tenantId, transfer ? 1 : 0, transfer ? 1 : 0, gestor.id, gestor.estabelecimento_id, transfer ? 1 : 0, serverCutoff())];
+        if (transfer) statements.push(...cleanupServerStatements(env.rawDB, gestor.estabelecimento_id, 'desktop', gestor.id, gestor.token,
+          'EXISTS (SELECT 1 FROM gestores WHERE id=? AND estabelecimento_id=?)', [gestor.id, tenantId]));
+        const results = await env.rawDB.batch(statements);
+        if (!results[0].meta.changes) return c.json({ error: SESSION_CONFLICT }, 409);
+        await setConfig(env, k, gestor.token);
+        continue;
       }
       if (k === 'gestor_device_id' && v) {
         const device = await env.rawDB.prepare(
