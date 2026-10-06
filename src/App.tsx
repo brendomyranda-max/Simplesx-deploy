@@ -3,7 +3,7 @@
  * Responsabilidade: Define as rotas, protege áreas autenticadas e libera cada módulo conforme as permissões.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type Modulo } from '@/store/auth';
 import type { AreaApp } from '@/lib/areas';
@@ -30,6 +30,8 @@ import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
 import { FiscalPage } from '@/pages/FiscalPage';
 import { authApi, configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
+
+const InvestidoresPage = lazy(() => import('@/pages/InvestidoresPage'));
 
 function Require({ mod, area, children }: { mod: Modulo; area?: AreaApp; children: React.ReactNode }) {
   const { can, canArea } = useAuth();
@@ -187,7 +189,7 @@ function ProtectedApp({
   );
 }
 
-export default function App() {
+function SessionApp() {
   const { token, setAuth, clearSession } = useAuth();
   const [iniciando, setIniciando] = useState(true);
   const [empresa, setEmpresa] = useState<ConfigEmpresa | null>(null);
@@ -250,4 +252,12 @@ export default function App() {
       <Route path="*" element={<ProtectedApp badges={badges} empresaNome={empresa?.empresa_nome} />} />
     </Routes>
   );
+}
+
+// A apresentação é pública e não depende da disponibilidade da API de sessão.
+export default function App() {
+  return <Routes>
+    <Route path="/investidores" element={<Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Carregando apresentação…</div>}><InvestidoresPage /></Suspense>} />
+    <Route path="*" element={<SessionApp />} />
+  </Routes>;
 }

@@ -33,10 +33,26 @@ para pagamentos do restaurante também não habilita o pagamento de cadastro.
 
 ## Apresentação da empresa
 
-**Invista na SimplesX — Faça parte da nossa empresa** substitui a colaboração
-no acesso e na página inicial. A apresentação informa **Proposta em preparação**
-até o responsável fornecer a trajetória, o momento atual, os objetivos e as
-condições de participação. Não há termos de investimento ou valores prometidos.
+**Invista na SimplesX — Faça parte da nossa empresa** aparece no acesso e na
+página inicial. O link **Conhecer a proposta** abre `/investidores`, uma página
+pública que pode ser compartilhada e não depende de autenticação ou da API de
+sessão. O conteúdo foi adaptado de `Simplex_Apresentacao_Investidores.docx`,
+fornecido pelo fundador, mantendo a marca SimplesX usada no sistema.
+
+A apresentação cobre a proposta, o problema, o público inicial, os cinco pilares
+atuais, os diferenciais propostos, as quatro etapas de evolução, a expansão,
+o modelo de receita e as prioridades do aporte. Os módulos futuros estão
+identificados, assim como os dados e termos ainda em definição. Não foram
+acrescentados clientes, resultados, valores de aporte ou retornos estimados.
+
+O documento descreve a assinatura mensal como modelo de receita proposto,
+com preço e escopo ainda em definição. Isso não altera a taxa única de abertura
+da conta nem implementa cobrança recorrente. A aplicação do aporte é apresentada
+por prioridade; orçamento, prazos, modalidade e condições continuam em definição.
+
+O conteúdo editorial está em `src/content/investidores.ts`; sua apresentação
+está em `src/pages/InvestidoresPage.tsx`. A página é carregada separadamente
+para não acrescentar todo o conteúdo ao carregamento inicial do sistema.
 
 O formulário de contribuição, a rota `/api/colaboracao`, o gerador de Pix estático
 e as configurações `COLABORACAO_PIX_*` foram removidos.
