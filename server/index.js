@@ -9,13 +9,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SqliteDb from './sqlite-db.js';
 import { handle } from '../shared/router.js';
-import { loadLocalEnv, serverEnv } from './env.js';
+import { loadLocalEnv, serverEnv, localDatabasePath } from './env.js';
 
 loadLocalEnv();
 const config = serverEnv();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DB_FILE = process.env.SIMPLESX_DB || path.join(ROOT, 'data', 'simplesx.db');
+const DB_FILE = localDatabasePath(ROOT);
 const PORT = Number(process.env.PORT || 3001);
 
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
@@ -72,6 +72,6 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
-  console.log(`SimplesX local rodando em http://localhost:${PORT}`);
+  console.log(`SimplexS.A local rodando em http://localhost:${PORT}`);
   console.log(`Banco: ${DB_FILE}`);
 });

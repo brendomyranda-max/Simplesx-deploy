@@ -1,6 +1,6 @@
-# SimplesX Gestor de Impressoras
+# SimplexS.A Gestor de Impressoras
 
-Aplicativo local que conecta o deploy do SimplesX às impressoras instaladas no Windows ou no Linux.
+Aplicativo local que conecta o deploy do SimplexS.A às impressoras instaladas no Windows ou no Linux.
 
 ## Desenvolvimento
 

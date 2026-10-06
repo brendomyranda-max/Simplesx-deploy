@@ -78,7 +78,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     }
     const err: ApiError = { error: msg, status: res.status };
     if (res.status === 401) {
-      window.dispatchEvent(new CustomEvent('simplesx:logout'));
+      window.dispatchEvent(new CustomEvent('simplexsa:logout'));
     }
     throw err;
   }
@@ -360,7 +360,7 @@ export const deviceApi = {
   test: (deviceId: string) => api.post<{ task: { id: string; status: string } }>('/device-tasks', {
     device_id: deviceId,
     type: 'TEST_PRINTER',
-    payload: { content: `SIMPLESX - TESTE ANDROID\n${new Date().toLocaleString('pt-BR')}\nConexao com a fila segura OK`, cut: true, feed: 3 },
+    payload: { content: `SimplexS.A - TESTE ANDROID\n${new Date().toLocaleString('pt-BR')}\nConexao com a fila segura OK`, cut: true, feed: 3 },
     idempotency_key: `android-test-${deviceId}-${crypto.randomUUID()}`,
   }),
   remove: (deviceId: string) => api.del<{ ok: boolean }>(`/devices/${encodeURIComponent(deviceId)}`),

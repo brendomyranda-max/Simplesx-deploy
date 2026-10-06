@@ -36,7 +36,7 @@ function render(status) {
 async function carregarImpressoras() {
   const atual = estado?.impressoraPadrao || $('impressora').value
   try {
-    const lista = await window.simplesx.listarImpressoras()
+    const lista = await window.simplexsa.listarImpressoras()
     $('impressora').innerHTML = '<option value="">Padrão do sistema</option>'
     const padrao = lista.find((p) => p.isDefault) || lista[0]
     if (padrao) $('impressora').options[0].dataset.nome = padrao.name
@@ -106,7 +106,7 @@ $('salvarTamanho').onclick = async (event) => {
   try {
     const dpi = Number($('dpi').value)
     if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) return toast('Informe um DPI entre 100 e 1200')
-    const status = await window.simplesx.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi)
+    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi)
     render(status)
     $('tamanhoDialog').close()
     toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
@@ -117,7 +117,7 @@ $('copiar').onclick = async () => { await navigator.clipboard.writeText($('token
 $('desconectar').onclick = async () => {
   $('desconectar').disabled = true
   try {
-    render(await window.simplesx.desconectar())
+    render(await window.simplexsa.desconectar())
     toast('Servidor desconectado. Ele já pode ser vinculado a outro estabelecimento.')
   } catch (error) {
     toast(`${error.message}. A recepção foi pausada; a sessão expira após 90 segundos sem contato.`)
@@ -132,7 +132,7 @@ $('atualizar').onclick = async () => {
 $('salvar').onclick = async () => {
   $('salvar').disabled = true
   try {
-    const status = await window.simplesx.salvar({
+    const status = await window.simplexsa.salvar({
       ...estado,
       nome: $('nome').value,
       deployUrl: $('deployUrl').value,
@@ -149,10 +149,10 @@ $('salvar').onclick = async () => {
 }
 $('testar').onclick = async () => {
   $('testar').disabled = true
-  try { await window.simplesx.testar($('impressora').value); toast('Teste enviado') }
+  try { await window.simplexsa.testar($('impressora').value); toast('Teste enviado') }
   catch (e) { toast(`Erro: ${e.message}`) }
   finally { $('testar').disabled = false }
 }
 
-window.simplesx.onStatus(render)
-window.simplesx.status().then(async (s) => { render(s); await carregarImpressoras() })
+window.simplexsa.onStatus(render)
+window.simplexsa.status().then(async (s) => { render(s); await carregarImpressoras() })

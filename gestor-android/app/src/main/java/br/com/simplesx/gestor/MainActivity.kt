@@ -54,7 +54,7 @@ import br.com.simplesx.gestor.data.ConnectionType
 import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
-import br.com.simplesx.gestor.network.SimplesXApi
+import br.com.simplesx.gestor.network.SimplexsaApi
 import br.com.simplesx.gestor.network.DeviceCategory
 import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
@@ -136,7 +136,7 @@ private fun GestorScreen() {
     fun refreshCategories() {
         if (config.deviceToken.isBlank()) return
         CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { SimplesXApi(config).printCategories() }
+            val result = runCatching { SimplexsaApi(config).printCategories() }
             withContext(Dispatchers.Main) {
                 result.fold({ categories ->
                     deployCategories = categories
@@ -164,12 +164,12 @@ private fun GestorScreen() {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("SimplesX Gestor") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("SimplexS.A Gestor") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusCard(serviceEnabled, config.deviceToken.isNotBlank(), message, config.lastJob)
 
-            Section("Conexão com o SimplesX") {
-                OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço do SimplesX") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Section("Conexão com o SimplexS.A") {
+                OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço do SimplexS.A") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(deviceName, { deviceName = it }, label = { Text("Nome deste gestor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 if (!paired) {
                     OutlinedTextField(pairingId, { pairingId = it }, label = { Text("ID do pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -177,7 +177,7 @@ private fun GestorScreen() {
                     Button(onClick = {
                         config.deployUrl = deployUrl; config.deviceName = deviceName
                         background {
-                            SimplesXApi(config).pair(pairingId, pairingCode)
+                            SimplexsaApi(config).pair(pairingId, pairingCode)
                             PrintSyncService.start(context)
                             "Pareamento concluído e recepção iniciada"
                         }
@@ -194,7 +194,7 @@ private fun GestorScreen() {
             }
 
             Section("Impressoras") {
-                Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado no SimplesX (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
+                Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado no SimplexS.A (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     printers.forEachIndexed { index, item ->
                         OutlinedButton(onClick = {
@@ -243,7 +243,7 @@ private fun GestorScreen() {
                         usbExpanded = true
                     }, modifier = Modifier.weight(1f)) { Text("USB") }
                 }
-                OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplesX") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplexS.A") }, modifier = Modifier.fillMaxWidth())
                 Text("Protocolo", fontWeight = FontWeight.Bold)
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     PrinterProtocol.entries.chunked(2).forEach { row ->
@@ -491,8 +491,8 @@ private fun GestorScreen() {
                         message = "Selecione e autorize uma impressora USB"
                     } else {
                         background {
-                            if (config.deviceToken.isNotBlank()) SimplesXApi(config).updatePrinterCategories(printer)
-                            val test = "SIMPLESX - TESTE DE IMPRESSAO\n${printer.protocol.name} · ${printer.dpi} DPI\nRede/Bluetooth OK"
+                            if (config.deviceToken.isNotBlank()) SimplexsaApi(config).updatePrinterCategories(printer)
+                            val test = "SimplexS.A - TESTE DE IMPRESSAO\n${printer.protocol.name} · ${printer.dpi} DPI\nRede/Bluetooth OK"
                             val bytes = PrinterCommands.document(test, printer)
                             PrinterTransport.send(context, printer, bytes)
                             "Dados ${printer.protocol.name} enviados. Confirme o texto no papel; a conexão Bluetooth não confirma se a impressora entendeu o protocolo."

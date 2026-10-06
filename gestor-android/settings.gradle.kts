@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SimplesXGestorAndroid"
+rootProject.name = "SimplexsaGestorAndroid"
 include(":app")

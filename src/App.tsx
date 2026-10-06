@@ -239,8 +239,8 @@ function SessionApp() {
 
   useEffect(() => {
     const onLogout = () => { clearSession(); navigate('/login', { replace: true }); };
-    window.addEventListener('simplesx:logout', onLogout);
-    return () => window.removeEventListener('simplesx:logout', onLogout);
+    window.addEventListener('simplexsa:logout', onLogout);
+    return () => window.removeEventListener('simplexsa:logout', onLogout);
   }, [navigate, clearSession]);
 
   if (iniciando) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Verificando sessão…</div>;

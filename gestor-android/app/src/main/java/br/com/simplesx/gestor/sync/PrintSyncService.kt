@@ -19,7 +19,7 @@ import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.network.DeviceTask
-import br.com.simplesx.gestor.network.SimplesXApi
+import br.com.simplesx.gestor.network.SimplexsaApi
 import br.com.simplesx.gestor.print.EscPos
 import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
@@ -47,10 +47,10 @@ class PrintSyncService : Service() {
         super.onCreate()
         config = AppConfig(this)
         wakeLock = getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SimplesX:PrintSync")
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SimplexS.A:PrintSync")
             .apply { acquire() }
         createChannel()
-        startForeground(NOTIFICATION_ID, notification("Conectando ao SimplesX…"))
+        startForeground(NOTIFICATION_ID, notification("Conectando ao SimplexS.A…"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -70,14 +70,14 @@ class PrintSyncService : Service() {
         val heartbeat = scope.launch {
             while (isActive) {
                 delay(20_000)
-                runCatching { SimplesXApi(config).heartbeat() }
+                runCatching { SimplexsaApi(config).heartbeat() }
             }
         }
         while (scope.isActive && config.serviceEnabled) {
             var receivedTasks = false
             try {
-                check(config.deviceToken.isNotBlank()) { "Pareie este aparelho com o SimplesX" }
-                val api = SimplesXApi(config)
+                check(config.deviceToken.isNotBlank()) { "Pareie este aparelho com o SimplexS.A" }
+                val api = SimplexsaApi(config)
                 if (heartbeatCounter++ % 5 == 0) api.heartbeat()
                 val tasks = api.pullTasks()
                 receivedTasks = tasks.isNotEmpty()
@@ -94,7 +94,7 @@ class PrintSyncService : Service() {
         }
         heartbeat.cancelAndJoin()
         val disconnected = runCatching {
-            if (config.deviceToken.isNotBlank()) SimplesXApi(config).heartbeat("disconnected")
+            if (config.deviceToken.isNotBlank()) SimplexsaApi(config).heartbeat("disconnected")
         }.isSuccess
         if (forgetPairingOnStop) {
             config.deviceToken = ""
@@ -104,7 +104,7 @@ class PrintSyncService : Service() {
         stopSelf()
     }
 
-    private suspend fun executeTask(api: SimplesXApi, task: DeviceTask) {
+    private suspend fun executeTask(api: SimplexsaApi, task: DeviceTask) {
         var renewal: Job? = null
         try {
             if (api.taskStatus(task, "processing") != "processing") return
@@ -145,7 +145,7 @@ class PrintSyncService : Service() {
         }
         val payload = task.payload
         val content = payload.optStringAny("content", "conteudo", "text", "texto")
-        val fallback = if (task.type == "TEST_PRINTER") "SIMPLESX - TESTE DE IMPRESSAO\nConexao com o Gestor Android OK" else ""
+        val fallback = if (task.type == "TEST_PRINTER") "SimplexS.A - TESTE DE IMPRESSAO\nConexao com o Gestor Android OK" else ""
         require(content.isNotBlank() || fallback.isNotBlank()) { "Trabalho sem conteúdo de impressão" }
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
         val feed = payload.optIntAny("feed", "alimentar", default = 3)
@@ -176,7 +176,7 @@ class PrintSyncService : Service() {
 
     private fun notification(text: String) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_menu_info_details)
-        .setContentTitle("SimplesX Gestor ativo")
+        .setContentTitle("SimplexS.A Gestor ativo")
         .setContentText(text)
         .setOngoing(true)
         .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))

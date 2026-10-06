@@ -1,5 +1,19 @@
 import { loadEnvFile } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+// Os aliases permitem atualizar instalações que já possuem um .env configurado.
+export function projectEnv(name, source = process.env) {
+  return source[`SIMPLEXSA_${name}`] || source[`SIMPLESX_${name}`];
+}
+
+export function localDatabasePath(root, source = process.env) {
+  const configured = projectEnv('DB', source);
+  if (configured) return configured;
+  const previous = path.join(root, 'data', 'simplesx.db');
+  return existsSync(previous) ? previous : path.join(root, 'data', 'simplexsa.db');
+}
 
 export function loadLocalEnv(file = fileURLToPath(new URL('../.env', import.meta.url))) {
   try {

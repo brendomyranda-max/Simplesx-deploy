@@ -1,5 +1,5 @@
 /**
- * Arquivo: SimplesXApi.kt
+ * Arquivo: SimplexsaApi.kt
  * Responsabilidade: Executa as chamadas HTTP do gestor Android para a API.
  */
 
@@ -14,7 +14,7 @@ import java.net.URL
 data class DeviceTask(val id: String, val type: String, val leaseId: String, val payload: JSONObject)
 data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
 
-class SimplesXApi(private val config: AppConfig) {
+class SimplexsaApi(private val config: AppConfig) {
     private val appVersion = "1.5.9"
     private fun request(path: String, body: JSONObject, authenticated: Boolean = true): JSONObject {
         val base = config.deployUrl.trimEnd('/')

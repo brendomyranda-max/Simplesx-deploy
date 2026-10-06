@@ -186,7 +186,7 @@ export function InicioPage() {
           >
             S
           </motion.div>
-          <h1 className="text-2xl font-extrabold text-white">SimplesX</h1>
+          <h1 className="text-2xl font-extrabold text-white">SimplexS.A</h1>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-400">
             <Building2 className="h-4 w-4" />
             {nome || 'Bem-vindo(a)!'}

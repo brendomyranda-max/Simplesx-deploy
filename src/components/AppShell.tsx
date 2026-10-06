@@ -85,7 +85,7 @@ export function AppShell({
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-sm font-extrabold text-white shadow-md shadow-brand-500/30">
             S
           </div>
-          <p className="min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplesX'}</p>
+          <p className="min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplexS.A'}</p>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {modulosAtivos > 1 && (
               <button
@@ -180,7 +180,7 @@ export function AppShell({
           S
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold text-white">SimplesX</p>
+          <p className="truncate text-sm font-extrabold text-white">SimplexS.A</p>
           <p className="truncate text-[11px] text-slate-400">{empresaNome || 'Meu Negócio'}</p>
         </div>
         <button
@@ -297,7 +297,7 @@ export function AppShell({
           >
             <Home className="h-6 w-6" />
           </button>
-          <p className="ml-1 min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplesX'}</p>
+          <p className="ml-1 min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplexS.A'}</p>
 
         </header>
         <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{children}</main>

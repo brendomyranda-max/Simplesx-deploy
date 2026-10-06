@@ -1,5 +1,5 @@
 -- ============================================================
--- SimplesX - Pagamentos Individuais (pré-fechamento)
+-- SimplexS.A - Pagamentos Individuais (pré-fechamento)
 -- Fluxo: fechar individual -> comanda vai para pré-fechamento
 -- e os itens são transferidos para a mesa "Pagamentos Individuais",
 -- onde cada pessoa é baixada e impressa separadamente.

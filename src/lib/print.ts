@@ -3,7 +3,7 @@
  * Responsabilidade: Prepara recibos e escolhe a estratégia de impressão.
  */
 
-const PAGE_STYLE_ID = 'simplesx-print-page';
+const PAGE_STYLE_ID = 'simplexsa-print-page';
 const BOBINA_KEY = 'simplesx_bobina';
 
 import { getDirectPrint, getPrinterForWidth, sendCupsPrint, enviarViaDeploy } from './cupsPrint';

@@ -33,11 +33,11 @@ para pagamentos do restaurante também não habilita o pagamento de cadastro.
 
 ## Apresentação da empresa
 
-**Invista na SimplesX — Faça parte da nossa empresa** aparece no acesso e na
+**Invista na SimplexS.A — Faça parte da nossa empresa** aparece no acesso e na
 página inicial. O link **Conhecer a proposta** abre `/investidores`, uma página
 pública que pode ser compartilhada e não depende de autenticação ou da API de
 sessão. O conteúdo foi adaptado de `Simplex_Apresentacao_Investidores.docx`,
-fornecido pelo fundador, mantendo a marca SimplesX usada no sistema.
+fornecido pelo fundador, mantendo a marca SimplexS.A usada no sistema.
 
 A apresentação cobre a proposta, o problema, o público inicial, os cinco pilares
 atuais, os diferenciais propostos, as quatro etapas de evolução, a expansão,

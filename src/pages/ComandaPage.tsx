@@ -722,7 +722,7 @@ export function ComandaPage() {
                       onDragStart={(e) => {
                         if (!podeTransferir(item)) { e.preventDefault(); return; }
                         setArrastando(item); e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('application/x-simplesx-item', String(item.id));
+                        e.dataTransfer.setData('application/x-simplexsa-item', String(item.id));
                       }}
                       onDragEnd={() => { setArrastando(null); setSobrePessoa(null); }}
                     >

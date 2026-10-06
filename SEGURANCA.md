@@ -6,10 +6,10 @@
 | --- | --- | --- |
 | `TURNSTILE_SITE_KEY` | `.env` (Express) ou `.dev.vars` (Wrangler), com chave pública de teste | Variável do servidor ou Cloudflare; a site key é pública |
 | `TURNSTILE_SECRET_KEY` | Mesmos arquivos, com chave pública de teste | Secret do Cloudflare ou ambiente privado do servidor |
-| `SIMPLESX_SENHA_DONO` | `.env` ou variável exportada, somente durante a criação do dono | Ambiente privado do terminal administrativo; remover após uso |
-| `SIMPLESX_TOKEN`, `SIMPLESX_USUARIO`, `SIMPLESX_SENHA`, `SIMPLESX_URL` | `.env`, somente para o importador de cardápio | Ambiente privado do script, quando necessário |
-| `PAGBANK_API_TOKEN`, `PAGBANK_TAPON_APP_KEY`, `PAGBANK_SIMPLESX_ACCOUNT_ID` | `.dev.vars` para a futura integração | Secrets do Cloudflare; ver [configuração PagBank](./PAGBANK_CONFIGURACAO.md) |
-| `SIMPLESX_DB`, `HOST`, `PORT`, `NODE_ENV` | `.env` | Ambiente do servidor; use `NODE_ENV=production` |
+| `SIMPLEXSA_SENHA_DONO` | `.env` ou variável exportada, somente durante a criação do dono | Ambiente privado do terminal administrativo; remover após uso |
+| `SIMPLEXSA_TOKEN`, `SIMPLEXSA_USUARIO`, `SIMPLEXSA_SENHA`, `SIMPLEXSA_URL` | `.env`, somente para o importador de cardápio | Ambiente privado do script, quando necessário |
+| `PAGBANK_API_TOKEN`, `PAGBANK_TAPON_APP_KEY`, `PAGBANK_SIMPLEXSA_ACCOUNT_ID` | `.dev.vars` para a futura integração | Secrets do Cloudflare; ver [configuração PagBank](./PAGBANK_CONFIGURACAO.md) |
+| `SIMPLEXSA_DB`, `HOST`, `PORT`, `NODE_ENV` | `.env` | Ambiente do servidor; use `NODE_ENV=production` |
 | IDs D1 e KV | `wrangler.toml` local, copiado do modelo | Recursos da própria conta Cloudflare |
 
 Os scripts Node carregam `.env` com a API nativa do Node e preservam variáveis já

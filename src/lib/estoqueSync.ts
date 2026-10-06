@@ -3,7 +3,7 @@
  * Responsabilidade: Sincroniza atualizações de estoque entre telas abertas no navegador.
  */
 
-const ESTOQUE_EVENT = 'simplesx:estoque-atualizado';
+const ESTOQUE_EVENT = 'simplexsa:estoque-atualizado';
 const ESTOQUE_STORAGE_KEY = 'simplesx_estoque_atualizado_em';
 
 export function avisarEstoqueAtualizado() {

@@ -1,12 +1,11 @@
 {
-  "name": "simplesx-gestor-impressora",
-  "version": "1.5.9",
+  "name": "simplexsa-gestor-impressora",
+  "version": "1.5.10",
   "private": true,
-  "description": "Agente local de impressao do SimplesX",
+  "description": "Agente local de impressao do SimplexS.A",
   "homepage": "https://simplesx-projeto-beta.pages.dev",
   "author": {
-    "name": "SimplesX",
-    "email": "suporte@simplesx.app"
+    "name": "SimplexS.A"
   },
   "main": "src/main.cjs",
   "scripts": {
@@ -26,8 +25,8 @@
   },
   "build": {
     "appId": "com.simplesx.gestorimpressora",
-    "productName": "SimplesX Gestor",
-    "artifactName": "SimplesX-Gestor-${os}-${arch}.${ext}",
+    "productName": "SimplexS.A Gestor",
+    "artifactName": "simplexsa-gestor-${os}-${arch}.${ext}",
     "files": [
       "src/**/*",
       "package.json"
@@ -36,13 +35,17 @@
       "output": "release"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Utility",
-      "maintainer": "SimplesX <suporte@simplesx.app>",
-      "synopsis": "Agente local de impressao do SimplesX"
+      "maintainer": "SimplexS.A",
+      "synopsis": "Agente local de impressao do SimplexS.A"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "signAndEditExecutable": false
     },
     "nsis": {

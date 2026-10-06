@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { serverEnv } from '../server/env.js';
+import { serverEnv, projectEnv, localDatabasePath } from '../server/env.js';
 
 test('servidor exige Turnstile real em produção e não expõe outras variáveis', () => {
   assert.throws(() => serverEnv({ NODE_ENV: 'production' }), /TURNSTILE_SITE_KEY/);
@@ -35,4 +35,19 @@ test('carregamento de .env preserva ambiente exportado e aceita arquivo ausente'
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), ['exportado', 'valor do arquivo']);
+});
+
+test('nova marca aceita configurações anteriores e mantém o banco local existente', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'simplexsa-config-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(projectEnv('DB', { SIMPLEXSA_DB: 'novo.db', SIMPLESX_DB: 'anterior.db' }), 'novo.db');
+  assert.equal(projectEnv('SENHA_DONO', { SIMPLESX_SENHA_DONO: 'senha-anterior-ficticia' }), 'senha-anterior-ficticia');
+  assert.equal(localDatabasePath(dir, {}), path.join(dir, 'data', 'simplexsa.db'));
+  // Um arquivo anterior deve ser aberto no mesmo caminho, sem criar um banco vazio.
+  const oldFile = path.join(dir, 'data', 'simplesx.db');
+  mkdirSync(path.dirname(oldFile));
+  writeFileSync(oldFile, 'banco-ficticio');
+  assert.equal(localDatabasePath(dir, {}), oldFile);
+  assert.equal(localDatabasePath(dir, { SIMPLESX_DB: 'personalizado.db' }), 'personalizado.db');
+  assert.equal(localDatabasePath(dir, { SIMPLEXSA_DB: 'escolhido.db' }), 'escolhido.db');
 });

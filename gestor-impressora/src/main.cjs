@@ -12,6 +12,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { promisify } = require('node:util')
 const { JobJournal } = require('./job-journal.cjs')
+const { resolveDataDirectory } = require('./data-directory.cjs')
 
 const executarArquivo = promisify(execFile)
 
@@ -35,6 +36,9 @@ let ultimoContato = null
 let ultimoJob = null
 const filasImpressao = new Map()
 
+const dataDirectory = resolveDataDirectory(app.getPath('appData'))
+require('node:fs').mkdirSync(dataDirectory, { recursive: true })
+app.setPath('userData', dataDirectory)
 const instanciaUnica = app.requestSingleInstanceLock()
 if (!instanciaUnica) app.quit()
 else {
@@ -173,7 +177,7 @@ async function api(endpoint, body) {
   const contentType = resposta.headers.get('content-type') || ''
   const data = contentType.includes('application/json') ? await resposta.json().catch(() => ({})) : {}
   if (!contentType.includes('application/json')) {
-    throw new Error(`Endereço não é um servidor SimplesX (resposta ${resposta.status})`)
+    throw new Error(`Endereço não é um servidor SimplexS.A (resposta ${resposta.status})`)
   }
   if (!resposta.ok) throw new Error(data.error || `Servidor respondeu ${resposta.status}`)
   return data
@@ -373,7 +377,7 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
   const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
   const protocolo = config.protocolosImpressoras?.[printer.name] || (/RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
   const filaRaw = protocolo !== 'DRIVER'
-  const temporario = path.join(app.getPath('temp'), `simplesx-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
+  const temporario = path.join(app.getPath('temp'), `simplexsa-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
   const layout = layoutDriver(texto, larguraMm, alturaMm)
   const textoAjustado = filaRaw ? quebrarPorLargura(texto, larguraMm).trimEnd() : layout.texto
   await fs.writeFile(temporario, filaRaw
@@ -578,7 +582,7 @@ function criarJanela() {
     height: 700,
     minWidth: 700,
     minHeight: 580,
-    title: 'SimplesX Gestor de Impressoras',
+    title: 'SimplexS.A Gestor de Impressoras',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   })
   janela.loadFile(path.join(__dirname, 'index.html'))
@@ -592,9 +596,9 @@ function criarJanela() {
 function criarTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'tray.svg')).resize({ width: 18, height: 18 })
   tray = new Tray(icon)
-  tray.setToolTip('SimplesX Gestor de Impressoras')
+  tray.setToolTip('SimplexS.A Gestor de Impressoras')
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir SimplesX Gestor', click: () => janela.show() },
+    { label: 'Abrir SimplexS.A Gestor', click: () => janela.show() },
     { type: 'separator' },
     { label: 'Sincronizar agora', click: sincronizar },
     { label: 'Sair', click: () => app.quit() },
@@ -613,7 +617,7 @@ ipcMain.handle('salvar-config', async (_e, value) => {
 ipcMain.handle('desconectar', desconectar)
 ipcMain.handle('listar-impressoras', listarImpressoras)
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
-  await imprimirRaw({ texto: 'SIMPLESX - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
+  await imprimirRaw({ texto: 'SimplexS.A - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
   return { ok: true }
 })
 ipcMain.handle('salvar-impressora', async (_e, value) => {
@@ -649,7 +653,7 @@ if (instanciaUnica) {
     await sincronizar()
     timer = setInterval(sincronizar, INTERVALO_POLL)
   }).catch((erro) => {
-    dialog.showErrorBox('Não foi possível abrir o SimplesX Gestor', erro?.message || String(erro))
+    dialog.showErrorBox('Não foi possível abrir o SimplexS.A Gestor', erro?.message || String(erro))
     app.quit()
   })
 }

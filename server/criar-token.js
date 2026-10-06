@@ -10,22 +10,23 @@ import { createHash, randomBytes, pbkdf2Sync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import SqliteDb from './sqlite-db.js';
 import { cnpjValido } from '../shared/util.js';
-import { loadLocalEnv } from './env.js';
+import { loadLocalEnv, localDatabasePath, projectEnv } from './env.js';
 
 loadLocalEnv();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DB_FILE = process.env.SIMPLESX_DB || path.join(ROOT, 'data', 'simplesx.db');
+const DB_FILE = localDatabasePath(ROOT);
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 
 const remoto = process.argv.includes('--remote');
 const argumentos = process.argv.slice(2).filter((a) => a !== '--remote');
 const [nome, cnpjInformado, usuario, ...extras] = argumentos;
-const senha = process.env.SIMPLESX_SENHA_DONO;
+const senha = projectEnv('SENHA_DONO');
+delete process.env.SIMPLEXSA_SENHA_DONO;
 delete process.env.SIMPLESX_SENHA_DONO;
 const cnpj = String(cnpjInformado || '').replace(/\D/g, '');
 if (!nome || !cnpjValido(cnpj) || !usuario || !senha || extras.length) {
-  console.error('Defina SIMPLESX_SENHA_DONO no ambiente ou no .env privado; não passe senhas como argumento.');
+  console.error('Defina SIMPLEXSA_SENHA_DONO no ambiente ou no .env privado; não passe senhas como argumento.');
   console.error('Uso local:  npm run criar-token -- "Estabelecimento" CNPJ usuario');
   console.error('Uso deploy: npm run criar-token -- "Estabelecimento" CNPJ usuario --remote');
   process.exit(1);

@@ -36,7 +36,7 @@ export default function InvestidoresPage() {
 
   useEffect(() => {
     const tituloAnterior = document.title;
-    document.title = 'SimplesX | Apresentação aos investidores';
+    document.title = 'SimplexS.A | Apresentação aos investidores';
     if (!window.location.hash) window.scrollTo(0, 0);
     else document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
     return () => { document.title = tituloAnterior; };
@@ -46,9 +46,9 @@ export default function InvestidoresPage() {
     <a href="#apresentacao" className={`sr-only z-50 rounded-lg bg-white p-3 text-brand-700 focus:not-sr-only focus:fixed focus:left-4 focus:top-4 ${foco}`}>Pular para a apresentação</a>
     <header className="border-b border-white/10 bg-slate-950 text-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-5 sm:px-8">
-        <Link to={autenticado ? '/' : '/login'} aria-label="SimplesX — voltar ao sistema" className={`flex items-center gap-3 rounded-lg ${foco}`}>
+        <Link to={autenticado ? '/' : '/login'} aria-label="SimplexS.A — voltar ao sistema" className={`flex items-center gap-3 rounded-lg ${foco}`}>
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-xl font-extrabold">S</span>
-          <span className="text-lg font-extrabold tracking-tight">SimplesX</span>
+          <span className="text-lg font-extrabold tracking-tight">SimplexS.A</span>
         </Link>
         <Link to={autenticado ? '/' : '/login'} className={`inline-flex items-center gap-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white ${foco}`}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Voltar ao sistema
@@ -100,7 +100,7 @@ export default function InvestidoresPage() {
           <div>
             <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-brand-600">A proposta</p>
             <h2 id="proposta-titulo" className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">As informações essenciais do comércio, na palma da mão.</h2>
-            <p className="mt-5 leading-relaxed text-slate-600">A SimplesX reúne pedidos, vendas, estoque, validade e controle financeiro em uma experiência integrada, com uma interface intuitiva e recursos para apoiar o trabalho diário.</p>
+            <p className="mt-5 leading-relaxed text-slate-600">A SimplexS.A reúne pedidos, vendas, estoque, validade e controle financeiro em uma experiência integrada, com uma interface intuitiva e recursos para apoiar o trabalho diário.</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
             <h3 className="font-bold text-slate-900">O problema que queremos resolver</h3>
@@ -205,7 +205,7 @@ export default function InvestidoresPage() {
           <h2 className="mt-4 max-w-3xl text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">Começar pela gestão diária. Ampliar as possibilidades do comércio.</h2>
           <p className="mt-5 max-w-3xl leading-relaxed text-slate-300">Cinco pilares funcionais, com foco em restaurantes e mercados. O próximo passo é consolidar a operação, ampliar as integrações e validar um marketplace conectado à gestão. Queremos desenvolver essa expansão com metas mensuráveis e valor demonstrado aos clientes.</p>
           <div className="mt-7">
-            <h3 className="mb-4 text-lg font-bold">Quer fazer parte do futuro da SimplesX?</h3>
+            <h3 className="mb-4 text-lg font-bold">Quer fazer parte do futuro da SimplexS.A?</h3>
             <BotaoInvestir />
             <p className="mt-3 text-sm text-slate-300">Fale com Brendo Myranda no WhatsApp: {contatoInvestimento.telefoneFormatado}.</p>
           </div>
@@ -214,7 +214,7 @@ export default function InvestidoresPage() {
       </div>
     </main>
     <footer className="border-t border-slate-200 bg-white px-5 py-7 sm:px-8">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 text-xs text-slate-500"><p><strong className="text-slate-800">SimplesX</strong> · Apresentação aos investidores</p><p>Brendo Myranda — CEO</p></div>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 text-xs text-slate-500"><p><strong className="text-slate-800">SimplexS.A</strong> · Apresentação aos investidores</p><p>Brendo Myranda — CEO</p></div>
     </footer>
   </div>;
 }

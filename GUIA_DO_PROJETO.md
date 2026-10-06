@@ -1,4 +1,4 @@
-# Guia do projeto SimplesX
+# Guia do projeto SimplexS.A
 
 Este documento explica como o projeto está organizado, qual é o caminho dos dados e para que serve cada arquivo autoral. Ele também separa arquivos que devem ser editados daqueles que são criados automaticamente pelas ferramentas.
 
@@ -24,7 +24,7 @@ shared/router.js escolhe o handler da rota
         ↓
 shared/handlers-*.js valida e executa a regra de negócio
         ↓
-Cloudflare D1 ou data/simplesx.db salva/consulta os dados
+Cloudflare D1 ou data/simplexsa.db salva/consulta os dados
 ```
 
 ## Por que aparecem tantos arquivos JSON?
@@ -48,7 +48,7 @@ Os demais JSON vistos na pasta pertencem principalmente a:
 - `.wrangler/`: estado e cache local do simulador do Cloudflare.
 - arquivos `*.tsbuildinfo`: cache do compilador TypeScript; apesar do conteúdo parecido com JSON, são artefatos gerados.
 
-Esses arquivos gerados não representam centenas de partes do SimplesX. Eles são como peças internas das ferramentas. Não devem receber comentários, e `package-lock.json` também não aceita comentários. JSON padrão não permite `//` nem `/* ... */`; colocar comentários nele pode impedir o build. A explicação deve ficar neste guia ou em um README.
+Esses arquivos gerados não representam centenas de partes do SimplexS.A. Eles são como peças internas das ferramentas. Não devem receber comentários, e `package-lock.json` também não aceita comentários. JSON padrão não permite `//` nem `/* ... */`; colocar comentários nele pode impedir o build. A explicação deve ficar neste guia ou em um README.
 
 ## Raiz e configuração
 
@@ -172,7 +172,7 @@ Esta pasta evita duplicar regras entre o Worker do Cloudflare e o servidor Expre
 
 ## Banco e migrations
 
-- `data/simplesx.db`: banco SQLite local, criado pelas migrations e ignorado pelo Git; não acompanha clones do repositório.
+- `data/simplexsa.db`: banco SQLite local, criado pelas migrations e ignorado pelo Git; não acompanha clones do repositório.
 - `migrations/0001_schema.sql`: estrutura inicial completa do sistema.
 - `0002_pagamentos_individuais.sql`: pré-fechamento e pagamentos separados por pessoa.
 - `0003_exibicao_produto.sql`: controla exibição de produtos no restaurante e mercado.
@@ -222,7 +222,7 @@ As migrations são numeradas porque o banco precisa executar as mudanças exatam
 - `app/proguard-rules.pro`: regras adicionais de redução/ofuscação; atualmente vazio.
 - `app/src/main/AndroidManifest.xml`: permissões, Activity inicial, receiver de boot e serviço de sincronização.
 - `data/AppConfig.kt`: persistência local e segura da URL, identificação e token do dispositivo.
-- `network/SimplesXApi.kt`: cliente HTTP para pareamento, heartbeat, consulta e confirmação das tarefas.
+- `network/SimplexsaApi.kt`: cliente HTTP para pareamento, heartbeat, consulta e confirmação das tarefas.
 - `print/PrinterTransport.kt`: descobre/conecta impressoras e transmite bytes por USB, Bluetooth ou rede.
 - `print/PrinterCommands.kt`: escolhe protocolo e monta o trabalho final.
 - `print/EscPos.kt`: comandos ESC/POS para cupons térmicos.

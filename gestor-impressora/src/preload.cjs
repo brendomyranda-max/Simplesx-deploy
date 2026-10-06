@@ -5,7 +5,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('simplesx', {
+contextBridge.exposeInMainWorld('simplexsa', {
   status: () => ipcRenderer.invoke('status'),
   salvar: (config) => ipcRenderer.invoke('salvar-config', config),
   desconectar: () => ipcRenderer.invoke('desconectar'),

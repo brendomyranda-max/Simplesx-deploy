@@ -15,9 +15,9 @@
 
     <application
         android:allowBackup="false"
-        android:label="SimplesX Gestor"
+        android:label="SimplexS.A Gestor"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SimplesX"
+        android:theme="@style/Theme.Simplexsa"
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"

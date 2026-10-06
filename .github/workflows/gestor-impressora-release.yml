@@ -42,7 +42,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: gestor-${{ runner.os }}
-          path: gestor-impressora/release/SimplesX-Gestor-*
+          path: gestor-impressora/release/simplexsa-gestor-*
 
   android:
     runs-on: ubuntu-latest
@@ -61,20 +61,20 @@ jobs:
       - name: Preparar assinatura permanente do Android
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/simplesx-release.jks"
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/simplexsa-release.jks"
       - name: Compilar APK Android
         env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/simplesx-release.jks
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/simplexsa-release.jks
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease
+        run: gradle :app:testDebugUnitTest :app:assembleRelease
       - name: Preparar APK
-        run: cp app/build/outputs/apk/release/app-release.apk SimplesX-Gestor-android.apk
+        run: cp app/build/outputs/apk/release/app-release.apk simplexsa-gestor-android.apk
       - uses: actions/upload-artifact@v4
         with:
           name: gestor-Android
-          path: gestor-android/SimplesX-Gestor-android.apk
+          path: gestor-android/simplexsa-gestor-android.apk
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -88,4 +88,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: artefatos/*
+          make_latest: false
 # Testa e empacota versões Linux e Windows do gestor quando uma release é criada.

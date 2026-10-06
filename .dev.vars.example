@@ -1,7 +1,7 @@
 # Copie para .dev.vars somente no seu computador. Nunca envie .dev.vars ao Git.
 PAGBANK_API_TOKEN=
 PAGBANK_TAPON_APP_KEY=
-PAGBANK_SIMPLESX_ACCOUNT_ID=
+PAGBANK_SIMPLEXSA_ACCOUNT_ID=
 
 # Chaves PÚBLICAS DE TESTE, somente para desenvolvimento com Wrangler.
 TURNSTILE_SITE_KEY=1x00000000000000000000AA

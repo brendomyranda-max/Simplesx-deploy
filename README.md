@@ -1,9 +1,13 @@
-# SimplesX — gestão de mercados e restaurantes
+# SimplexS.A — gestão de mercados e restaurantes
 
 Aplicação web com PDV, mesas e comandas, estoque, ficha técnica, validade,
 financeiro e impressão por agentes desktop e Android. React e TypeScript no
 frontend; API JavaScript compartilhada entre Express/SQLite local e Cloudflare
 Pages/D1/KV. Os dados são separados por estabelecimento.
+
+A marca pública é **SimplexS.A**; pacotes e novos arquivos usam **simplexsa**.
+Consulte [MARCA.md](./MARCA.md) para a compatibilidade da atualização com as
+instalações, os dados e os endereços existentes.
 
 ## Executar localmente
 
@@ -53,7 +57,7 @@ em [CADASTRO_E_INVESTIMENTO.md](./CADASTRO_E_INVESTIMENTO.md).
 
 ## Criar um estabelecimento
 
-Tokens não podem ser criados pela interface. Defina `SIMPLESX_SENHA_DONO` no
+Tokens não podem ser criados pela interface. Defina `SIMPLEXSA_SENHA_DONO` no
 `.env` privado (ao menos 8 caracteres), execute o comando e apague a senha do
 arquivo em seguida. Não passe senhas nos argumentos do terminal:
 
@@ -175,7 +179,7 @@ do próprio dispositivo.
 
 Variáveis já usadas pelo projeto:
 
-- `SIMPLESX_DB`: caminho do SQLite no servidor local;
+- `SIMPLEXSA_DB`: caminho do SQLite no servidor local;
 - `PORT` e `HOST`: endereço do servidor local;
 - `TURNSTILE_SITE_KEY` e `TURNSTILE_SECRET_KEY`: proteção do login web.
 

@@ -62,7 +62,7 @@ export function Login() {
       <motion.div initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center">
           <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500 text-3xl font-extrabold text-white shadow-2xl shadow-brand-500/40">S</div>
-          <h1 className="text-2xl font-extrabold text-white">SimplesX</h1>
+          <h1 className="text-2xl font-extrabold text-white">SimplexS.A</h1>
           <p className="mt-1 text-sm text-slate-400">Acesso seguro ao seu estabelecimento</p>
         </div>
         <div className="card p-6">
