@@ -137,6 +137,7 @@ const routes = [
   { m: 'POST', p: '/api/device-tasks', h: devices.createDeviceTaskHandler },
   { m: 'POST', p: '/api/device-tasks/:id/cancel', h: devices.cancelDeviceTaskHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/device-tasks', h: devices.listDeviceTasksHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/device-tasks/:id', h: devices.getDeviceTaskHandler, mod: 'gestor' },
 
   // perdas
   { m: 'GET', p: '/api/perdas', h: fin.listPerdasHandler },

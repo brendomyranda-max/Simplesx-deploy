@@ -353,15 +353,46 @@ export const gestorApi = {
   }) => api.post<{ ok: boolean; job_id?: number }>('/impressao/enviar', b),
 };
 
+export interface DevicePrinter {
+  name: string;
+  connection?: string;
+  protocol?: string;
+  width_mm?: number;
+}
+
+export interface PrintDevice {
+  id: string;
+  nome: string;
+  plataforma: string;
+  versao?: string;
+  status: string;
+  online: boolean;
+  ultima_conexao?: string;
+  ultimo_erro?: string;
+  printers: DevicePrinter[];
+}
+
+export interface DeviceTask {
+  id: string;
+  device_id: string;
+  status: 'pending' | 'sent' | 'processing' | 'success' | 'failed' | 'cancelled';
+  erro_codigo?: string | null;
+  erro_mensagem?: string | null;
+}
+
 export const deviceApi = {
   update: (id: string, nome: string) => api.put<{ ok: boolean }>(`/devices/${encodeURIComponent(id)}`, { nome }),
   pairingCode: () => api.post<{ pairing_id: string; code: string; expires_at: string }>('/devices/pairing-codes'),
-  list: () => api.get<Array<{ id: string; nome: string; plataforma: string; versao?: string; status: string; ultima_conexao?: string; ultimo_erro?: string }>>('/devices'),
-  test: (deviceId: string) => api.post<{ task: { id: string; status: string } }>('/device-tasks', {
+  list: () => api.get<PrintDevice[]>('/devices'),
+  task: (id: string) => api.get<DeviceTask>(`/device-tasks/${encodeURIComponent(id)}`),
+  test: (deviceId: string, printer: DevicePrinter, idempotencyKey: string) => api.post<{ task: DeviceTask }>('/device-tasks', {
     device_id: deviceId,
     type: 'TEST_PRINTER',
-    payload: { content: `SimplexS.A - TESTE ANDROID\n${new Date().toLocaleString('pt-BR')}\nConexao com a fila segura OK`, cut: true, feed: 3 },
-    idempotency_key: `android-test-${deviceId}-${crypto.randomUUID()}`,
+    payload: {
+      content: `SimplexS.A - TESTE ANDROID\nImpressora: ${printer.name}\n${new Date().toLocaleString('pt-BR')}\nConexao com o Gestor Android OK`,
+      printer: printer.name, width_mm: printer.width_mm || 80, cut: true, feed: 3,
+    },
+    idempotency_key: idempotencyKey,
   }),
   remove: (deviceId: string) => api.del<{ ok: boolean }>(`/devices/${encodeURIComponent(deviceId)}`),
 };

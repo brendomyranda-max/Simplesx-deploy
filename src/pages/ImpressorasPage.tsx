@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone, Trash2 } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { DevicePrinterTest } from '@/components/DevicePrinterTest';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
 import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi } from '@/lib/api';
 import { getBobina, setBobina, type Bobina } from '@/lib/print';
@@ -121,15 +122,6 @@ export function ImpressorasPage() {
       toast('error', err?.error || 'Não foi possível gerar o pareamento');
     } finally {
       setGerandoPairing(false);
-    }
-  };
-
-  const testarDevice = async (device: any) => {
-    try {
-      await deviceApi.test(device.id);
-      toast('success', `Teste enviado para ${device.nome}`);
-    } catch (err: any) {
-      toast('error', err?.error || 'Não foi possível enviar o teste');
     }
   };
 
@@ -431,13 +423,11 @@ export function ImpressorasPage() {
                   </p>
                 </div>
                 <Badge color={device.status === 'online' ? 'green' : device.status === 'error' ? 'red' : 'slate'}>{device.status}</Badge>
-                <Button size="sm" variant="secondary" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => testarDevice(device)}>
-                  Testar
-                </Button>
                 <Button size="sm" variant="secondary" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditandoServidor({ tipo: 'android', id: device.id, nome: device.nome })}>Editar</Button>
                 <Button size="sm" variant="danger" disabled={device.online} title={device.online ? 'Desconecte o servidor no aplicativo antes de excluir' : 'Excluir servidor'} icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => removerServidor(device, 'android')}>
                   Excluir
                 </Button>
+                <DevicePrinterTest device={device} />
               </div>
             ))}
             </div>

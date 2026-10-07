@@ -477,6 +477,15 @@ export async function listDeviceTasksHandler(c, env) {
   return c.json(rows.results);
 }
 
+export async function getDeviceTaskHandler(c, env) {
+  const task = await env.DB.prepare(
+    `SELECT id, device_id, tipo, status, erro_codigo, erro_mensagem, criado_em, atualizado_em
+     FROM device_tasks WHERE id=?`
+  ).bind(c.params.id).first();
+  if (!task) return c.json({ error: 'Tarefa não encontrada' }, 404);
+  return c.json(task);
+}
+
 export async function revokeDeviceHandler(c, env) {
   const tenantId = estabelecimentoId(env);
   const current = now();

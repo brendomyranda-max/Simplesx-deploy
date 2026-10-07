@@ -159,6 +159,11 @@ Os aplicativos 1.5.13 incluem ajustes de descoberta e impressão pelo driver no
 desktop e de recepção e transporte no Android. Atualize pelo download da tela
 **Impressoras**, preservando o pareamento e as configurações da instalação.
 
+No teste do Gestor Android pelo site, escolha a **Impressora para o teste**
+(Bluetooth, rede ou USB). A tela acompanha a fila e mostra a confirmação do
+Gestor ou o erro retornado pela impressora. Estar online ou aceitar um trabalho
+na fila não é apresentado como confirmação de impressão.
+
 A versão **1.5.9** adiciona proteção para pedidos simultâneos na mesma mesa.
 Aplique `0023_pedidos_concorrentes.sql` antes do backend e atualize os Gestores
 Windows/Linux/Android. Cada lançamento usa uma chave que permite retomar uma
