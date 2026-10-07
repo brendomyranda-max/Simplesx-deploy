@@ -32,7 +32,7 @@ endereço, identidade de aplicativo ou armazenamento exige uma migração própr
 
 ## Distribuição
 
-Os downloads web apontam para os três arquivos da versão 1.5.10, publicados
+Os downloads web apontam para os três arquivos da versão 1.5.13, publicados
 antes do deploy. O workflow cria a release sem mudar `latest`; depois da
 conferência dos arquivos e do deploy, a release pode ser promovida a mais recente.
 Ao atualizar os gestores, ajuste a versão em `functions/downloads/[sistema].ts`.
