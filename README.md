@@ -149,13 +149,13 @@ reserva temporária durante o fechamento, preservando os pedidos existentes.
 
 ## Gestor Local v2
 
-Na versão **1.5.12**, as rotas com **Usar a impressora padrão do servidor**
+Na versão **1.5.13**, as rotas com **Usar a impressora padrão do servidor**
 respeitam a seleção feita no Gestor Windows, Linux ou Android. O nome da rota
 (por exemplo, Cozinha ou Bar) não substitui o nome da impressora física.
 O teste direcionado ao desktop também respeita esse destino quando existe um
 Android padrão configurado. Essas correções exigem atualizar o backend.
 
-Os aplicativos 1.5.12 incluem ajustes de descoberta e impressão pelo driver no
+Os aplicativos 1.5.13 incluem ajustes de descoberta e impressão pelo driver no
 desktop e de recepção e transporte no Android. Atualize pelo download da tela
 **Impressoras**, preservando o pareamento e as configurações da instalação.
 

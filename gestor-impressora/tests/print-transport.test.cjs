@@ -10,8 +10,10 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.cjs'), 'u
 function fixture(platform, config = {}) {
   const calls = [], files = new Map()
   const context = {
-    Buffer, path, externalFilePath, __dirname: '/installed/app.asar/src', process: { platform },
-    config, crypto: { randomUUID: () => 'job-id' }, app: { getPath: () => '/tmp' },
+    Buffer, path: platform === 'win32' ? path.win32 : path.posix, externalFilePath,
+    __dirname: platform === 'win32' ? String.raw`C:\installed\app.asar\src` : '/installed/app.asar/src',
+    process: { platform }, config, crypto: { randomUUID: () => 'job-id' },
+    app: { getPath: () => platform === 'win32' ? String.raw`C:\Temp` : '/tmp' },
     fs: { writeFile: async (file, content) => files.set(file, content), unlink: async () => {} },
     executarArquivo: async (file, args) => calls.push({ file, args }),
   }
@@ -24,7 +26,7 @@ test('Windows DRIVER usa o driver com altura automática e largura recebida do t
   const f = fixture('win32')
   await f.print({ texto: 'Teste\nConexão OK', larguraMm: 80 }, { name: 'Cupom' })
   const { args } = f.calls[0]
-  assert.ok(args.includes('/installed/app.asar.unpacked/src/windows-fit.ps1'))
+  assert.ok(args.includes(String.raw`C:\installed\app.asar.unpacked\src\windows-fit.ps1`))
   assert.equal(args[args.indexOf('-WidthMm') + 1], '80')
   assert.ok(Number(args[args.indexOf('-HeightMm') + 1]) >= 10)
 })
@@ -37,7 +39,7 @@ test('Windows preserva altura fixa e protocolo RAW explícito', async () => {
   assert.equal(args[args.indexOf('-WidthMm') + 1], '58')
   const raw = fixture('win32', { protocolosImpressoras: { Caixa: 'ESC_POS' } })
   await raw.print({ texto: 'Teste' }, { name: 'Caixa' })
-  assert.ok(raw.calls[0].args.includes('/installed/app.asar.unpacked/src/windows-raw.ps1'))
+  assert.ok(raw.calls[0].args.includes(String.raw`C:\installed\app.asar.unpacked\src\windows-raw.ps1`))
   assert.deepEqual([...raw.files.values()][0].subarray(0, 2), Buffer.from([0x1b, 0x40]))
 })
 

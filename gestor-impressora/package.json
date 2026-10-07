@@ -1,6 +1,6 @@
 {
   "name": "simplexsa-gestor-impressora",
-  "version": "1.5.12",
+  "version": "1.5.13",
   "private": true,
   "description": "Agente local de impressao do SimplexS.A",
   "homepage": "https://simplesx-projeto-beta.pages.dev",
