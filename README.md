@@ -110,6 +110,23 @@ Credenciais e certificados não devem ser gravados no D1. O banco armazena apena
 o identificador da empresa no provedor; segredos globais pertencem aos secrets do
 Worker/Cloudflare.
 
+## Produtos sem vencimento
+
+No cadastro de produtos simples e insumos, marque **Sem vencimento** para não
+exigir uma data de vencimento da embalagem fechada. A fabricação passa a ser
+opcional. As entradas de mercadorias respeitam essa opção e registram os lotes
+sem gerar alertas de vencimento da embalagem fechada.
+
+O **Vencimento pós-abertura (dias)** continua independente: é obrigatório para
+insumos e opcional para produtos simples. Em **Controle de Validade**, procure o
+produto, informe a abertura e use **Registrar e gerar etiqueta**. O vencimento
+da etiqueta é calculado pelo prazo após abertura, mesmo em produtos sem vencimento.
+Lotes e controles já registrados são preservados ao editar o cadastro.
+
+Aplique `0024_produtos_sem_vencimento.sql` antes de publicar o backend:
+`npm run db:migrate`. O comando `npm run deploy` já aplica as migrações antes da
+publicação. Produtos existentes continuam com a opção desmarcada.
+
 ## Pedidos do restaurante
 
 O cardápio permite navegar por categorias e subcategorias, buscar pelo nome e
@@ -131,6 +148,16 @@ Antes de publicar o backend, aplique `0022_transferencias_pedidos.sql` usando
 reserva temporária durante o fechamento, preservando os pedidos existentes.
 
 ## Gestor Local v2
+
+Na versão **1.5.12**, as rotas com **Usar a impressora padrão do servidor**
+respeitam a seleção feita no Gestor Windows, Linux ou Android. O nome da rota
+(por exemplo, Cozinha ou Bar) não substitui o nome da impressora física.
+O teste direcionado ao desktop também respeita esse destino quando existe um
+Android padrão configurado. Essas correções exigem atualizar o backend.
+
+Os aplicativos 1.5.12 incluem ajustes de descoberta e impressão pelo driver no
+desktop e de recepção e transporte no Android. Atualize pelo download da tela
+**Impressoras**, preservando o pareamento e as configurações da instalação.
 
 A versão **1.5.9** adiciona proteção para pedidos simultâneos na mesma mesa.
 Aplique `0023_pedidos_concorrentes.sql` antes do backend e atualize os Gestores

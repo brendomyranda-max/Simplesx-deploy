@@ -5,10 +5,13 @@ param(
   [Parameter(Mandatory = $true)][double]$HeightMm
 )
 
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Drawing
 
 $text = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
 $document = New-Object System.Drawing.Printing.PrintDocument
+$document.PrintController = New-Object System.Drawing.Printing.StandardPrintController
 $document.PrinterSettings.PrinterName = $PrinterName
 if (-not $document.PrinterSettings.IsValid) { throw "Impressora não encontrada: $PrinterName" }
 

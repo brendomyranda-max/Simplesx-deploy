@@ -13,6 +13,8 @@ const path = require('node:path')
 const { promisify } = require('node:util')
 const { JobJournal } = require('./job-journal.cjs')
 const { resolveDataDirectory } = require('./data-directory.cjs')
+const { createPrinterDiscovery, selectPrinter } = require('./printer-discovery.cjs')
+const { externalFilePath } = require('./native-files.cjs')
 
 const executarArquivo = promisify(execFile)
 
@@ -35,6 +37,13 @@ let ultimoErro = ''
 let ultimoContato = null
 let ultimoJob = null
 const filasImpressao = new Map()
+const descobrirImpressoras = createPrinterDiscovery({
+  execute: executarArquivo,
+  electronPrinters: () => {
+    if (!janela || janela.isDestroyed()) return []
+    return janela.webContents.getPrintersAsync()
+  },
+})
 
 const dataDirectory = resolveDataDirectory(app.getPath('appData'))
 require('node:fs').mkdirSync(dataDirectory, { recursive: true })
@@ -188,61 +197,12 @@ async function registrar() {
   await api('/gestor/register', { token: config.token, nome: config.nome, ip: os.hostname(), printers })
 }
 
-async function filasCupsDisponiveis() {
-  if (process.platform !== 'linux') return null
-  try {
-    const opcoes = { env: { ...process.env, LC_ALL: 'C' }, timeout: 5000 }
-    const [{ stdout: estado }, { stdout: aceitando }] = await Promise.all([
-      executarArquivo('lpstat', ['-p'], opcoes),
-      executarArquivo('lpstat', ['-a'], opcoes),
-    ])
-    const habilitadas = new Set()
-    for (const linha of estado.split('\n')) {
-      const match = linha.match(/^printer\s+(\S+)\s+/)
-      if (match && !/\bdisabled\b/i.test(linha)) habilitadas.add(match[1])
-    }
-    const aceitas = new Set()
-    for (const linha of aceitando.split('\n')) {
-      const match = linha.match(/^(\S+)\s+accepting requests/i)
-      if (match) aceitas.add(match[1])
-    }
-    return new Set([...habilitadas].filter((nome) => aceitas.has(nome)))
-  } catch (erro) {
-    throw new Error(`CUPS indisponível: ${erro.stderr?.trim() || erro.message}`)
-  }
-}
-
-async function impressorasInstaladas() {
-  if (!janela || janela.isDestroyed()) return []
-  const printers = await janela.webContents.getPrintersAsync()
-  const cups = await filasCupsDisponiveis()
-  if (!cups) return printers
-  return printers.filter((printer) => cups.has(printer.name))
-}
-
 function nomeComparavel(value) {
   return String(value || '').trim().toLocaleLowerCase('pt-BR')
 }
 
 async function resolverImpressora(nomeSolicitado) {
-  const printers = await impressorasInstaladas()
-  if (!printers.length) throw new Error('Nenhuma impressora instalada foi encontrada pelo Windows/Linux')
-
-  const solicitado = String(nomeSolicitado || '').trim()
-  const configurado = String(config.impressoraPadrao || '').trim()
-  for (const candidato of [solicitado, configurado]) {
-    if (!candidato) continue
-    const chave = nomeComparavel(candidato)
-    const printer = printers.find((p) =>
-      nomeComparavel(p.name) === chave || nomeComparavel(p.displayName) === chave)
-    if (printer) return printer
-    if (candidato === solicitado && solicitado) {
-      throw new Error(`A impressora "${solicitado}" não está disponível neste computador`)
-    }
-  }
-
-  // Sem destino solicitado, usa somente uma fila local confirmada como ativa.
-  return printers.find((p) => p.isDefault) || printers[0]
+  return selectPrinter(await listarImpressoras(), nomeSolicitado, config.impressoraPadrao)
 }
 
 function quebrarPorLargura(texto, larguraMm) {
@@ -371,11 +331,13 @@ function layoutDriver(texto, larguraMm, alturaMm) {
   }
 }
 
-async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 0, centralizar = false }, printer) {
-  const larguraMm = Number(config.largurasImpressoras?.[printer.name]) || 58
+async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 0, centralizar = false, larguraMm: larguraTrabalho }, printer) {
+  const solicitada = Number(larguraTrabalho)
+  const larguraMm = Number(config.largurasImpressoras?.[printer.name]) ||
+    (Number.isFinite(solicitada) && solicitada >= 20 && solicitada <= 320 ? solicitada : 58)
   const alturaMm = Number(config.alturasImpressoras?.[printer.name]) || null
   const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
-  const protocolo = config.protocolosImpressoras?.[printer.name] || (/RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
+  const protocolo = config.protocolosImpressoras?.[printer.name] || (printer.raw || /RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
   const filaRaw = protocolo !== 'DRIVER'
   const temporario = path.join(app.getPath('temp'), `simplexsa-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
   const layout = layoutDriver(texto, larguraMm, alturaMm)
@@ -400,12 +362,12 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
           ], { timeout: 15000 })
         }
       } else if (process.platform === 'win32') {
-        const script = !filaRaw && alturaMm ? 'windows-fit.ps1' : 'windows-raw.ps1'
+        const script = filaRaw ? 'windows-raw.ps1' : 'windows-fit.ps1'
         const argumentos = [
           '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-          '-File', path.join(__dirname, script), '-PrinterName', printer.name, '-FilePath', temporario,
+          '-File', externalFilePath(path.join(__dirname, script)), '-PrinterName', printer.name, '-FilePath', temporario,
         ]
-        if (script === 'windows-fit.ps1') argumentos.push('-WidthMm', String(larguraMm), '-HeightMm', String(alturaMm))
+        if (script === 'windows-fit.ps1') argumentos.push('-WidthMm', String(larguraMm), '-HeightMm', String(layout.alturaMm))
         await executarArquivo('powershell.exe', argumentos, { timeout: 15000, windowsHide: true })
       } else {
         throw new Error(`Impressao RAW ainda nao suportada em ${process.platform}`)
@@ -432,7 +394,7 @@ async function imprimirRaw(opcoes) {
 async function executarJob(job) {
   if (job.tipo === 'html') throw new Error('Job HTML recusado: o deploy deve enviar somente texto para impressao termica')
   const etiquetaValidade = job.tipo === 'PRINT_LABEL' || /(^|\n)ABERTO:.*\nVENCE:.*\nTEMP:.*\nRESP:/i.test(job.conteudo || '')
-  await imprimirRaw({ texto: job.conteudo, impressora: job.impressora, copias: job.copias, cortar: job.cortar, alimentar: job.alimentar, centralizar: etiquetaValidade })
+  await imprimirRaw({ texto: job.conteudo, impressora: job.impressora, copias: job.copias, cortar: job.cortar, alimentar: job.alimentar, centralizar: etiquetaValidade, larguraMm: job.largura_mm })
 }
 
 async function confirmarJob(job, status, erro) {
@@ -499,20 +461,8 @@ async function sincronizarAgora() {
   }
 }
 
-async function listarImpressoras() {
-  if (!janela || janela.isDestroyed()) return []
-  const printers = await janela.webContents.getPrintersAsync()
-  const cups = await filasCupsDisponiveis()
-  return printers.map((p) => ({
-    name: p.name,
-    displayName: p.displayName,
-    description: p.description,
-    status: p.status,
-    state: !cups || cups.has(p.name) ? 'disponivel' : 'indisponivel',
-    enabled: !cups || cups.has(p.name),
-    accepting: !cups || cups.has(p.name),
-    isDefault: p.isDefault,
-  }))
+async function listarImpressoras(force = false) {
+  return descobrirImpressoras({ force })
 }
 
 function responderJson(res, status, data) {
@@ -544,8 +494,12 @@ function iniciarServidorLocal() {
     if (req.method === 'OPTIONS') return responderJson(res, 204, {})
     if (req.method === 'GET' && req.url === '/health') return responderJson(res, 200, { ok: true, version: app.getVersion() })
     if (req.method === 'GET' && req.url === '/printers') {
-      const printers = await listarImpressoras()
-      return responderJson(res, 200, { printers })
+      try {
+        const printers = await listarImpressoras(true)
+        return responderJson(res, 200, { printers })
+      } catch (erro) {
+        return responderJson(res, 503, { error: erro.message })
+      }
     }
     if (req.method === 'POST' && req.url === '/print') {
       try {
@@ -558,7 +512,7 @@ function iniciarServidorLocal() {
         }
         const body = JSON.parse(Buffer.concat(partes).toString('utf8'))
         if (body.html) throw new Error('HTML nao e aceito; envie o campo text')
-        await imprimirRaw({ texto: body.text || '', impressora: body.printer, copias: body.copies, cortar: body.cut, alimentar: body.feed })
+        await imprimirRaw({ texto: body.text || '', impressora: body.printer, copias: body.copies, cortar: body.cut, alimentar: body.feed, larguraMm: body.width })
         return responderJson(res, 200, { ok: true })
       } catch (erro) {
         return responderJson(res, 500, { ok: false, error: erro.message })
@@ -615,7 +569,7 @@ ipcMain.handle('salvar-config', async (_e, value) => {
   return statusAtual()
 })
 ipcMain.handle('desconectar', desconectar)
-ipcMain.handle('listar-impressoras', listarImpressoras)
+ipcMain.handle('listar-impressoras', () => listarImpressoras(true))
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
   await imprimirRaw({ texto: 'SimplexS.A - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
   return { ok: true }

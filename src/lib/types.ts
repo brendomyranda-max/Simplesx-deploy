@@ -64,6 +64,7 @@ export interface Produto {
   fornecedor_id: number | null;
   fornecedor_nome?: string | null;
   marca: string | null;
+  sem_vencimento?: number;
   validade_fabricacao_dias: number | null;
   validade_aberto_dias: number | null;
   data_fabricacao?: string | null;

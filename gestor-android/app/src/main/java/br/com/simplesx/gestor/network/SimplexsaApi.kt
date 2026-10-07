@@ -6,6 +6,7 @@
 package br.com.simplesx.gestor.network
 
 import br.com.simplesx.gestor.data.AppConfig
+import br.com.simplesx.gestor.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -15,7 +16,7 @@ data class DeviceTask(val id: String, val type: String, val leaseId: String, val
 data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
 
 class SimplexsaApi(private val config: AppConfig) {
-    private val appVersion = "1.5.9"
+    private val appVersion = BuildConfig.VERSION_NAME
     private fun request(path: String, body: JSONObject, authenticated: Boolean = true): JSONObject {
         val base = config.deployUrl.trimEnd('/')
         val parsed = URL(base)
@@ -37,7 +38,9 @@ class SimplexsaApi(private val config: AppConfig) {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            val json = runCatching { JSONObject(text) }.getOrDefault(JSONObject())
+            val json = runCatching { JSONObject(text) }.getOrElse {
+                throw IllegalStateException("Endereço não é um servidor SimplexS.A ou retornou uma resposta inválida (HTTP ${connection.responseCode})")
+            }
             if (connection.responseCode !in 200..299) throw IllegalStateException(json.optString("error", "Servidor respondeu ${connection.responseCode}"))
             json
         } finally {
@@ -96,8 +99,11 @@ class SimplexsaApi(private val config: AppConfig) {
             if (code != null) put("error_code", code)
             if (error != null) put("error_message", error.take(2000))
             if (status == "success") put("result", JSONObject().apply {
-                put("printer", resultPrinter ?: config.printer.name)
-                put("transport", config.printerFor(resultPrinter).connection.name.lowercase())
+                // Uma confirmação repetida deve funcionar mesmo se a rota foi
+                // renomeada depois que o diário registrou a impressão.
+                put("printer", resultPrinter ?: config.defaultPrinterName)
+                config.printers.firstOrNull { it.name.equals(resultPrinter ?: config.defaultPrinterName, ignoreCase = true) }
+                    ?.let { put("transport", it.connection.name.lowercase()) }
             })
         }).optString("status", status)
     }

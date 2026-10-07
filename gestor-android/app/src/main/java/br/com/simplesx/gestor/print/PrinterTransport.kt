@@ -6,6 +6,7 @@
 package br.com.simplesx.gestor.print
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -30,12 +31,13 @@ data class UsbPrinter(val name: String, val deviceName: String, val vendorId: In
 object PrinterTransport {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val bluetoothLock = Any()
+    private val sendLock = Any()
     private var bluetoothSocket: BluetoothSocket? = null
-    private var bluetoothAddress: String? = null
 
     fun pairedBluetooth(context: Context): List<PairedPrinter> {
         if (Build.VERSION.SDK_INT >= 31 && context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return emptyList()
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return emptyList()
+        check(adapter.isEnabled) { "Ative o Bluetooth para listar as impressoras pareadas" }
         return adapter.bondedDevices.orEmpty().map { PairedPrinter(it.name ?: it.address, it.address) }.sortedBy { it.name }
     }
 
@@ -43,7 +45,7 @@ object PrinterTransport {
         val manager = context.getSystemService(UsbManager::class.java) ?: return emptyList()
         return manager.deviceList.values.filter { findBulkOut(it) != null }.map { device ->
             UsbPrinter(
-                device.productName ?: "USB ${device.vendorId}:${device.productId}",
+                runCatching { device.productName }.getOrNull() ?: "USB ${device.vendorId}:${device.productId}",
                 device.deviceName, device.vendorId, device.productId,
             )
         }.sortedBy { it.name }
@@ -62,7 +64,7 @@ object PrinterTransport {
         manager.requestPermission(device, intent)
     }
 
-    fun send(context: Context, config: PrinterConfig, bytes: ByteArray) {
+    fun send(context: Context, config: PrinterConfig, bytes: ByteArray) = synchronized(sendLock) {
         when (config.connection) {
             ConnectionType.NETWORK -> sendNetwork(config, bytes)
             ConnectionType.BLUETOOTH -> sendBluetooth(context, config, bytes)
@@ -73,9 +75,10 @@ object PrinterTransport {
     private fun sendNetwork(config: PrinterConfig, bytes: ByteArray) {
         require(config.host.isNotBlank()) { "Informe o IP da impressora" }
         Socket().use { socket ->
-            socket.connect(InetSocketAddress(config.host.trim(), config.port), 10_000)
-            socket.soTimeout = 10_000
-            socket.getOutputStream().use { it.write(bytes); it.flush() }
+            TransportGuard.withTimeout(socket, 60_000) {
+                socket.connect(InetSocketAddress(config.host.trim(), config.port), 10_000)
+                socket.getOutputStream().apply { write(bytes); flush() }
+            }
         }
     }
 
@@ -93,59 +96,59 @@ object PrinterTransport {
             "A impressora ${config.bluetoothName.ifBlank { address }} não está mais pareada. Pareie novamente nas configurações do Android"
         }
         synchronized(bluetoothLock) {
-            var lastError: Exception? = null
-            repeat(3) { attempt ->
-                try {
-                    if (bluetoothAddress != address || bluetoothSocket?.isConnected != true) {
+            try {
+                TransportGuard.connectAndSend(3, connect = { attempt ->
+                    closeBluetoothLocked()
+                    if (attempt > 0) Thread.sleep(350L * attempt)
+                    cancelLegacyDiscovery(adapter)
+                    val connecting = createBluetoothSocket(context, device, attempt)
+                    bluetoothSocket = connecting
+                    try {
+                        TransportGuard.withTimeout(connecting, 12_000) { connecting.connect() }
+                        connecting
+                    } catch (error: Exception) {
                         closeBluetoothLocked()
-                        // cancelDiscovery exige BLUETOOTH_SCAN no Android 12+, embora
-                        // a lista usada aqui contenha apenas aparelhos já pareados.
-                        // O gestor não inicia descoberta, então não deve exigir essa
-                        // permissão para conseguir abrir uma impressora selecionada.
-                        if (Build.VERSION.SDK_INT < 31) runCatching { adapter.cancelDiscovery() }
-                        bluetoothSocket = createBluetoothSocket(device, attempt)
-                        bluetoothSocket!!.connect()
-                        bluetoothAddress = address
+                        throw error
                     }
-                    bluetoothSocket!!.outputStream.apply {
-                        var offset = 0
-                        while (offset < bytes.size) {
-                            val size = minOf(BLUETOOTH_CHUNK_SIZE, bytes.size - offset)
-                            write(bytes, offset, size)
-                            flush()
-                            offset += size
-                            if (offset < bytes.size) Thread.sleep(BLUETOOTH_CHUNK_DELAY_MS)
+                }, send = { connected ->
+                    TransportGuard.withTimeout(connected, 60_000) {
+                        connected.outputStream.apply {
+                            var offset = 0
+                            while (offset < bytes.size) {
+                                val size = minOf(BLUETOOTH_CHUNK_SIZE, bytes.size - offset)
+                                write(bytes, offset, size)
+                                flush()
+                                offset += size
+                                if (offset < bytes.size) Thread.sleep(BLUETOOTH_CHUNK_DELAY_MS)
+                            }
                         }
+                        Thread.sleep(BLUETOOTH_FINISH_DELAY_MS)
                     }
-                    // Muitas impressoras desligam o enlace RFCOMM quando entram em
-                    // repouso. Fechar depois de cada trabalho evita reutilizar um
-                    // socket que o Android ainda informa como conectado.
-                    Thread.sleep(BLUETOOTH_FINISH_DELAY_MS)
-                    closeBluetoothLocked()
-                    return
-                } catch (error: Exception) {
-                    lastError = error
-                    closeBluetoothLocked()
-                    if (attempt < 2) Thread.sleep(350L * (attempt + 1))
-                }
+                })
+            } finally {
+                closeBluetoothLocked()
             }
-            throw IllegalStateException(
-                "Não foi possível conectar à impressora Bluetooth após 3 tentativas. " +
-                    "Confirme se ela está ligada, pareada e não está conectada a outro aparelho. " +
-                    "Detalhe: ${lastError?.message ?: "falha desconhecida"}",
-                lastError,
-            )
         }
     }
 
-    private fun createBluetoothSocket(device: BluetoothDevice, attempt: Int): BluetoothSocket = when (attempt) {
-        // Impressoras térmicas genéricas normalmente expõem SPP sem autenticação.
-        0 -> device.createInsecureRfcommSocketToServiceRecord(sppUuid)
-        1 -> device.createRfcommSocketToServiceRecord(sppUuid)
-        // Alguns firmwares baratos não publicam corretamente o UUID no SDP, mas
-        // aceitam o canal serial RFCOMM 1, que também é usado por apps de teste.
-        else -> BluetoothDevice::class.java.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
-            .invoke(device, 1) as BluetoothSocket
+    @SuppressLint("MissingPermission") // Antes da API 31 basta BLUETOOTH_ADMIN, declarada no manifesto com maxSdkVersion=30.
+    private fun cancelLegacyDiscovery(adapter: BluetoothAdapter) {
+        if (Build.VERSION.SDK_INT >= 31) return
+        try { adapter.cancelDiscovery() } catch (_: SecurityException) { /* Não bloqueia a conexão. */ }
+    }
+
+    private fun createBluetoothSocket(context: Context, device: BluetoothDevice, attempt: Int): BluetoothSocket {
+        if (Build.VERSION.SDK_INT >= 31 && context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            throw SecurityException("Autorize o acesso aos dispositivos Bluetooth")
+        }
+        return when (attempt) {
+            // Impressoras térmicas genéricas normalmente expõem SPP sem autenticação.
+            0 -> device.createInsecureRfcommSocketToServiceRecord(sppUuid)
+            1 -> device.createRfcommSocketToServiceRecord(sppUuid)
+            // Alguns firmwares não publicam o UUID no SDP, mas aceitam RFCOMM 1.
+            else -> BluetoothDevice::class.java.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                .invoke(device, 1) as BluetoothSocket
+        }
     }
 
     fun closeConnections() = synchronized(bluetoothLock) { closeBluetoothLocked() }
@@ -153,7 +156,6 @@ object PrinterTransport {
     private fun closeBluetoothLocked() {
         runCatching { bluetoothSocket?.close() }
         bluetoothSocket = null
-        bluetoothAddress = null
     }
 
     private fun sendUsb(context: Context, config: PrinterConfig, bytes: ByteArray) {

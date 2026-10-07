@@ -199,7 +199,9 @@ export async function enviarImpressaoHandler(c, env) {
     return c.json({ error: 'Somente conteúdo textual é aceito para impressão térmica RAW' }, 400);
   }
 
-  const deviceId = (b.device_id && String(b.device_id).trim()) || (await getConfigValue(env, 'gestor_device_id', ''));
+  const explicitGestorToken = b.gestor_token ? String(b.gestor_token).trim() : '';
+  const deviceId = (b.device_id && String(b.device_id).trim()) ||
+    (!explicitGestorToken ? await getConfigValue(env, 'gestor_device_id', '') : '');
   if (deviceId) {
     const result = await createDeviceTask(env, c.user, {
       device_id: deviceId,
@@ -218,7 +220,7 @@ export async function enviarImpressaoHandler(c, env) {
     return c.json({ ok: true, task_id: result.task.id }, 201);
   }
 
-  const gestorToken = (b.gestor_token && String(b.gestor_token).trim()) || (await getConfigValue(env, 'gestor_token', ''));
+  const gestorToken = explicitGestorToken || (await getConfigValue(env, 'gestor_token', ''));
   if (!gestorToken) {
     return c.json({ error: 'Nenhum gestor configurado. Cadastre o token do gestor em Impressoras.' }, 400);
   }

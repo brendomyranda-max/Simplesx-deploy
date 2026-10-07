@@ -353,7 +353,8 @@ async function sincronizarCategoriasDaImpressora(env, impressoraId, categorias) 
 }
 
 async function enqueueGestorJob(env, user, { conteudo, impressora, larguraMm = 80, servidorTipo, servidorId, impressoraDestino, taskType = 'PRINT_ORDER' }) {
-  const destino = impressoraDestino || impressora;
+  // "Cozinha", "Bar" etc. são nomes da rota, não filas instaladas no servidor.
+  const destino = impressoraDestino || (servidorTipo ? null : impressora);
   const deviceId = servidorTipo === 'android'
     ? String(servidorId || '')
     : (!servidorTipo ? await getConfigValue(env, 'gestor_device_id', '') : '');

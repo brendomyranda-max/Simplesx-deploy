@@ -70,7 +70,7 @@ export function ValidadePage() {
     if (!codigo.trim()) return;
     setBuscandoProduto(true);
     try {
-      const produtos = await produtoApi.insumos(codigo.trim());
+      const produtos = await produtoApi.list(codigo.trim());
       setResultadosBusca(produtos);
       setNEncontrado(produtos.length === 0);
       if (produtos.length === 1) selecionarProduto(produtos[0]);
@@ -89,6 +89,7 @@ export function ValidadePage() {
     setResultadosBusca([]);
     setNEncontrado(false);
     setDiasAberto(p.validade_aberto_dias ? String(p.validade_aberto_dias) : '');
+    setDataVencimento('');
     setTemperatura(p.temperatura || '');
   };
 
@@ -255,7 +256,7 @@ export function ValidadePage() {
                     <td className="td">{v.data_fabricacao ? fmtData(v.data_fabricacao) : '-'}</td>
                     <td className="td">{fmtData(v.data_abertura)}</td>
                     <td className="td font-semibold">{v.data_vencimento}</td>
-                    <td className="td">{v.produto_tipo === 'insumo' ? `${v.validade_aberto_dias || '-'} dias` : 'Não se aplica'}</td>
+                    <td className="td">{v.validade_aberto_dias ? `${v.validade_aberto_dias} dias` : '-'}</td>
                     <td className="td">
                       <Badge color={v.temperatura === 'congelado' ? 'blue' : v.temperatura === 'refrigerado' ? 'purple' : 'slate'}>
                         {v.temperatura || 'Ambiente'}
@@ -293,7 +294,7 @@ export function ValidadePage() {
         </Card>
       )}
 
-      <Modal open={abrir} onClose={() => setAbrir(false)} title="Nova validade (insumo ou composto)" width="max-w-xl">
+      <Modal open={abrir} onClose={() => setAbrir(false)} title="Nova validade" width="max-w-xl">
         <form onSubmit={buscar}>
           <Field label="Procure pelo nome ou código">
             <div className="flex gap-2">
@@ -315,7 +316,7 @@ export function ValidadePage() {
             </div>
           </Field>
         </form>
-        {nEncontrado && <p className="mt-2 text-sm text-amber-600">Nenhum insumo ou produto composto encontrado.</p>}
+        {nEncontrado && <p className="mt-2 text-sm text-amber-600">Nenhum produto encontrado.</p>}
         {resultadosBusca.length > 1 && (
           <div className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-1">
             {resultadosBusca.map((p) => (
@@ -329,7 +330,7 @@ export function ValidadePage() {
                   <span className="block text-sm font-semibold text-slate-800">{p.nome}</span>
                   <span className="block text-xs text-slate-400">{p.codigo_interno || 'Sem código'} · estoque {fmtNum(p.estoque_atual)} {p.unidade}</span>
                 </span>
-                <Badge color={p.tipo === 'insumo' ? 'amber' : 'purple'}>{p.tipo === 'insumo' ? 'Insumo' : 'Composto'}</Badge>
+                <Badge color={p.tipo === 'insumo' ? 'amber' : p.tipo === 'composto' ? 'purple' : 'blue'}>{p.tipo === 'insumo' ? 'Insumo' : p.tipo === 'composto' ? 'Composto' : 'Simples'}</Badge>
               </button>
             ))}
           </div>
@@ -338,6 +339,7 @@ export function ValidadePage() {
           <form onSubmit={criar} className="mt-4 space-y-3">
             <div className="rounded-xl bg-slate-50 p-3 text-sm">
               <b>{produto.nome}</b> · estoque {fmtNum(produto.estoque_atual)} {produto.unidade}
+              {!!produto.sem_vencimento && <p className="text-xs text-amber-700">Sem vencimento na embalagem fechada. A etiqueta usa o prazo após abertura.</p>}
               {produto.validade_aberto_dias && <p className="text-xs text-slate-500">Validade padrão após abrir: {produto.validade_aberto_dias} dias</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -345,7 +347,7 @@ export function ValidadePage() {
                 <Input type="number" step="0.001" value={qtd} onChange={(e) => setQtd(e.target.value)} />
               </Field>
               <Field label="Validade após abrir (dias)">
-                <Input type="number" value={diasAberto} onChange={(e) => setDiasAberto(e.target.value)} />
+                <Input type="number" min="1" value={diasAberto} onChange={(e) => setDiasAberto(e.target.value)} />
               </Field>
               <Field label="Data de abertura">
                 <Input type="date" value={dataAbertura} onChange={(e) => setDataAbertura(e.target.value)} />

@@ -11,9 +11,13 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import br.com.simplesx.gestor.MainActivity
 import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.PrinterConfig
@@ -42,18 +46,32 @@ class PrintSyncService : Service() {
     private lateinit var config: AppConfig
     private var wakeLock: PowerManager.WakeLock? = null
     private var forgetPairingOnStop = false
+    private var foregroundReady = false
 
     override fun onCreate() {
         super.onCreate()
         config = AppConfig(this)
-        wakeLock = getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SimplexS.A:PrintSync")
-            .apply { acquire() }
-        createChannel()
-        startForeground(NOTIFICATION_ID, notification("Conectando ao SimplexS.A…"))
+        try {
+            createChannel()
+            // A conexão contínua com impressoras é connectedDevice. dataSync
+            // tem limite de duração e não pode iniciar no boot no Android 15.
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Conectando ao SimplexS.A…"),
+                if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0)
+            wakeLock = getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SimplexS.A:PrintSync")
+                .apply { acquire() }
+            foregroundReady = true
+        } catch (error: RuntimeException) {
+            recordStartFailure(config, error)
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!foregroundReady) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             config.serviceEnabled = false
             forgetPairingOnStop = intent.getBooleanExtra("forget_pairing", false)
@@ -115,8 +133,12 @@ class PrintSyncService : Service() {
                 }
             }
             val route = task.payload.optStringAny("printer", "impressora")
-            val printer = config.printerFor(route)
+            var printerName = route
             val result = PrintJournal(File(filesDir, "print-journal")).execute("${config.deployUrl}:${config.deviceId}:${task.id}") {
+                // Erros de configuração também precisam de confirmação final;
+                // caso contrário a tarefa volta indefinidamente à fila.
+                val printer = config.printerFor(route)
+                printerName = printer.name
                 val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
                 val bytes = taskBytes(task, printer, copies)
                 if (printer.protocol == PrinterProtocol.ESC_POS) repeat(copies) { PrinterTransport.send(this, printer, bytes) }
@@ -124,12 +146,14 @@ class PrintSyncService : Service() {
             }
             renewal.cancelAndJoin()
             if (result.success) {
-                api.taskStatus(task, "success", resultPrinter = printer.name)
-                config.lastJob = "${task.type} → ${printer.name} · concluído"
+                api.taskStatus(task, "success", resultPrinter = printerName)
+                config.lastJob = "${task.type} → ${printerName.ifBlank { "padrão" }} · concluído"
             } else {
                 api.taskStatus(task, "failed", "PRINT_CHECK_REQUIRED", result.error)
                 config.lastJob = "${task.type} · conferir: ${result.error}"
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             val message = error.message ?: error.javaClass.simpleName
             config.lastJob = "${task.type} · confirmação pendente: $message"
@@ -179,6 +203,8 @@ class PrintSyncService : Service() {
         .setContentTitle("SimplexS.A Gestor ativo")
         .setContentText(text)
         .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
         .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
         .build()
 
@@ -187,11 +213,20 @@ class PrintSyncService : Service() {
     }
 
     override fun onDestroy() {
-        PrinterTransport.closeConnections()
+        scope.cancel()
+        // O Bluetooth pode estar conectando ou enviando. Nunca espere seu lock
+        // na thread principal, pois isso causa o popup "aplicativo não responde".
+        CoroutineScope(Dispatchers.IO).launch { PrinterTransport.closeConnections() }
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
-        scope.cancel()
         super.onDestroy()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        config.serviceEnabled = false
+        config.lastStatus = "Recepção parada pelo Android. Abra o gestor e ative Receber impressões."
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -200,16 +235,40 @@ class PrintSyncService : Service() {
         private const val NOTIFICATION_ID = 8410
         private const val ACTION_STOP = "br.com.simplesx.gestor.STOP"
 
-        fun start(context: Context) {
+        private fun recordStartFailure(config: AppConfig, error: RuntimeException) {
+            config.serviceEnabled = false
+            config.lastStatus = "Recepção parada. Abra o gestor e ative Receber impressões. Detalhe: ${error.message ?: error.javaClass.simpleName}"
+            Log.e("PrintSyncService", "Não foi possível iniciar a recepção", error)
+        }
+
+        fun start(context: Context): Boolean {
             val config = AppConfig(context)
+            if (config.deviceToken.isBlank()) {
+                config.serviceEnabled = false
+                config.lastStatus = "Pareie este aparelho com o SimplexS.A"
+                return false
+            }
             config.serviceEnabled = true
-            context.startForegroundService(Intent(context, PrintSyncService::class.java))
+            return try {
+                context.startForegroundService(Intent(context, PrintSyncService::class.java))
+                true
+            } catch (error: RuntimeException) {
+                recordStartFailure(config, error)
+                false
+            }
         }
 
         fun stop(context: Context, forgetPairing: Boolean = false) {
-            AppConfig(context).serviceEnabled = false
-            context.startForegroundService(Intent(context, PrintSyncService::class.java)
-                .setAction(ACTION_STOP).putExtra("forget_pairing", forgetPairing))
+            val config = AppConfig(context)
+            config.serviceEnabled = false
+            try {
+                context.startForegroundService(Intent(context, PrintSyncService::class.java)
+                    .setAction(ACTION_STOP).putExtra("forget_pairing", forgetPairing))
+            } catch (error: RuntimeException) {
+                recordStartFailure(config, error)
+                // Preserve a credencial até concluir os trabalhos e liberar a sessão.
+                config.lastStatus = "Recepção parada. Abra o gestor e tente desconectar novamente. A sessão expira após 90 segundos sem contato."
+            }
         }
     }
 }

@@ -60,7 +60,9 @@ export async function dispatchOrders(c, env, body) {
       ].join('\n'));
       const footer = ascii(`\n${'='.repeat(32)}\nEmitida: ${timestamp}\n`);
       const width = num(route.largura_mm) || 80;
-      const printer = route.impressora_destino || route.nome;
+      // Em rotas vinculadas a um servidor, destino vazio pede a impressora padrão.
+      // O nome da rota só identifica a fila nas configurações antigas sem servidor.
+      const printer = route.impressora_destino || (route.servidor_tipo ? null : route.nome);
       const serverGuard = deviceId
         ? 'EXISTS (SELECT 1 FROM devices WHERE id=? AND estabelecimento_id=? AND revogado_em IS NULL AND token_expira_em>?)'
         : 'EXISTS (SELECT 1 FROM gestores WHERE token=? AND estabelecimento_id=? AND ativo=1)';

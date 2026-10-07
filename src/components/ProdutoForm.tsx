@@ -44,9 +44,10 @@ function initialState(p?: Produto | null, codigoInicial?: string) {
     conteudo_quantidade: p?.conteudo_quantidade ?? '',
     conteudo_unidade: p?.conteudo_unidade ?? 'G',
     marca: p?.marca || '',
+    sem_vencimento: !!p?.sem_vencimento,
     validade_fabricacao_dias: p?.validade_fabricacao_dias || '',
     validade_aberto_dias: p?.validade_aberto_dias || '',
-    data_fabricacao: p?.data_fabricacao || new Date().toLocaleDateString('sv-SE'),
+    data_fabricacao: p ? p.data_fabricacao || '' : new Date().toLocaleDateString('sv-SE'),
     data_vencimento: p?.data_vencimento || '',
     temperatura: p?.temperatura || '',
     observacoes: p?.observacoes || '',
@@ -162,12 +163,14 @@ export function ProdutoForm({
       return toast('error', 'Informe um PLU numérico de até 6 dígitos');
     if (form.produto_balanca && Number(form.preco) <= 0)
       return toast('error', `Informe o preço por ${form.unidade === 'L' ? 'litro' : 'quilo'}`);
-    if (form.tipo !== 'composto' && (!form.data_fabricacao || !form.data_vencimento))
+    if (form.tipo !== 'composto' && !form.sem_vencimento && (!form.data_fabricacao || !form.data_vencimento))
       return toast('error', 'Informe as datas de fabricação e vencimento');
-    if (form.tipo !== 'composto' && form.data_vencimento < form.data_fabricacao)
+    if (form.tipo !== 'composto' && !form.sem_vencimento && form.data_vencimento < form.data_fabricacao)
       return toast('error', 'O vencimento não pode ser anterior à fabricação');
     if (form.tipo === 'insumo' && Number(form.validade_aberto_dias) <= 0)
       return toast('error', 'Informe a validade após abertura do insumo');
+    if (form.validade_aberto_dias !== '' && Number(form.validade_aberto_dias) <= 0)
+      return toast('error', 'A validade após abertura deve ser maior que zero');
     if (form.tipo === 'insumo' && Number(form.conteudo_quantidade) <= 0)
       return toast('error', 'Informe a gramatura ou o volume por unidade do insumo');
     setSaving(true);
@@ -182,16 +185,17 @@ export function ProdutoForm({
         balanca_plu: form.produto_balanca ? String(form.balanca_plu).padStart(6, '0') : null,
         custo: form.tipo === 'composto' ? undefined : Number(form.custo || 0),
         estoque_atual: form.tipo === 'produto' ? Number(form.estoque_atual || 0) : undefined,
-        estoque_minimo: form.tipo === 'produto' ? Number(form.estoque_minimo || 0) : undefined,
+        estoque_minimo: form.tipo !== 'composto' ? Number(form.estoque_minimo || 0) : undefined,
         conteudo_quantidade: form.tipo === 'insumo' ? Number(form.conteudo_quantidade) : undefined,
         conteudo_unidade: form.tipo === 'insumo' ? form.conteudo_unidade : undefined,
         marca: form.marca.trim() || null,
-        validade_fabricacao_dias: form.tipo !== 'composto'
+        sem_vencimento: form.tipo !== 'composto' && form.sem_vencimento ? 1 : 0,
+        validade_fabricacao_dias: form.tipo !== 'composto' && !form.sem_vencimento
           ? Math.max(1, Math.round((new Date(`${form.data_vencimento}T12:00:00`).getTime() - new Date(`${form.data_fabricacao}T12:00:00`).getTime()) / 86400000))
-          : undefined,
+          : null,
         validade_aberto_dias: form.validade_aberto_dias === '' ? null : Number(form.validade_aberto_dias),
         data_fabricacao: form.data_fabricacao || null,
-        data_vencimento: form.data_vencimento || null,
+        data_vencimento: form.sem_vencimento ? null : form.data_vencimento || null,
         temperatura: form.temperatura || null,
         observacoes: form.observacoes.trim() || null,
         fornecedor_id: form.fornecedor_id ? Number(form.fornecedor_id) : null,
@@ -478,6 +482,12 @@ export function ProdutoForm({
         )}
 
         {form.tipo === 'insumo' && (
+          <Field label="Estoque mínimo (opcional)" hint={`Quantidade mínima em ${form.unidade}. Pode deixar em branco.`}>
+            <Input type="number" min="0" step="0.001" value={form.estoque_minimo} onChange={(e) => set('estoque_minimo', e.target.value)} placeholder="Ex.: 5" />
+          </Field>
+        )}
+
+        {form.tipo === 'insumo' && (
           <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3">
             <p className="mb-3 text-sm font-bold text-slate-800">Conteúdo por unidade de estoque</p>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -498,18 +508,25 @@ export function ProdutoForm({
 
         {form.tipo !== 'composto' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="mb-3 text-sm font-bold text-amber-800">Validades do produto</p>
-          <div className={`grid gap-4 ${form.tipo === 'insumo' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-          <Field label="1. Data de fabricação *">
-            <Input type="date" value={form.data_fabricacao} onChange={(e) => set('data_fabricacao', e.target.value)} />
-          </Field>
-          <Field label="2. Data de vencimento *">
-            <Input type="date" min={form.data_fabricacao || undefined} value={form.data_vencimento} onChange={(e) => set('data_vencimento', e.target.value)} />
-          </Field>
-          {form.tipo === 'insumo' && (
-            <Field label="3. Vencimento pós-abertura (dias) *" hint="Prazo depois que a embalagem for aberta">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Sem vencimento</p>
+              <p className="text-xs text-slate-600">Sem data de vencimento na embalagem fechada. O prazo após abertura continua valendo para as etiquetas.</p>
+            </div>
+            <div className="shrink-0">
+              <Toggle checked={form.sem_vencimento} onChange={(v) => set('sem_vencimento', v)} label="Sem vencimento" />
+            </div>
+          </div>
+          <div className={`grid gap-4 ${form.sem_vencimento ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+            <Field label={form.sem_vencimento ? 'Data de fabricação (opcional)' : 'Data de fabricação *'}>
+              <Input type="date" value={form.data_fabricacao} onChange={(e) => set('data_fabricacao', e.target.value)} />
+            </Field>
+            {!form.sem_vencimento && <Field label="Data de vencimento *">
+              <Input type="date" min={form.data_fabricacao || undefined} value={form.data_vencimento} onChange={(e) => set('data_vencimento', e.target.value)} />
+            </Field>}
+            <Field label={`Vencimento pós-abertura (dias)${form.tipo === 'insumo' ? ' *' : ' (opcional)'}`} hint="Prazo usado ao registrar a abertura e gerar a etiqueta">
               <Input type="number" min="1" value={form.validade_aberto_dias} onChange={(e) => set('validade_aberto_dias', e.target.value)} placeholder="ex.: 5" />
             </Field>
-          )}
           </div>
         </div>}
 

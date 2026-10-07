@@ -1,6 +1,6 @@
 {
   "name": "simplexsa-gestor-impressora",
-  "version": "1.5.10",
+  "version": "1.5.12",
   "private": true,
   "description": "Agente local de impressao do SimplexS.A",
   "homepage": "https://simplesx-projeto-beta.pages.dev",
@@ -30,6 +30,9 @@
     "files": [
       "src/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "src/*.ps1"
     ],
     "directories": {
       "output": "release"

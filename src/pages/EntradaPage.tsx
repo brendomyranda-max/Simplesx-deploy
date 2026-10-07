@@ -62,7 +62,7 @@ export function EntradaPage() {
       const vencimento = new Date(`${fabricacao}T12:00:00`);
       vencimento.setDate(vencimento.getDate() + Number(p.validade_fabricacao_dias || 0));
       setDataFabricacao(fabricacao);
-      setDataValidade(p.validade_fabricacao_dias ? vencimento.toLocaleDateString('sv-SE') : '');
+      setDataValidade(!p.sem_vencimento && p.validade_fabricacao_dias ? vencimento.toLocaleDateString('sv-SE') : '');
   };
 
   const buscar = async (e?: React.FormEvent) => {
@@ -96,7 +96,7 @@ export function EntradaPage() {
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!produto) return;
-    if (!dataFabricacao || !dataValidade) return toast('error', 'Informe as datas de fabricação e vencimento');
+    if (!produto.sem_vencimento && (!dataFabricacao || !dataValidade)) return toast('error', 'Informe as datas de fabricação e vencimento');
     setSalvando(true);
     try {
       const entrada = await estoqueApi.entrada({
@@ -104,7 +104,7 @@ export function EntradaPage() {
         quantidade: Number(qtd || 0),
         custo_unitario: custo === '' ? undefined : Number(custo),
         data_fabricacao: dataFabricacao || undefined,
-        data_validade: dataValidade || undefined,
+        data_validade: produto.sem_vencimento ? undefined : dataValidade || undefined,
         temperatura: temperatura || undefined,
         fornecedor_id: fornecedorId ? Number(fornecedorId) : undefined,
         nota_fiscal: notaFiscal || undefined,
@@ -259,12 +259,14 @@ export function EntradaPage() {
                   <Field label="Custo unitário (R$)" hint="vazio usa o custo atual">
                     <Input type="number" step="0.01" value={custo} onChange={(e) => setCusto(e.target.value)} placeholder={fmtBRL(produto.custo)} />
                   </Field>
-                  <Field label="Data de fabricação *">
+                  <Field label={produto.sem_vencimento ? 'Data de fabricação (opcional)' : 'Data de fabricação *'}>
                     <Input type="date" value={dataFabricacao} onChange={(e) => setDataFabricacao(e.target.value)} />
                   </Field>
-                  <Field label="Data de vencimento *">
+                  {produto.sem_vencimento ? <div className="self-center rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                    Sem vencimento na embalagem fechada. Registre a abertura em Controle de Validade para gerar a etiqueta.
+                  </div> : <Field label="Data de vencimento *">
                     <Input type="date" min={dataFabricacao || undefined} value={dataValidade} onChange={(e) => setDataValidade(e.target.value)} />
-                  </Field>
+                  </Field>}
                   <Field label="Temperatura">
                     <Select value={temperatura} onChange={(e) => setTemperatura(e.target.value)}>
                       <option value="">Ambiente</option>

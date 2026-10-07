@@ -17,11 +17,11 @@ android {
         applicationId = "br.com.simplesx.gestor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.5.10"
+        versionCode = 25
+        versionName = "1.5.12"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 
     signingConfigs {
         val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")

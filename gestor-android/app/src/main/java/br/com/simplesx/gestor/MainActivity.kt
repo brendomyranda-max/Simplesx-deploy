@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -58,9 +59,9 @@ import br.com.simplesx.gestor.network.SimplexsaApi
 import br.com.simplesx.gestor.network.DeviceCategory
 import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
+import br.com.simplesx.gestor.print.PairedPrinter
 import br.com.simplesx.gestor.print.UsbPrinter
 import br.com.simplesx.gestor.sync.PrintSyncService
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
 private fun GestorScreen() {
     val context = LocalContext.current
     val config = remember { AppConfig(context) }
+    val screenScope = rememberCoroutineScope()
     var deployUrl by remember { mutableStateOf(config.deployUrl) }
     var deviceName by remember { mutableStateOf(config.deviceName) }
     var pairingId by remember { mutableStateOf("") }
@@ -93,61 +95,78 @@ private fun GestorScreen() {
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
     var disconnecting by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf(config.lastStatus) }
-    var bluetoothPrinters by remember { mutableStateOf(PrinterTransport.pairedBluetooth(context)) }
+    var message by remember { mutableStateOf("") }
+    var serviceStatus by remember { mutableStateOf(config.lastStatus) }
+    var lastJob by remember { mutableStateOf(config.lastJob) }
+    var bluetoothPrinters by remember { mutableStateOf<List<PairedPrinter>>(emptyList()) }
     var bluetoothExpanded by remember { mutableStateOf(false) }
-    var usbPrinters by remember { mutableStateOf(PrinterTransport.connectedUsb(context)) }
+    var usbPrinters by remember { mutableStateOf<List<UsbPrinter>>(emptyList()) }
     var usbExpanded by remember { mutableStateOf(false) }
     var deployCategories by remember { mutableStateOf<List<DeviceCategory>>(emptyList()) }
     var openBluetoothAfterPermission by remember { mutableStateOf(false) }
 
-    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+    fun refreshBluetooth(): Boolean = runCatching { PrinterTransport.pairedBluetooth(context) }.fold({
+        bluetoothPrinters = it
+        message = if (it.isEmpty()) "Nenhum dispositivo Bluetooth pareado. Pareie a impressora nas configurações do Android." else "Lista Bluetooth atualizada"
+        true
+    }, {
+        bluetoothPrinters = emptyList()
+        message = "Não foi possível consultar o Bluetooth: ${it.message}"
+        false
+    })
+
+    fun refreshUsb(): Boolean = runCatching { PrinterTransport.connectedUsb(context) }.fold({
+        usbPrinters = it
+        message = if (it.isEmpty()) "Nenhuma impressora USB encontrada. Confira o cabo e o adaptador OTG." else "Lista USB atualizada"
+        true
+    }, {
+        usbPrinters = emptyList()
+        message = "Não foi possível consultar a USB: ${it.message}"
+        false
+    })
+
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val bluetoothAllowed = Build.VERSION.SDK_INT < 31 ||
             context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        if (bluetoothAllowed) {
-            bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
-            if (openBluetoothAfterPermission) bluetoothExpanded = true
-        } else {
+        if (bluetoothAllowed && openBluetoothAfterPermission) {
+            bluetoothExpanded = refreshBluetooth()
+        } else if (!bluetoothAllowed && openBluetoothAfterPermission) {
             message = "Permissão Bluetooth negada. Autorize Dispositivos próximos nas configurações do aplicativo."
         }
         openBluetoothAfterPermission = false
     }
     fun requestPermissions(openBluetoothPicker: Boolean = false) {
         val required = buildList {
-            if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
+            if (Build.VERSION.SDK_INT >= 31 && (openBluetoothPicker || printers.any { it.connection == ConnectionType.BLUETOOTH })) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (required.isNotEmpty()) {
             openBluetoothAfterPermission = openBluetoothPicker
             permissions.launch(required.toTypedArray())
         } else if (openBluetoothPicker) {
-            bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
-            bluetoothExpanded = true
+            bluetoothExpanded = refreshBluetooth()
         }
     }
 
     fun background(block: () -> String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching(block).fold({ it }, { "Erro: ${it.message}" })
-            withContext(Dispatchers.Main) { message = result }
+        screenScope.launch {
+            message = withContext(Dispatchers.IO) { runCatching(block).fold({ it }, { "Erro: ${it.message}" }) }
         }
     }
 
     fun refreshCategories() {
         if (config.deviceToken.isBlank()) return
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { SimplexsaApi(config).printCategories() }
-            withContext(Dispatchers.Main) {
-                result.fold({ categories ->
-                    deployCategories = categories
-                    val synced = printers.map { saved ->
-                        saved.copy(categoryIds = categories.filter { it.printer.equals(saved.name, ignoreCase = true) }.map { it.id })
-                    }
-                    printers = synced
-                    config.printers = synced
-                    if (selectedPrinterIndex in synced.indices) printer = synced[selectedPrinterIndex]
-                }, { message = "Erro ao carregar categorias: ${it.message}" })
-            }
+        screenScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { SimplexsaApi(config).printCategories() } }
+            result.fold({ categories ->
+                deployCategories = categories
+                val synced = printers.map { saved ->
+                    saved.copy(categoryIds = categories.filter { it.printer.equals(saved.name, ignoreCase = true) }.map { it.id })
+                }
+                printers = synced
+                config.printers = synced
+                if (selectedPrinterIndex in synced.indices) printer = synced[selectedPrinterIndex]
+            }, { message = "Erro ao carregar categorias: ${it.message}" })
         }
     }
 
@@ -156,6 +175,8 @@ private fun GestorScreen() {
         while (true) {
             serviceEnabled = config.serviceEnabled
             paired = config.deviceToken.isNotBlank()
+            serviceStatus = config.lastStatus
+            lastJob = config.lastJob
             if (disconnecting && (config.lastStatus == "Desconectado" || config.lastStatus.startsWith("Recepção parada"))) {
                 message = config.lastStatus
                 disconnecting = false
@@ -166,7 +187,8 @@ private fun GestorScreen() {
 
     Scaffold(topBar = { TopAppBar(title = { Text("SimplexS.A Gestor") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatusCard(serviceEnabled, config.deviceToken.isNotBlank(), message, config.lastJob)
+            StatusCard(serviceEnabled, paired, serviceStatus, lastJob)
+            if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodyMedium)
 
             Section("Conexão com o SimplexS.A") {
                 OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço do SimplexS.A") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -178,8 +200,8 @@ private fun GestorScreen() {
                         config.deployUrl = deployUrl; config.deviceName = deviceName
                         background {
                             SimplexsaApi(config).pair(pairingId, pairingCode)
-                            PrintSyncService.start(context)
-                            "Pareamento concluído e recepção iniciada"
+                            if (PrintSyncService.start(context)) "Pareamento concluído e recepção iniciada"
+                            else config.lastStatus
                         }
                     }, modifier = Modifier.fillMaxWidth()) { Text("Parear aparelho") }
                 } else {
@@ -239,8 +261,7 @@ private fun GestorScreen() {
                     }, modifier = Modifier.weight(1f)) { Text("Bluetooth") }
                     Button(onClick = {
                         printer = printer.copy(connection = ConnectionType.USB)
-                        usbPrinters = PrinterTransport.connectedUsb(context)
-                        usbExpanded = true
+                        usbExpanded = refreshUsb()
                     }, modifier = Modifier.weight(1f)) { Text("USB") }
                 }
                 OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplexS.A") }, modifier = Modifier.fillMaxWidth())
@@ -323,8 +344,7 @@ private fun GestorScreen() {
                     Text("A impressora deve estar pareada nas configurações do Android.", style = MaterialTheme.typography.bodySmall)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
-                            bluetoothPrinters = PrinterTransport.pairedBluetooth(context)
-                            message = if (bluetoothPrinters.isEmpty()) "Nenhum dispositivo Bluetooth pareado foi encontrado" else "Lista Bluetooth atualizada"
+                            requestPermissions(openBluetoothPicker = true)
                         }, modifier = Modifier.weight(1f)) { Text("Atualizar lista") }
                         OutlinedButton(onClick = {
                             context.startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
@@ -332,8 +352,7 @@ private fun GestorScreen() {
                     }
                 } else {
                     ExposedDropdownMenuBox(expanded = usbExpanded, onExpandedChange = { expand ->
-                        usbPrinters = PrinterTransport.connectedUsb(context)
-                        usbExpanded = expand
+                        usbExpanded = expand && refreshUsb()
                     }) {
                         OutlinedTextField(
                             printer.usbDeviceName.ifBlank { "Selecione uma impressora USB" }, {}, readOnly = true,
@@ -358,7 +377,7 @@ private fun GestorScreen() {
                         }
                     }
                     OutlinedButton(onClick = {
-                        usbPrinters = PrinterTransport.connectedUsb(context)
+                        refreshUsb()
                         runCatching { PrinterTransport.requestUsbPermission(context, printer) }
                             .fold({ message = "Confirme a autorização USB do Android" }, { message = "Erro: ${it.message}" })
                     }, modifier = Modifier.fillMaxWidth()) { Text("Autorizar impressora USB") }
@@ -490,12 +509,16 @@ private fun GestorScreen() {
                     } else if (printer.connection == ConnectionType.USB && printer.usbDeviceName.isBlank()) {
                         message = "Selecione e autorize uma impressora USB"
                     } else {
+                        val testPrinter = validatedPrinter
                         background {
-                            if (config.deviceToken.isNotBlank()) SimplexsaApi(config).updatePrinterCategories(printer)
-                            val test = "SimplexS.A - TESTE DE IMPRESSAO\n${printer.protocol.name} · ${printer.dpi} DPI\nRede/Bluetooth OK"
-                            val bytes = PrinterCommands.document(test, printer)
-                            PrinterTransport.send(context, printer, bytes)
-                            "Dados ${printer.protocol.name} enviados. Confirme o texto no papel; a conexão Bluetooth não confirma se a impressora entendeu o protocolo."
+                            val test = "SimplexS.A - TESTE DE IMPRESSAO\n${testPrinter.protocol.name} · ${testPrinter.dpi} DPI\nConexao ${testPrinter.connection.name} OK"
+                            val bytes = PrinterCommands.document(test, testPrinter)
+                            PrinterTransport.send(context, testPrinter, bytes)
+                            val syncError = runCatching {
+                                if (config.deviceToken.isNotBlank()) SimplexsaApi(config).updatePrinterCategories(testPrinter)
+                            }.exceptionOrNull()
+                            "Dados ${testPrinter.protocol.name} enviados. Confirme o texto no papel." +
+                                (syncError?.let { " Categorias não sincronizadas: ${it.message}. Salve novamente quando a conexão voltar." } ?: "")
                         }
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Salvar rota e imprimir teste") }
@@ -513,7 +536,10 @@ private fun GestorScreen() {
                     Switch(serviceEnabled, enabled = paired && !disconnecting, onCheckedChange = {
                         requestPermissions(); config.deployUrl = deployUrl; config.deviceName = deviceName; config.printers = printers
                         serviceEnabled = it
-                        if (it) PrintSyncService.start(context) else {
+                        if (it) {
+                            serviceEnabled = PrintSyncService.start(context)
+                            if (!serviceEnabled) message = config.lastStatus
+                        } else {
                             disconnecting = true
                             PrintSyncService.stop(context)
                         }

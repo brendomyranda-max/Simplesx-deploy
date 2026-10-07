@@ -91,13 +91,7 @@ class AppConfig(context: Context) {
             if (defaultPrinterName.isBlank()) defaultPrinterName = value.name
         }
 
-    fun printerFor(route: String?): PrinterConfig {
-        val list = printers
-        val requested = route.orEmpty().trim()
-        return list.firstOrNull { requested.isNotBlank() && it.name.equals(requested, ignoreCase = true) }
-            ?: list.firstOrNull { it.name.equals(defaultPrinterName, ignoreCase = true) }
-            ?: list.first()
-    }
+    fun printerFor(route: String?): PrinterConfig = selectPrinter(printers, route, defaultPrinterName)
 
     private fun readLegacyPrinter(): PrinterConfig = printerFromJson(
         runCatching { JSONObject(prefs.getString("printer", "{}")!!) }.getOrDefault(JSONObject())

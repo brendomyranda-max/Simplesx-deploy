@@ -8,7 +8,7 @@ const os = require('node:os')
 const { JobJournal } = require('../src/job-journal.cjs')
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.cjs'), 'utf8')
-const syncSource = source.slice(source.indexOf('function sincronizar()'), source.indexOf('async function listarImpressoras()'))
+const syncSource = source.slice(source.indexOf('function sincronizar()'), source.indexOf('async function listarImpressoras('))
 
 function fixture(t, { job, execute = async () => {}, disconnectError, ackError } = {}) {
   const calls = []

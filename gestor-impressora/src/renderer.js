@@ -5,6 +5,7 @@
 
 const $ = (id) => document.getElementById(id)
 let estado
+let impressoras = []
 
 function toast(texto) {
   $('toast').textContent = texto
@@ -30,31 +31,48 @@ function render(status) {
   $('estado').textContent = status.online ? 'Online' : status.conectado === false ? 'Desconectado' : 'Offline'
   $('estado').className = `badge ${status.online ? 'online' : 'offline'}`
   const j = status.ultimoJob
-  $('job').textContent = j ? `#${j.id} · ${j.impressora} · ${j.status} · ${dataHora(j.em)}` : 'Nenhum'
+  $('job').textContent = j ? `#${j.id} · ${j.impressora} · ${j.status} · ${dataHora(j.em)}${j.erro ? ` · ${j.erro}` : ''}` : 'Nenhum'
 }
 
 async function carregarImpressoras() {
-  const atual = estado?.impressoraPadrao || $('impressora').value
+  const atual = $('impressora').value || estado?.impressoraPadrao || ''
   try {
     const lista = await window.simplexsa.listarImpressoras()
+    impressoras = lista
     $('impressora').innerHTML = '<option value="">Padrão do sistema</option>'
-    const padrao = lista.find((p) => p.isDefault) || lista[0]
+    const disponiveis = lista.filter((p) => p.enabled !== false && p.accepting !== false)
+    const padrao = disponiveis.find((p) => p.isDefault) || disponiveis[0]
     if (padrao) $('impressora').options[0].dataset.nome = padrao.name
     for (const p of lista) {
       const option = document.createElement('option')
       option.value = p.name
-      option.textContent = `${p.displayName || p.name}${p.isDefault ? ' (padrão)' : ''}${p.enabled === false ? ' — indisponível' : ''}`
-      option.disabled = p.enabled === false
+      const indisponivel = p.enabled === false || p.accepting === false
+      option.textContent = `${p.displayName || p.name}${p.isDefault ? ' (padrão)' : ''}${indisponivel ? ` — ${p.state || 'indisponível'}` : ''}`
       $('impressora').appendChild(option)
     }
-    const disponiveis = lista.filter((p) => p.enabled !== false).length
-    $('scanResultado').textContent = `${lista.length} encontrada(s), ${disponiveis} disponível(is)`
-    $('impressora').value = lista.some((p) => p.name === atual) ? atual : ''
-    if (atual && !$('impressora').value) toast(`A impressora ${atual} não está mais disponível`)
+    $('scanResultado').textContent = lista.length
+      ? `${lista.length} encontrada(s), ${disponiveis.length} disponível(is). Filas pausadas devem ser retomadas no sistema.`
+      : 'Nenhuma fila instalada. Adicione a impressora em Impressoras e scanners (Windows) ou no CUPS (Linux) e busque novamente.'
+    if (atual && !lista.some((p) => p.name === atual)) {
+      const ausente = document.createElement('option')
+      ausente.value = atual
+      ausente.textContent = `${atual} — não encontrada`
+      $('impressora').appendChild(ausente)
+    }
+    $('impressora').value = atual
+    return true
   } catch (e) {
-    $('impressora').innerHTML = '<option value="">Nenhuma impressora disponível</option>'
-    $('scanResultado').textContent = 'Falha ao buscar impressoras'
+    // Uma falha temporária não deve apagar o destino salvo nem escolher outra fila.
+    if (atual && !$('impressora').value) {
+      const salva = document.createElement('option')
+      salva.value = atual
+      salva.textContent = `${atual} — consulta indisponível`
+      $('impressora').appendChild(salva)
+      $('impressora').value = atual
+    }
+    $('scanResultado').textContent = `Falha ao buscar impressoras: ${e.message}`
     toast(`Erro: ${e.message}`)
+    return false
   }
 }
 
@@ -73,7 +91,8 @@ function alturaAtual(nome) {
 }
 
 function protocoloAtual(nome) {
-  return estado?.protocolosImpressoras?.[nome] || 'DRIVER'
+  return estado?.protocolosImpressoras?.[nome] ||
+    (impressoras.find((p) => p.name === nome)?.raw || /RAW$/i.test(nome) ? 'ESC_POS' : 'DRIVER')
 }
 
 function dpiAtual(nome) {
@@ -126,7 +145,7 @@ $('desconectar').onclick = async () => {
 $('atualizar').onclick = async () => {
   $('atualizar').disabled = true
   $('scanResultado').textContent = 'Buscando impressoras…'
-  try { await carregarImpressoras(); toast('Busca de impressoras concluída') }
+  try { if (await carregarImpressoras()) toast('Busca de impressoras concluída') }
   finally { $('atualizar').disabled = false }
 }
 $('salvar').onclick = async () => {
@@ -155,4 +174,4 @@ $('testar').onclick = async () => {
 }
 
 window.simplexsa.onStatus(render)
-window.simplexsa.status().then(async (s) => { render(s); await carregarImpressoras() })
+window.simplexsa.status().then(async (s) => { render(s); await carregarImpressoras() }).catch((e) => toast(`Erro: ${e.message}`))

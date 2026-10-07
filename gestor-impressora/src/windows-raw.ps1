@@ -3,6 +3,9 @@ param(
   [Parameter(Mandatory = $true)][string]$FilePath
 )
 
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+
 $source = @'
 using System;
 using System.ComponentModel;

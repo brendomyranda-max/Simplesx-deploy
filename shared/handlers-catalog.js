@@ -451,11 +451,13 @@ export async function createProdutoHandler(c, env) {
   const ingredientes = Array.isArray(b.ingredientes) ? b.ingredientes : Array.isArray(b.ficha) ? b.ficha : [];
   const tipo = normalizarTipo(b, ingredientes);
   validaPreco(config, preco, tipo);
-  if (tipo !== 'composto' && (!b.data_fabricacao || !b.data_vencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
+  const semVencimento = tipo !== 'composto' && (b.sem_vencimento === true || b.sem_vencimento === 1) ? 1 : 0;
+  const dataVencimento = semVencimento ? null : b.data_vencimento || null;
+  if (tipo !== 'composto' && !semVencimento && (!b.data_fabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
   if (tipo === 'insumo' && num(b.validade_aberto_dias) <= 0) {
     return c.json({ error: 'Informe a validade após abertura do insumo' }, 400);
   }
-  if (tipo !== 'composto' && b.data_fabricacao && b.data_vencimento && b.data_vencimento < b.data_fabricacao) {
+  if (tipo !== 'composto' && b.data_fabricacao && dataVencimento && dataVencimento < b.data_fabricacao) {
     return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
   }
 
@@ -467,8 +469,8 @@ export async function createProdutoHandler(c, env) {
   const r = await env.DB.prepare(
     `INSERT INTO produtos (nome, codigo_interno, unidade, estoque_atual, estoque_minimo, custo, preco, fornecedor_id,
      marca, validade_fabricacao_dias, validade_aberto_dias, data_fabricacao, data_vencimento, temperatura, ativo, observacoes,
-     exibir_restaurante, exibir_mercado, tipo, conteudo_quantidade, conteudo_unidade, produto_balanca, balanca_plu, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)`
+     exibir_restaurante, exibir_mercado, tipo, conteudo_quantidade, conteudo_unidade, produto_balanca, balanca_plu, sem_vencimento, criado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?)`
   )
     .bind(
       b.nome,
@@ -480,10 +482,10 @@ export async function createProdutoHandler(c, env) {
       preco,
       b.fornecedor_id || null,
       b.marca || null,
-      b.validade_fabricacao_dias || null,
+      semVencimento ? null : b.validade_fabricacao_dias || null,
       b.validade_aberto_dias || null,
       b.data_fabricacao || null,
-      b.data_vencimento || null,
+      dataVencimento,
       b.temperatura || null,
       b.observacoes || null,
       b.exibir_restaurante === true ? 1 : 0,
@@ -493,6 +495,7 @@ export async function createProdutoHandler(c, env) {
       tipo === 'insumo' && b.conteudo_unidade ? b.conteudo_unidade : null,
       produtoBalanca,
       balancaPlu,
+      semVencimento,
       now()
     )
     .run();
@@ -536,16 +539,18 @@ export async function createProdutoHandler(c, env) {
       );
     }
   }
-  if (num(b.estoque_atual) > 0 && tipo !== 'composto' && b.data_vencimento) {
+  if (num(b.estoque_atual) > 0 && tipo !== 'composto') {
     stmts.push(
       env.DB.prepare(
         `INSERT INTO lotes (produto_id, quantidade, custo_unitario, data_fabricacao, data_validade, temperatura,
          fornecedor_id, nota_fiscal, responsavel, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?)`
-      ).bind(id, num(b.estoque_atual), custo, b.data_fabricacao, b.data_vencimento, b.temperatura || null, b.fornecedor_id || null, null, 'admin', now()),
+      ).bind(id, num(b.estoque_atual), custo, b.data_fabricacao || null, dataVencimento, b.temperatura || null, b.fornecedor_id || null, null, 'admin', now())
+    );
+    if (dataVencimento) stmts.push(
       env.DB.prepare(
         `INSERT INTO validade_controles (produto_id, tipo, quantidade, data_fabricacao, data_abertura, data_vencimento,
          temperatura, responsavel, observacoes, status, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-      ).bind(id, 'fabricacao', num(b.estoque_atual), b.data_fabricacao, null, b.data_vencimento, b.temperatura || null, 'admin', 'Estoque inicial do cadastro', 'ativo', now())
+      ).bind(id, 'fabricacao', num(b.estoque_atual), b.data_fabricacao, null, dataVencimento, b.temperatura || null, 'admin', 'Estoque inicial do cadastro', 'ativo', now())
     );
   }
   if (stmts.length) await env.DB.batch(stmts);
@@ -581,11 +586,15 @@ export async function updateProdutoHandler(c, env) {
   if (b.tipo === 'insumo' || b.tipo === 'produto' || b.tipo === 'composto') tipo = b.tipo;
   else if (ingredientes) tipo = ingredientes.length ? 'composto' : 'produto';
   validaPreco(config, preco, tipo);
-  const dataFabricacao = b.data_fabricacao || atual.data_fabricacao;
-  const dataVencimento = b.data_vencimento || atual.data_vencimento;
-  if (tipo !== 'composto' && (!dataFabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
-  if (tipo !== 'composto' && dataVencimento < dataFabricacao) return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
-  if (tipo === 'insumo' && num(b.validade_aberto_dias ?? atual.validade_aberto_dias) <= 0) {
+  const semVencimento = tipo !== 'composto'
+    ? (b.sem_vencimento === undefined ? num(atual.sem_vencimento) : b.sem_vencimento === true || b.sem_vencimento === 1 ? 1 : 0)
+    : 0;
+  const dataFabricacao = b.data_fabricacao === undefined ? atual.data_fabricacao : b.data_fabricacao || null;
+  const dataVencimento = semVencimento ? null : b.data_vencimento === undefined ? atual.data_vencimento : b.data_vencimento || null;
+  const validadeAberto = b.validade_aberto_dias === undefined ? atual.validade_aberto_dias : b.validade_aberto_dias || null;
+  if (tipo !== 'composto' && !semVencimento && (!dataFabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
+  if (tipo !== 'composto' && dataVencimento && dataFabricacao && dataVencimento < dataFabricacao) return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
+  if (tipo === 'insumo' && num(validadeAberto) <= 0) {
     return c.json({ error: 'Informe o vencimento pós-abertura do insumo' }, 400);
   }
 
@@ -606,7 +615,7 @@ export async function updateProdutoHandler(c, env) {
   await env.DB.prepare(
     `UPDATE produtos SET nome=?, codigo_interno=?, unidade=?, estoque_minimo=?, custo=?, preco=?, fornecedor_id=?, marca=?,
      validade_fabricacao_dias=?, validade_aberto_dias=?, data_fabricacao=?, data_vencimento=?, temperatura=?, ativo=?, observacoes=?,
-     exibir_restaurante=?, exibir_mercado=?, tipo=?, conteudo_quantidade=?, conteudo_unidade=?, produto_balanca=?, balanca_plu=?, atualizado_em=?
+     exibir_restaurante=?, exibir_mercado=?, tipo=?, conteudo_quantidade=?, conteudo_unidade=?, produto_balanca=?, balanca_plu=?, sem_vencimento=?, atualizado_em=?
      WHERE id=?`
   )
     .bind(
@@ -618,8 +627,8 @@ export async function updateProdutoHandler(c, env) {
       preco,
       b.fornecedor_id || null,
       b.marca || null,
-      b.validade_fabricacao_dias || null,
-      b.validade_aberto_dias || null,
+      semVencimento ? null : (b.validade_fabricacao_dias === undefined ? atual.validade_fabricacao_dias : b.validade_fabricacao_dias || null),
+      validadeAberto,
       dataFabricacao,
       dataVencimento,
       b.temperatura || null,
@@ -632,6 +641,7 @@ export async function updateProdutoHandler(c, env) {
       tipo === 'insumo' ? (b.conteudo_unidade || atual.conteudo_unidade || null) : null,
       produtoBalanca,
       balancaPlu,
+      semVencimento,
       now(),
       c.params.id
     )
@@ -837,10 +847,11 @@ export async function entradaMercadoriaHandler(c, env) {
   if (!p) return c.json({ error: 'Produto não encontrado' }, 404);
   const qtd = num(b.quantidade);
   if (qtd <= 0) return c.json({ error: 'Quantidade inválida' }, 400);
-  if (!b.data_fabricacao || !b.data_validade) {
+  const dataValidade = p.sem_vencimento ? null : b.data_validade || null;
+  if (!p.sem_vencimento && (!b.data_fabricacao || !dataValidade)) {
     return c.json({ error: 'Informe as datas de fabricação e vencimento da mercadoria' }, 400);
   }
-  if (b.data_validade < b.data_fabricacao) {
+  if (dataValidade && b.data_fabricacao && dataValidade < b.data_fabricacao) {
     return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
   }
   const custo =
@@ -873,7 +884,7 @@ export async function entradaMercadoriaHandler(c, env) {
       qtd,
       custo,
       b.data_fabricacao || null,
-      b.data_validade || null,
+      dataValidade,
       b.temperatura || p.temperatura || null,
       b.fornecedor_id || p.fornecedor_id || null,
       b.nota_fiscal || null,
@@ -905,12 +916,12 @@ export async function entradaMercadoriaHandler(c, env) {
     responsavel: b.responsavel || null,
     observacoes: `Entrada de mercadoria${b.nota_fiscal ? ' NF ' + b.nota_fiscal : ''}`,
   });
-  if (b.data_validade) {
+  if (dataValidade) {
     await env.DB.prepare(
       `INSERT INTO validade_controles (produto_id, tipo, quantidade, data_fabricacao, data_abertura, data_vencimento,
        temperatura, responsavel, observacoes, status, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
-      b.produto_id, 'fabricacao', qtd, b.data_fabricacao || null, null, b.data_validade,
+      b.produto_id, 'fabricacao', qtd, b.data_fabricacao || null, null, dataValidade,
       b.temperatura || p.temperatura || null, b.responsavel || null,
       `Entrada de mercadoria${b.nota_fiscal ? ' · NF ' + b.nota_fiscal : ''}`, 'ativo', now()
     ).run();
