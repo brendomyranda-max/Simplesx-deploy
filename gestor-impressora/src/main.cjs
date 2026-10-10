@@ -15,6 +15,7 @@ const { JobJournal } = require('./job-journal.cjs')
 const { resolveDataDirectory } = require('./data-directory.cjs')
 const { createPrinterDiscovery, selectPrinter } = require('./printer-discovery.cjs')
 const { externalFilePath } = require('./native-files.cjs')
+const { interpretarLeituraNfc, prefixoValido, PREFIXO_PADRAO } = require('./nfc-leitura.cjs')
 
 const executarArquivo = promisify(execFile)
 
@@ -36,6 +37,7 @@ let servidorLocal
 let ultimoErro = ''
 let ultimoContato = null
 let ultimoJob = null
+let ultimoNfc = null
 const filasImpressao = new Map()
 const descobrirImpressoras = createPrinterDiscovery({
   execute: executarArquivo,
@@ -73,6 +75,8 @@ function configPadrao() {
     protocolosImpressoras: {},
     iniciarComSistema: true,
     conectado: true,
+    nfcAtivo: false,
+    nfcPrefixo: PREFIXO_PADRAO,
   }
 }
 
@@ -97,6 +101,9 @@ async function salvarConfig(novaConfig) {
   if (deploy.protocol !== 'https:' && !(local && deploy.protocol === 'http:')) {
     throw new Error('O deploy deve usar HTTPS (HTTP é aceito apenas em localhost)')
   }
+  const nfcPrefixo = String(novaConfig.nfcPrefixo || config?.nfcPrefixo || PREFIXO_PADRAO).trim()
+  const nfcAtivo = novaConfig.nfcAtivo === true
+  if (nfcAtivo && !prefixoValido(nfcPrefixo)) throw new Error('Prefixo NFC inválido. Use letras, como NFC:')
   config = {
     ...config,
     deployUrl,
@@ -109,6 +116,8 @@ async function salvarConfig(novaConfig) {
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
     conectado: novaConfig.conectado ?? config?.conectado ?? true,
+    nfcAtivo,
+    nfcPrefixo,
   }
   await fs.mkdir(path.dirname(arquivoConfig()), { recursive: true })
   await fs.writeFile(arquivoConfig(), JSON.stringify(config, null, 2), 'utf8')
@@ -166,6 +175,7 @@ function statusAtual() {
     online: config.conectado && !!ultimoContato && Date.now() - new Date(ultimoContato).getTime() < 15000,
     ultimoContato,
     ultimoJob,
+    ultimoNfc,
     ultimoErro,
     portaLocal: PORTA_LOCAL,
     hostname: os.hostname(),
@@ -194,7 +204,33 @@ async function api(endpoint, body) {
 
 async function registrar() {
   const printers = await listarImpressoras()
-  await api('/gestor/register', { token: config.token, nome: config.nome, ip: os.hostname(), printers })
+  await api('/gestor/register', {
+    token: config.token, nome: config.nome, ip: os.hostname(), printers, nfc: estadoNfc(),
+  })
+}
+
+function estadoNfc() {
+  return { ativo: !!config.nfcAtivo, prefixo: config.nfcPrefixo || PREFIXO_PADRAO }
+}
+
+async function publicarLeituraNfc(texto) {
+  const leitura = interpretarLeituraNfc(config, texto)
+  leitura.leitor = os.hostname()
+  const data = await api('/gestor/nfc', { token: config.token, ...leitura })
+  ultimoNfc = { id: data.id, uid: data.uid, payload: data.payload, em: new Date().toISOString() }
+  notificarStatus()
+  return { ok: true, id: data.id, uid: data.uid, payload: data.payload }
+}
+
+async function lerJsonLimitado(req, limite) {
+  const partes = []
+  let total = 0
+  for await (const parte of req) {
+    total += parte.length
+    if (total > limite) throw new Error('Conteudo excede o limite')
+    partes.push(parte)
+  }
+  return JSON.parse(Buffer.concat(partes).toString('utf8'))
 }
 
 function nomeComparavel(value) {
@@ -493,6 +529,17 @@ function iniciarServidorLocal() {
     if (!origemLocalPermitida(req)) return responderJson(res, 403, { error: 'Origem nao autorizada' })
     if (req.method === 'OPTIONS') return responderJson(res, 204, {})
     if (req.method === 'GET' && req.url === '/health') return responderJson(res, 200, { ok: true, version: app.getVersion() })
+    if (req.method === 'GET' && req.url === '/nfc') {
+      return responderJson(res, 200, { ativo: !!config?.nfcAtivo, prefixo: config?.nfcPrefixo || PREFIXO_PADRAO, ultimo: ultimoNfc })
+    }
+    if (req.method === 'POST' && req.url === '/nfc') {
+      try {
+        const body = await lerJsonLimitado(req, 4096)
+        return responderJson(res, 200, await publicarLeituraNfc(body.text || ''))
+      } catch (erro) {
+        return responderJson(res, 400, { ok: false, error: erro.message })
+      }
+    }
     if (req.method === 'GET' && req.url === '/printers') {
       try {
         const printers = await listarImpressoras(true)
@@ -594,6 +641,7 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
   })
 })
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))
+ipcMain.handle('ler-nfc', (_e, texto) => publicarLeituraNfc(texto))
 
 if (instanciaUnica) {
   app.whenReady().then(async () => {
@@ -602,7 +650,7 @@ if (instanciaUnica) {
     criarTray()
     iniciarServidorLocal()
     heartbeatTimer = setInterval(() => {
-      if ((config?.conectado || sincronizando) && ultimoContato) api('/gestor/heartbeat', { token: config.token }).catch(() => {})
+      if ((config?.conectado || sincronizando) && ultimoContato) api('/gestor/heartbeat', { token: config.token, nfc: estadoNfc() }).catch(() => {})
     }, 20_000)
     await sincronizar()
     timer = setInterval(sincronizar, INTERVALO_POLL)

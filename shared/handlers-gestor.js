@@ -6,6 +6,7 @@
 import { now, num, gerarToken, getConfigValue, estabelecimentoId } from './util.js';
 import { createDeviceTask } from './handlers-devices.js';
 import { cleanupServerStatements, serverCutoff, SESSION_CONFLICT } from './print-servers.js';
+import { sincronizarConfigNfc } from './nfc.js';
 
 // ============================ GESTOR LOCAL (conexão direta com o deploy) ============================
 
@@ -43,6 +44,8 @@ export async function registerGestorHandler(c, env) {
       WHERE gestores.sessao_id=excluded.sessao_id OR gestores.ultima_conexao IS NULL OR gestores.ultima_conexao<=?`)
     .bind(token, nome, ip, JSON.stringify(printers), now(), now(), sessionId, serverCutoff()).run();
   if (!result.meta.changes) return c.json({ error: SESSION_CONFLICT }, 409);
+  const gestor = await env.DB.prepare('SELECT estabelecimento_id FROM gestores WHERE token=?').bind(token).first();
+  if (gestor) await sincronizarConfigNfc(env.DB, gestor.estabelecimento_id, b.nfc);
   return c.json({ ok: true, token, nome, ip });
 }
 
@@ -157,6 +160,11 @@ export async function heartbeatGestorHandler(c, env) {
   const result = await env.DB.prepare('UPDATE gestores SET ultima_conexao=? WHERE token=? AND sessao_id=? AND ativo=1')
     .bind(now(), String(b?.token || ''), String(b?.session_id || '')).run();
   if (!result.meta.changes) return c.json({ error: 'Sessão do gestor não autorizada' }, 401);
+  if (b?.nfc) {
+    const gestor = await env.DB.prepare('SELECT estabelecimento_id FROM gestores WHERE token=? AND sessao_id=? AND ativo=1')
+      .bind(String(b?.token || ''), String(b?.session_id || '')).first();
+    if (gestor) await sincronizarConfigNfc(env.DB, gestor.estabelecimento_id, b.nfc);
+  }
   return c.json({ ok: true });
 }
 

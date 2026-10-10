@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld('simplexsa', {
   testar: (impressora) => ipcRenderer.invoke('testar-impressora', impressora),
   salvarImpressora: (impressora, larguraMm, alturaMm, protocolo, dpi) => ipcRenderer.invoke('salvar-impressora', { impressora, larguraMm, alturaMm, protocolo, dpi }),
   abrirExternamente: (url) => ipcRenderer.invoke('abrir-externamente', url),
+  lerNfc: (texto) => ipcRenderer.invoke('ler-nfc', texto),
   onStatus: (callback) => ipcRenderer.on('status-atualizado', (_event, value) => callback(value)),
 })

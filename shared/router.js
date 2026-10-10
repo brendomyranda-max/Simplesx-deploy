@@ -14,7 +14,10 @@ import * as devices from './handlers-devices.js';
 import { transferirItemHandler } from './handlers-transferencias.js';
 import { addOrderItemsHandler } from './restaurant-orders.js';
 import * as fiscal from './handlers-fiscal.js';
+import * as online from './handlers-online.js';
 import { TenantDb } from './tenant-db.js';
+import { usarCartaoHandler } from './cartao-nfc.js';
+import { consumirNfcHandler, listarNfcHandler, publicarNfcGestorHandler } from './nfc.js';
 
 // Módulos: 'gestor' (tudo), 'pdv_mercado', 'restaurante'
 const routes = [
@@ -24,6 +27,14 @@ const routes = [
   { m: 'GET', p: '/api/auth/config', h: cad.authConfigHandler, pub: true },
   { m: 'GET', p: '/api/auth/me', h: cad.meHandler },
   { m: 'POST', p: '/api/auth/logout', h: cad.logoutHandler, pub: true },
+
+  // cardápio e pedidos online públicos (sem sessão do Gestor)
+  { m: 'GET', p: '/api/public/localizar', h: online.localizarHandler, pub: true },
+  { m: 'GET', p: '/api/public/lojas', h: online.listPublicStoresHandler, pub: true },
+  { m: 'GET', p: '/api/public/lojas/:slug/distancia', h: online.distanciaLojaHandler, pub: true },
+  { m: 'GET', p: '/api/public/lojas/:slug', h: online.getPublicStoreHandler, pub: true },
+  { m: 'POST', p: '/api/public/lojas/:slug/pedidos', h: online.createPublicOrderHandler, pub: true },
+  { m: 'GET', p: '/api/public/lojas/:slug/pedidos/:chave', h: online.getPublicOrderHandler, pub: true },
   // funcionários (login por senha/pin não usa token)
   { m: 'POST', p: '/api/funcionarios/login', h: cad.loginFuncionarioHandler, pub: true },
   { m: 'POST', p: '/api/funcionarios/pin', h: cad.loginPinHandler, pub: true },
@@ -31,6 +42,28 @@ const routes = [
   // config
   { m: 'GET', p: '/api/config', h: cat.getConfigHandler },
   { m: 'PUT', p: '/api/config', h: cat.putConfigHandler, mod: 'gestor' },
+
+  // configuração do cardápio que alimenta o site público
+  { m: 'GET', p: '/api/online/loja', h: online.getOnlineStoreHandler, mod: 'restaurante' },
+  { m: 'PUT', p: '/api/online/loja', h: online.updateOnlineStoreHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/online/categorias', h: online.listStoreCategoriesHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/online/categorias', h: online.addStoreCategoryHandler, mod: 'restaurante' },
+  { m: 'DELETE', p: '/api/online/categorias/:id', h: online.removeStoreCategoryHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/online/cardapio-categorias', h: online.listMenuCategoriesHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/online/cardapio-categorias', h: online.addMenuCategoryHandler, mod: 'restaurante' },
+  { m: 'PUT', p: '/api/online/cardapio-categorias/:id', h: online.updateMenuCategoryHandler, mod: 'restaurante' },
+  { m: 'DELETE', p: '/api/online/cardapio-categorias/:id', h: online.removeMenuCategoryHandler, mod: 'restaurante' },
+  { m: 'PUT', p: '/api/online/cardapio/organizar', h: online.organizeMenuHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/online/produtos', h: online.listOnlineCatalogHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/online/produtos', h: online.upsertOnlineCatalogProductHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/online/produtos/exclusivo', h: online.createOnlineOnlyProductHandler, mod: 'restaurante' },
+  { m: 'PUT', p: '/api/online/produtos/:id', h: online.updateOnlineCatalogProductHandler, mod: 'restaurante' },
+  { m: 'DELETE', p: '/api/online/produtos/:id', h: online.removeOnlineCatalogProductHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/online/pedidos', h: online.listOnlineOrdersHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/pedidos/painel', h: online.painelPedidosHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/pedidos/cozinha', h: online.painelCozinhaHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/pedidos/online/:id/status', h: online.atualizarPedidoOnlineHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/pedidos/etiqueta', h: cad.imprimirEtiquetaPedidoHandler },
 
   // NFC-e / fiscal
   { m: 'GET', p: '/api/fiscal/config', h: fiscal.getFiscalConfigHandler, mod: 'gestor' },
@@ -90,6 +123,7 @@ const routes = [
   { m: 'POST', p: '/api/mesas/:id/abrir', h: ven.abrirComandaHandler },
   { m: 'PUT', p: '/api/mesas/:id', h: ven.updateMesaHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/mesas/:id', h: ven.deleteMesaHandler, mod: 'gestor' },
+  { m: 'POST', p: '/api/cartoes/usar', h: usarCartaoHandler },
 
   // comandas
   { m: 'GET', p: '/api/comandas/:id', h: ven.getComandaHandler },
@@ -117,6 +151,7 @@ const routes = [
   { m: 'POST', p: '/api/gestor/heartbeat', h: gestor.heartbeatGestorHandler, pub: true },
   { m: 'POST', p: '/api/gestor/pull', h: gestor.pullGestorJobsHandler, pub: true },
   { m: 'POST', p: '/api/gestor/jobs/:id/status', h: gestor.gestorJobStatusHandler, pub: true },
+  { m: 'POST', p: '/api/gestor/nfc', h: publicarNfcGestorHandler, pub: true },
   { m: 'GET', p: '/api/gestores', h: gestor.listGestoresHandler, mod: 'gestor' },
   { m: 'PUT', p: '/api/gestores/:id', h: gestor.updateGestorHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/gestores/:id', h: gestor.deleteGestorHandler, mod: 'gestor' },
@@ -131,6 +166,9 @@ const routes = [
   { m: 'POST', p: '/api/device/token/rotate', h: devices.rotateDeviceTokenHandler, pub: true },
   { m: 'POST', p: '/api/device/tasks/pull', h: devices.pullDeviceTasksHandler, pub: true },
   { m: 'POST', p: '/api/device/tasks/:id/status', h: devices.updateDeviceTaskStatusHandler, pub: true },
+  { m: 'POST', p: '/api/device/nfc', h: devices.publishDeviceNfcHandler, pub: true },
+  { m: 'GET', p: '/api/nfc/eventos', h: listarNfcHandler },
+  { m: 'POST', p: '/api/nfc/eventos/:id/consumir', h: consumirNfcHandler },
   { m: 'GET', p: '/api/devices', h: devices.listDevicesHandler, mod: 'gestor' },
   { m: 'PUT', p: '/api/devices/:id', h: devices.updateDeviceHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/devices/:id', h: devices.revokeDeviceHandler, mod: 'gestor' },
@@ -199,8 +237,11 @@ function areasDaRota(method, path) {
   if (/^\/api\/(setores-impressao|impressora-agentes|impressora-etiquetas)/.test(path)) {
     return method === 'GET' ? ['vendas', 'estoque', 'configuracoes'] : ['configuracoes'];
   }
+  if (/^\/api\/nfc/.test(path)) return ['vendas', 'estoque', 'configuracoes'];
   if (/^\/api\/impressao/.test(path)) return ['vendas', 'estoque'];
-  if (/^\/api\/(fiscal|vendas|mesas|comandas)/.test(path)) return ['vendas'];
+  if (/^\/api\/online/.test(path)) return ['vendas', 'estoque'];
+  if (/^\/api\/pedidos/.test(path)) return ['vendas'];
+  if (/^\/api\/(fiscal|vendas|mesas|comandas|cartoes)/.test(path)) return ['vendas'];
   if (/^\/api\/(financeiro|despesas|contas-pagar|contas-receber|lancamentos|caixa|fechamento-caixa|perdas)/.test(path)) return ['gestao'];
   if (/^\/api\/(estoque|validade|fornecedores)/.test(path)) return ['estoque'];
   if (path === '/api/produtos/buscar') return ['vendas', 'estoque'];

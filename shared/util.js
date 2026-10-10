@@ -201,6 +201,15 @@ export async function getFichaCompleta(env, id) {
   return rows.results.map((r) => ({ ...r, custo_linha: custoLinhaEmbalagem(r.quantidade, r.unidade, r.insumo_unidade, r.insumo_custo, r.conteudo_quantidade, r.conteudo_unidade) }));
 }
 
+export async function acrescimosDoProduto(env, produtoId) {
+  const rows = await env.DB.prepare(
+    `SELECT a.insumo_id, p.preco AS valor, p.nome AS insumo_nome
+     FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco > 0
+     WHERE a.produto_id=? ORDER BY a.ordem, a.id`
+  ).bind(produtoId).all();
+  return rows.results.map((row) => ({ insumo_id: Number(row.insumo_id), valor: num(row.valor), insumo_nome: row.insumo_nome }));
+}
+
 export async function getProdutoFull(env, id) {
   const p = await env.DB.prepare('SELECT * FROM produtos WHERE id=?').bind(id).first();
   if (!p) return null;
@@ -218,6 +227,7 @@ export async function getProdutoFull(env, id) {
     .bind(id)
     .all();
   const ficha = p.tipo === 'composto' ? await getFichaCompleta(env, id) : [];
+  const acrescimos = await acrescimosDoProduto(env, id);
   let estoque_possivel = null;
   if (p.tipo === 'composto' && ficha.length) {
     const baixas = await calcularBaixasProduto(env, id, 1);
@@ -228,6 +238,7 @@ export async function getProdutoFull(env, id) {
     categorias: cats.results,
     codigos_barras: cods.results,
     comentarios: coments.results.map((r) => r.texto),
+    acrescimos,
     ficha,
     ficha_count: ficha.length,
     estoque_possivel,

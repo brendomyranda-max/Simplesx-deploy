@@ -564,6 +564,77 @@ export async function imprimirEtiquetaHandler(c, env) {
   return c.json({ impressao: txt, etiqueta: v, jobs });
 }
 
+function destinoEtiquetaPedido(row) {
+  if (row.mesa_tipo === 'online') {
+    return `DELIVERY ${row.tipo_entrega === 'retirada' ? 'RETIRADA' : 'ENTREGA'}`;
+  }
+  if (row.mesa_tipo === 'cartao' && row.nfc_uid) return `CARTAO ${row.nfc_uid}`;
+  return `MESA ${row.mesa_numero || '-'}`;
+}
+
+export async function imprimirEtiquetaPedidoHandler(c, env) {
+  const body = await c.req.json().catch(() => ({}));
+  const itemId = Number(body?.item_id);
+  const comandaId = Number(body?.comanda_id);
+  const porItem = Number.isInteger(itemId) && itemId > 0;
+  const porComanda = Number.isInteger(comandaId) && comandaId > 0;
+  if (!porItem && !porComanda) return c.json({ error: 'Informe o item ou a comanda' }, 400);
+  const rows = await env.DB.prepare(
+    `SELECT i.id, i.nome, i.quantidade, i.observacao, i.status, i.criado_em, i.comanda_id,
+       c.cliente_nome, c.garcom_nome,
+       m.numero AS mesa_numero, m.tipo AS mesa_tipo, m.nfc_uid,
+       po.tipo_entrega, po.endereco, po.telefone, po.cliente_nome AS pedido_cliente, po.observacao AS pedido_obs
+     FROM comanda_itens i
+     JOIN comandas c ON c.id=i.comanda_id
+     JOIN mesas m ON m.id=c.mesa_id
+     LEFT JOIN pedidos_online po ON po.comanda_id=c.id
+     WHERE ${porItem ? 'i.id=?' : "i.comanda_id=? AND i.status IN ('novo','enviado')"}
+     ORDER BY i.criado_em, i.id`
+  ).bind(porItem ? itemId : comandaId).all();
+  if (!rows.results.length) return c.json({ error: 'Nenhum item para etiquetar' }, 404);
+  const primeiro = rows.results[0];
+  const posicao = await env.DB.prepare(
+    `SELECT COUNT(*) AS c FROM comanda_itens i
+     JOIN comandas c ON c.id=i.comanda_id
+     JOIN mesas m ON m.id=c.mesa_id
+     WHERE c.status='aberta' AND i.status IN ('novo','enviado')
+       AND COALESCE(m.tipo,'normal')!='pagamentos'
+       AND (i.criado_em < ? OR (i.criado_em=? AND i.id<=?))`
+  ).bind(primeiro.criado_em, primeiro.criado_em, primeiro.id).first();
+  const cliente = primeiro.pedido_cliente || primeiro.cliente_nome || primeiro.garcom_nome || '';
+  const txt = [
+    linha(),
+    `PRIORIDADE ${num(posicao?.c) || 1}`,
+    destinoEtiquetaPedido(primeiro),
+    cliente,
+    primeiro.telefone || '',
+    primeiro.mesa_tipo === 'online' && primeiro.tipo_entrega === 'entrega' ? (primeiro.endereco || '') : '',
+    linha('-'),
+    ...rows.results.flatMap((item) => [
+      `${num(item.quantidade)}x ${item.nome}`,
+      ...String(item.observacao || '').split('\n').map((line) => line.trim()).filter(Boolean).map((line) => `  ${line}`),
+    ]),
+    primeiro.pedido_obs ? `OBS: ${primeiro.pedido_obs}` : '',
+    linha(),
+    new Date().toLocaleString('pt-BR'),
+    linha(),
+  ].filter((line) => line !== '').join('\n');
+  const destinos = await env.DB.prepare(
+    `SELECT nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
+     FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1 ORDER BY id`
+  ).all();
+  const jobs = [];
+  for (const destino of destinos.results) {
+    const job = await enqueueGestorJob(env, c.user, {
+      conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
+      servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id,
+      impressoraDestino: destino.impressora_destino, taskType: 'PRINT_LABEL',
+    });
+    jobs.push({ impressora: destino.nome, ...job });
+  }
+  return c.json({ impressao: txt, jobs });
+}
+
 export async function imprimirVendaHandler(c, env) {
   const venda = await env.DB.prepare("SELECT * FROM vendas WHERE id=? AND tipo='pdv'").bind(c.params.id).first();
   if (!venda) return c.json({ error: 'Venda não encontrada' }, 404);

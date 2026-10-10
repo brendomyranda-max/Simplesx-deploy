@@ -20,8 +20,10 @@ import {
   gerarNumeroVenda,
   httpError,
   calcularBaixasProduto,
+  acrescimosDoProduto,
 } from './util.js';
-import { quantidadeEmUnidadesEstoque } from './units.js';
+import { quantidadeEmUnidadesEstoque, arredondar } from './units.js';
+import { idsAcrescimo, observacaoComAcrescimos, precoComAcrescimos, selecionarAcrescimos, separarObservacao } from './acrescimos.js';
 import { emitirNfceVenda } from './handlers-fiscal.js';
 import { saveOrderItems } from './restaurant-orders.js';
 import { dispatchOrders } from './order-printing.js';
@@ -721,14 +723,28 @@ export async function updateItemComandaHandler(c, env) {
     return c.json({ error: 'Este item já entrou na fila de impressão. Suas observações não podem ser alteradas.' }, 409);
   }
 
-  const observacao = typeof b.observacao === 'string' ? b.observacao.trim() : '';
-  const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=? WHERE id=? AND comanda_id=? AND versao=?
+  let observacao = '';
+  let preco = num(item.preco_unitario);
+  try {
+    const cadastrados = item.produto_id ? await acrescimosDoProduto(env, item.produto_id) : [];
+    const anteriores = separarObservacao(item.observacao, cadastrados);
+    const ids = Array.isArray(b.acrescimos) ? idsAcrescimo(b.acrescimos) : anteriores.ids;
+    const escolhidos = selecionarAcrescimos(ids, cadastrados);
+    const extraAntes = precoComAcrescimos(0, selecionarAcrescimos(anteriores.ids, cadastrados));
+    const base = arredondar(num(item.preco_unitario) - extraAntes);
+    preco = precoComAcrescimos(Math.max(0, base), escolhidos);
+    const livres = typeof b.observacao === 'string' ? b.observacao : anteriores.livres.join('\n');
+    observacao = observacaoComAcrescimos(livres, escolhidos);
+  } catch (error) {
+    return c.json({ error: error?.message || 'Acréscimo inválido' }, error?.status || 400);
+  }
+  const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=?, preco_unitario=? WHERE id=? AND comanda_id=? AND versao=?
     AND status='novo' AND NOT EXISTS (SELECT 1 FROM pedido_impressoes WHERE item_id=comanda_itens.id)
     AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
-    .bind(observacao || null, item.id, item.comanda_id, item.versao, item.comanda_id)
+    .bind(observacao || null, preco, item.id, item.comanda_id, item.versao, item.comanda_id)
     .run();
   if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
-  return c.json({ ...item, observacao: observacao || null, versao: item.versao + 1 });
+  return c.json({ ...item, observacao: observacao || null, preco_unitario: preco, versao: item.versao + 1 });
 }
 
 export async function updateItemStatusHandler(c, env) {

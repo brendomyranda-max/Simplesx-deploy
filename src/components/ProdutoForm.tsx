@@ -6,8 +6,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, ScanBarcode, Trash2, Boxes, MessageSquare, X, ChefHat } from 'lucide-react';
 import { Button, Field, Input, Modal, Select, Textarea, Toggle, useToast } from '@/components/ui';
-import { categoriaApi, fornecedorApi, produtoApi } from '@/lib/api';
-import type { Categoria, Fornecedor, Produto, ProdutoTipo } from '@/lib/types';
+import { FotoGaleria } from '@/components/FotoGaleria';
+import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
+import { descricaoComIngredientes } from '@/lib/descricao-composto';
+import { categoriaApi, fornecedorApi, onlineApi, produtoApi } from '@/lib/api';
+import type { Categoria, CategoriaCardapio, Fornecedor, OnlineCatalogProduct, Produto, ProdutoTipo } from '@/lib/types';
 import { fmtBRL } from '@/lib/format';
 import { UNIDADES, calcularCmv, custoLinha, unidadeCompativel } from '@/lib/cmv';
 
@@ -17,10 +20,11 @@ const TEMPERATURAS = [
   { v: 'congelado', label: 'Congelado' },
 ];
 
-const TIPOS: { v: ProdutoTipo; label: string; desc: string }[] = [
+const TIPOS: { v: ProdutoTipo | 'delivery'; label: string; desc: string }[] = [
   { v: 'produto', label: 'Produto simples', desc: 'Vende e baixa o próprio estoque' },
   { v: 'insumo', label: 'Insumo', desc: 'Matéria-prima usada em fichas técnicas' },
   { v: 'composto', label: 'Produto composto', desc: 'Receita: baixa insumos do estoque ao vender' },
+  { v: 'delivery', label: 'Delivery', desc: 'Publica um produto que já está no estoque' },
 ];
 
 interface LinhaFicha {
@@ -60,6 +64,11 @@ function initialState(p?: Produto | null, codigoInicial?: string) {
       : codigoInicial ? [{ codigo: codigoInicial, principal: 1 }] : [],
     categoria_ids: (p?.categorias || []).map((c) => c.id),
     comentarios: (p?.comentarios || []).map((c) => c),
+    acrescimos: (p?.acrescimos || []).map((item) => ({
+      insumo_id: item.insumo_id,
+      valor: String(item.valor),
+      nome: item.insumo_nome,
+    })) as LinhaAcrescimo[],
     ficha: ((p?.ficha || []) as any[]).map((i) => ({
       insumo_id: i.insumo_id,
       quantidade: String(i.quantidade ?? ''),
@@ -74,12 +83,14 @@ export function ProdutoForm({
   produto,
   onSaved,
   codigoInicial,
+  canalInicial = 'cadastro',
 }: {
   open: boolean;
   onClose: () => void;
   produto?: Produto | null;
   onSaved: (produto?: Produto) => void;
   codigoInicial?: string;
+  canalInicial?: 'cadastro' | 'delivery';
 }) {
   const toast = useToast();
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -88,6 +99,20 @@ export function ProdutoForm({
   const [saving, setSaving] = useState(false);
   const [novoComentario, setNovoComentario] = useState('');
   const [form, setForm] = useState<any>(() => initialState(produto, codigoInicial));
+  const [canal, setCanal] = useState<'cadastro' | 'delivery'>(canalInicial);
+  const [opcoesEstoque, setOpcoesEstoque] = useState<Produto[]>([]);
+  const [catalogoDelivery, setCatalogoDelivery] = useState<OnlineCatalogProduct[]>([]);
+  const [entregaId, setEntregaId] = useState<number | ''>('');
+  const [entregaPreco, setEntregaPreco] = useState('');
+  const [entregaDescricao, setEntregaDescricao] = useState('');
+  const [entregaIngredientes, setEntregaIngredientes] = useState('');
+  const [entregaFoto, setEntregaFoto] = useState('');
+  const [entregaDisponivel, setEntregaDisponivel] = useState(true);
+  const [entregaAcrescimos, setEntregaAcrescimos] = useState<LinhaAcrescimo[]>([]);
+  const [entregaLivres, setEntregaLivres] = useState<OnlineCatalogProduct['opcoes']>([]);
+  const [entregaCategoria, setEntregaCategoria] = useState('');
+  const [entregaCatalogoId, setEntregaCatalogoId] = useState<number | null>(null);
+  const [categoriasCardapio, setCategoriasCardapio] = useState<CategoriaCardapio[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +121,74 @@ export function ProdutoForm({
     produtoApi.insumos().then(setInsumos).catch(() => {});
     setForm(initialState(produto, codigoInicial));
     setNovoComentario('');
-  }, [open, produto, codigoInicial]);
+    setCanal(canalInicial);
+    setEntregaId('');
+    setEntregaPreco('');
+    setEntregaDescricao('');
+    setEntregaIngredientes('');
+    setEntregaFoto('');
+    setEntregaDisponivel(true);
+    setEntregaAcrescimos([]);
+    setEntregaLivres([]);
+    setEntregaCategoria('');
+    setEntregaCatalogoId(null);
+  }, [open, produto, codigoInicial, canalInicial]);
+
+  const preencherEntrega = (id: number, estoque: Produto[], catalogo: OnlineCatalogProduct[]) => {
+    const publicadoAtivo = catalogo.find((item) => item.produto_id === id && item.ativo !== 0);
+    const publicado = publicadoAtivo || catalogo.find((item) => item.produto_id === id);
+    const base = estoque.find((item) => item.id === id);
+    setEntregaId(id);
+    setEntregaCatalogoId(publicadoAtivo?.id ?? null);
+    setEntregaCategoria(publicado?.cardapio_categoria_id ? String(publicado.cardapio_categoria_id) : '');
+    const doEstoque = (base?.acrescimos || []).map((item) => ({
+      insumo_id: item.insumo_id,
+      valor: String(item.valor),
+      nome: item.insumo_nome,
+    }));
+    if (publicado) {
+      setEntregaPreco(publicado.preco == null ? '' : String(publicado.preco));
+      setEntregaDescricao(publicado.descricao || '');
+      setEntregaIngredientes(publicado.opcoes.filter((opcao) => opcao.tipo === 'removivel').map((opcao) => opcao.nome).join(', '));
+      setEntregaFoto(publicado.foto_url || '');
+      setEntregaDisponivel(publicado.disponivel === 1);
+      const adicionais = publicado.opcoes.filter((opcao) => opcao.tipo === 'adicional');
+      const comInsumo = adicionais.filter((opcao) => opcao.insumo_id);
+      if (comInsumo.length || adicionais.length) {
+        setEntregaAcrescimos(comInsumo.map((opcao) => ({ insumo_id: opcao.insumo_id || '', valor: String(opcao.preco_adicional), nome: opcao.nome })));
+        setEntregaLivres(adicionais.filter((opcao) => !opcao.insumo_id));
+      } else {
+        setEntregaAcrescimos(doEstoque);
+        setEntregaLivres([]);
+      }
+      return;
+    }
+    setEntregaPreco(base?.preco == null ? '' : String(base.preco));
+    const nomesFicha = (base?.ficha || []).map((item) => item.insumo_nome || '').filter(Boolean);
+    setEntregaDescricao(base?.tipo === 'composto' ? descricaoComIngredientes(nomesFicha, base?.observacoes || '') : (base?.observacoes || ''));
+    setEntregaIngredientes(nomesFicha.join(', '));
+    setEntregaFoto('');
+    setEntregaDisponivel(true);
+    setEntregaAcrescimos(doEstoque);
+    setEntregaLivres([]);
+  };
+
+  useEffect(() => {
+    if (!open || canal !== 'delivery') return;
+    let ativo = true;
+    Promise.all([produtoApi.list(), onlineApi.products(), onlineApi.menuCategories()])
+      .then(([lista, catalogo, secoes]) => {
+        if (!ativo) return;
+        const vendaveis = lista.filter((item) => item.ativo && item.tipo !== 'insumo');
+        setOpcoesEstoque(vendaveis);
+        setCatalogoDelivery(catalogo);
+        setCategoriasCardapio(secoes);
+        const preferido = produto && produto.tipo !== 'insumo' ? produto.id : vendaveis[0]?.id;
+        if (preferido) preencherEntrega(preferido, vendaveis, catalogo);
+      })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, [open, canal, produto]);
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
   const setFicha = (i: number, k: string, v: any) => {
@@ -148,8 +240,46 @@ export function ProdutoForm({
     setNovoComentario('');
   };
 
+  const publicarDelivery = async () => {
+    const preco = Number(String(entregaPreco).replace(',', '.'));
+    if (!entregaId) return toast('error', 'Escolha um produto que já está no estoque');
+    if (!Number.isFinite(preco) || preco < 0) return toast('error', 'Informe o preço no delivery');
+    const lidos = lerAcrescimos(entregaAcrescimos, insumos);
+    if (lidos.erro) return toast('error', lidos.erro);
+    const removiveis = [...new Set(entregaIngredientes.split(',').map((item) => item.trim()).filter(Boolean))]
+      .map((nome, ordem) => ({ nome, tipo: 'removivel' as const, preco_adicional: 0, ordem, ativo: 1 }));
+    const pagos = lidos.itens.map((item, indice) => ({
+      nome: item.nome, tipo: 'adicional' as const, preco_adicional: item.valor, insumo_id: item.insumo_id, ordem: removiveis.length + indice, ativo: 1,
+    }));
+    const nomes = new Set(pagos.map((item) => item.nome));
+    const livres = entregaLivres.filter((opcao) => !nomes.has(opcao.nome)).map((opcao, indice) => ({
+      nome: opcao.nome, tipo: 'adicional' as const, preco_adicional: opcao.preco_adicional, ordem: removiveis.length + pagos.length + indice, ativo: opcao.ativo ?? 1,
+    }));
+    setSaving(true);
+    try {
+      await onlineApi.addProduct({
+        produto_id: Number(entregaId),
+        preco,
+        descricao: entregaDescricao,
+        foto_url: entregaFoto || null,
+        disponivel: entregaDisponivel ? 1 : 0,
+        ativo: 1,
+        cardapio_categoria_id: entregaCategoria ? Number(entregaCategoria) : null,
+        opcoes: [...removiveis, ...pagos, ...livres],
+      });
+      toast('success', 'Produto publicado no delivery');
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      toast('error', e?.error || 'Não foi possível publicar no delivery');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (canal === 'delivery') return publicarDelivery();
     if (!form.nome.trim()) return toast('error', 'Informe o nome do produto');
     if (form.tipo === 'composto' && form.ficha.length === 0)
       return toast('error', 'Adicione pelo menos um insumo à ficha técnica');
@@ -173,6 +303,8 @@ export function ProdutoForm({
       return toast('error', 'A validade após abertura deve ser maior que zero');
     if (form.tipo === 'insumo' && Number(form.conteudo_quantidade) <= 0)
       return toast('error', 'Informe a gramatura ou o volume por unidade do insumo');
+    const acrescimosLidos = form.tipo === 'composto' ? lerAcrescimos(form.acrescimos, insumos) : { erro: '', itens: [] };
+    if (acrescimosLidos.erro) return toast('error', acrescimosLidos.erro);
     setSaving(true);
     try {
       const payload = {
@@ -205,6 +337,9 @@ export function ProdutoForm({
         codigos_barras: form.codigos_barras.filter((c: any) => c.codigo.trim()),
         categoria_ids: form.categoria_ids,
         comentarios: form.comentarios.map((c: string) => c.trim()).filter(Boolean),
+        acrescimos: form.tipo === 'composto'
+          ? acrescimosLidos.itens.map((item) => ({ insumo_id: item.insumo_id, valor: item.valor }))
+          : undefined,
         ficha:
           form.tipo === 'composto'
             ? form.ficha
@@ -224,26 +359,95 @@ export function ProdutoForm({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={produto ? `Editar: ${produto.nome}` : 'Novo produto'} width="max-w-3xl">
+    <Modal open={open} onClose={onClose} title={canal === 'delivery' ? 'Delivery' : produto ? `Editar: ${produto.nome}` : 'Novo produto'} width="max-w-3xl">
       <form onSubmit={salvar} className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-3">
-          {TIPOS.map((t) => (
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {TIPOS.map((t) => {
+            const ativo = t.v === 'delivery' ? canal === 'delivery' : canal === 'cadastro' && form.tipo === t.v;
+            return (
             <button
               key={t.v}
               type="button"
-              onClick={() => set('tipo', t.v)}
+              onClick={() => {
+                if (t.v === 'delivery') setCanal('delivery');
+                else {
+                  setCanal('cadastro');
+                  set('tipo', t.v);
+                }
+              }}
               className={`rounded-xl border p-3 text-left transition-colors ${
-                form.tipo === t.v
+                ativo
                   ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
                   : 'border-slate-200 bg-white hover:border-slate-300'
               }`}
             >
-              <p className={`text-sm font-bold ${form.tipo === t.v ? 'text-brand-700' : 'text-slate-700'}`}>{t.label}</p>
+              <p className={`text-sm font-bold ${ativo ? 'text-brand-700' : 'text-slate-700'}`}>{t.label}</p>
               <p className="text-[11px] leading-snug text-slate-400">{t.desc}</p>
             </button>
-          ))}
+            );
+          })}
         </div>
 
+        {canal === 'delivery' ? (
+          <div className="space-y-4">
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">O delivery só publica um produto simples ou composto que já está cadastrado no estoque. O estoque e a ficha técnica continuam os mesmos.</p>
+            {opcoesEstoque.length === 0 ? (
+              <p className="text-sm text-slate-500">Cadastre um produto simples ou composto antes de publicar no delivery.</p>
+            ) : (
+              <>
+                <Field label="Produto do estoque *">
+                  <Select value={entregaId} onChange={(event) => preencherEntrega(Number(event.target.value), opcoesEstoque, catalogoDelivery)}>
+                    {opcoesEstoque.map((item) => <option key={item.id} value={item.id}>{item.nome} · {item.tipo === 'composto' ? 'composto' : 'simples'}</option>)}
+                  </Select>
+                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Preço no delivery">
+                    <Input inputMode="decimal" value={entregaPreco} onChange={(event) => setEntregaPreco(event.target.value)} placeholder="0,00" />
+                  </Field>
+                  <Field label="Disponibilidade">
+                    <div className="flex h-[42px] items-center rounded-xl border border-slate-300 bg-white px-3">
+                      <Toggle checked={entregaDisponivel} onChange={setEntregaDisponivel} label={entregaDisponivel ? 'Disponível' : 'Pausado'} />
+                    </div>
+                  </Field>
+                </div>
+                <AcrescimoCadastro
+                  linhas={entregaAcrescimos}
+                  onChange={setEntregaAcrescimos}
+                  insumos={insumos.filter((item) => item.id !== Number(entregaId))}
+                />
+                <Field label="Descrição para o cliente" hint={opcoesEstoque.find((item) => item.id === Number(entregaId))?.tipo === 'composto' ? 'Os ingredientes da ficha já estão escritos. Acrescente algo a mais se quiser.' : undefined}>
+                  <Textarea value={entregaDescricao} onChange={(event) => setEntregaDescricao(event.target.value)} rows={3} placeholder="O que vem neste item" />
+                </Field>
+                <Field label="Ingredientes removíveis" hint="Separe por vírgula.">
+                  <Textarea value={entregaIngredientes} onChange={(event) => setEntregaIngredientes(event.target.value)} rows={2} placeholder="Ex.: cebola, picles, molho" />
+                </Field>
+                <Field label="Categoria no cardápio" hint="Opcional. Crie as seções em Delivery, no estoque, e aplique aqui.">
+                  <Select value={entregaCategoria} onChange={(event) => setEntregaCategoria(event.target.value)}>
+                    <option value="">Sem categoria</option>
+                    {categoriasCardapio.map((categoria) => <option key={categoria.id} value={categoria.id}>{categoria.nome}</option>)}
+                  </Select>
+                </Field>
+                {entregaCatalogoId && <Button type="button" variant="danger" disabled={saving} onClick={async () => {
+                  setSaving(true);
+                  try {
+                    await onlineApi.removeProduct(entregaCatalogoId);
+                    toast('success', 'Produto removido do cardápio. Ele continua no estoque.');
+                    onSaved();
+                    onClose();
+                  } catch (error: any) {
+                    toast('error', error?.error || 'Não foi possível remover do cardápio');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}>Remover do cardápio</Button>}
+                <Field label="Foto" hint="Importe uma imagem da galeria do celular ou do computador.">
+                  <FotoGaleria value={entregaFoto} onChange={setEntregaFoto} />
+                </Field>
+              </>
+            )}
+          </div>
+        ) : (
+        <>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nome *">
             <Input value={form.nome} onChange={(e) => set('nome', e.target.value)} placeholder="Ex.: X-Salada" />
@@ -413,7 +617,7 @@ export function ProdutoForm({
               ))}
             </Select>
           </Field>
-          <Field label="Preço venda (R$)">
+          <Field label="Preço venda (R$)" hint={form.tipo === 'insumo' ? 'Se o cliente acrescentar este item em um lanche, este valor entra como observação e soma no preço.' : undefined}>
             <Input type="number" step="0.01" value={form.preco} onChange={(e) => set('preco', e.target.value)} placeholder="0,00" />
             {form.produto_balanca && <p className="mt-1 text-[11px] text-slate-500">Valor por {form.unidade === 'L' ? 'litro' : 'quilo'}</p>}
           </Field>
@@ -573,6 +777,14 @@ export function ProdutoForm({
           </Field>
         </div>
 
+        {form.tipo === 'composto' && (
+          <AcrescimoCadastro
+            linhas={form.acrescimos}
+            onChange={(linhas) => set('acrescimos', linhas)}
+            insumos={insumos.filter((item) => item.id !== produto?.id)}
+          />
+        )}
+
         <Field label="Observações">
           <Textarea rows={2} value={form.observacoes} onChange={(e) => set('observacoes', e.target.value)} />
         </Field>
@@ -648,11 +860,13 @@ export function ProdutoForm({
         {produto && produto.preco != null && (
           <p className="text-xs text-slate-400">Preço atual: {fmtBRL(produto.preco)} · Estoque atual: {produto.estoque_atual} {produto.unidade}</p>
         )}
+        </>
+        )}
 
         <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
           <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" loading={saving} icon={<Boxes className="h-4 w-4" />}>
-            {produto ? 'Salvar alterações' : 'Cadastrar produto'}
+          <Button type="submit" loading={saving} icon={<Boxes className="h-4 w-4" />} disabled={canal === 'delivery' && opcoesEstoque.length === 0}>
+            {canal === 'delivery' ? 'Publicar no delivery' : produto ? 'Salvar alterações' : 'Cadastrar produto'}
           </Button>
         </div>
       </form>

@@ -5,6 +5,7 @@
 
 import { estabelecimentoId, gerarToken, httpError, kvGet, kvPut, now, num, sha256, temModulo } from './util.js';
 import { cleanupServerStatements, serverCutoff, SESSION_CONFLICT } from './print-servers.js';
+import { normalizarLeituraNfc, registrarLeituraNfc } from './nfc.js';
 
 export const DEVICE_TASK_TYPES = new Set([
   'PRINT_ORDER',
@@ -232,6 +233,15 @@ export async function heartbeatDeviceHandler(c, env) {
   ).bind(status, now(), error || null, text(body?.version, 40, 'Versão') || null, JSON.stringify(printers), now(), device.id, device.estabelecimento_id, device.token_hash).run();
   if (!updated.meta.changes) throw httpError(401, 'Dispositivo não autorizado');
   return c.json({ ok: true, server_time: now(), token_expires_at: device.token_expira_em });
+}
+
+export async function publishDeviceNfcHandler(c, env) {
+  const device = await authenticateDevice(c, env, true);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Corpo JSON obrigatório' }, 400);
+  const leitura = normalizarLeituraNfc(body);
+  const evento = await registrarLeituraNfc(env.DB, device.estabelecimento_id, leitura, 'android');
+  return c.json({ ok: true, ...evento });
 }
 
 export async function devicePrintConfigHandler(c, env) {

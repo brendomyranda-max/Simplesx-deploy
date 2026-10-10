@@ -4,16 +4,21 @@
  */
 
 import React, { lazy, Suspense, useEffect, useState } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, type Modulo } from '@/store/auth';
 import type { AreaApp } from '@/lib/areas';
 import { AppShell } from '@/components/AppShell';
+import { InstallPrompt } from '@/components/InstallPrompt';
+import { NfcBridge } from '@/components/NfcBridge';
 import { Login } from '@/pages/Login';
 import { InicioPage } from '@/pages/InicioPage';
 import { Dashboard } from '@/pages/Dashboard';
 import { PdvPage } from '@/pages/PdvPage';
 import { VendasPage } from '@/pages/VendasPage';
 import { RestaurantePage } from '@/pages/RestaurantePage';
+import { DeliveryPage } from '@/pages/DeliveryPage';
+import { CozinhaPage } from '@/pages/CozinhaPage';
+import { LancarCartaoPage } from '@/pages/LancarCartaoPage';
 import { ComandaPage } from '@/pages/ComandaPage';
 import { PagamentosComanda } from '@/pages/PagamentosComanda';
 import { EstoquePage } from '@/pages/EstoquePage';
@@ -32,6 +37,15 @@ import { authApi, configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
 const InvestidoresPage = lazy(() => import('@/pages/InvestidoresPage'));
+const OnlineStorefront = lazy(() => import('@/pages/OnlineStorefront').then((module) => ({ default: module.OnlineStorefront })));
+const OnlineFallback = () => <div className="flex min-h-screen items-center justify-center bg-[#fcfbf7] text-sm text-slate-500">Carregando cardápio…</div>;
+
+function RedirecionaPedidos() {
+  const [params] = useSearchParams();
+  const aba = params.get('aba');
+  if (aba === 'restaurante' || aba === 'prioridade') return <Navigate to="/restaurante/cozinha" replace />;
+  return <Navigate to="/restaurante/delivery" replace />;
+}
 
 function Require({ mod, area, children }: { mod: Modulo; area?: AreaApp; children: React.ReactNode }) {
   const { can, canArea } = useAuth();
@@ -168,6 +182,32 @@ function ProtectedApp({
           }
         />
         <Route
+          path="/restaurante/lancar-cartao"
+          element={
+            <Require mod="restaurante" area="vendas">
+              <LancarCartaoPage />
+            </Require>
+          }
+        />
+        <Route path="/restaurante/pedidos" element={<Require mod="restaurante" area="vendas"><RedirecionaPedidos /></Require>} />
+        <Route
+          path="/restaurante/delivery"
+          element={
+            <Require mod="restaurante" area="vendas">
+              <DeliveryPage />
+            </Require>
+          }
+        />
+        <Route
+          path="/restaurante/cozinha"
+          element={
+            <Require mod="restaurante" area="vendas">
+              <CozinhaPage />
+            </Require>
+          }
+        />
+        <Route path="/restaurante/cardapio-online" element={<Navigate to="/estoque?aba=delivery" replace />} />
+        <Route
           path="/restaurante/comanda/:id"
           element={
             <Require mod="restaurante" area="vendas">
@@ -247,17 +287,27 @@ function SessionApp() {
   if (!token) return <Login />;
 
   return (
+    <>
+    <NfcBridge />
     <Routes>
       <Route path="/" element={<InicioPage />} />
       <Route path="*" element={<ProtectedApp badges={badges} empresaNome={empresa?.empresa_nome} />} />
     </Routes>
+    </>
   );
 }
 
 // A apresentação é pública e não depende da disponibilidade da API de sessão.
 export default function App() {
-  return <Routes>
+  return <>
+    <InstallPrompt />
+    <Routes>
     <Route path="/investidores" element={<Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Carregando apresentação…</div>}><InvestidoresPage /></Suspense>} />
+    {/* Vitrine pública: propositalmente fora da sessão e do AppShell do Gestor. */}
+    <Route path="/pedido" element={<Suspense fallback={<OnlineFallback />}><OnlineStorefront /></Suspense>} />
+    <Route path="/pedido/:slug/acompanhar/:chave" element={<Suspense fallback={<OnlineFallback />}><OnlineStorefront /></Suspense>} />
+    <Route path="/pedido/:slug" element={<Suspense fallback={<OnlineFallback />}><OnlineStorefront /></Suspense>} />
     <Route path="*" element={<SessionApp />} />
-  </Routes>;
+  </Routes>
+  </>;
 }

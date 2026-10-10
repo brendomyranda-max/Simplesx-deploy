@@ -40,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
 import br.com.simplesx.gestor.network.SimplexsaApi
+import br.com.simplesx.gestor.nfc.NfcReader
 import br.com.simplesx.gestor.network.DeviceCategory
 import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
@@ -93,6 +95,9 @@ private fun GestorScreen() {
     var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
+    var nfcEnabled by remember { mutableStateOf(config.nfcEnabled) }
+    var nfcStatus by remember { mutableStateOf("Ponte NFC desligada") }
+    var lastNfc by remember { mutableStateOf("Nenhuma") }
     var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
     var disconnecting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -171,6 +176,28 @@ private fun GestorScreen() {
     }
 
     LaunchedEffect(paired) { refreshCategories() }
+    DisposableEffect(nfcEnabled, paired) {
+        val activity = context as? android.app.Activity
+        val reader = if (activity != null && nfcEnabled) NfcReader(activity) { uid, payload ->
+            val codigo = payload.ifBlank { uid }
+            lastNfc = codigo
+            if (!paired) message = "Pareie o Gestor antes de enviar o NFC"
+            else screenScope.launch {
+                val erro = withContext(Dispatchers.IO) {
+                    runCatching { SimplexsaApi(config).postNfc(uid, codigo) }.exceptionOrNull()
+                }
+                message = if (erro == null) "NFC enviado: $codigo" else "NFC não enviado: ${erro.message}"
+            }
+        } else null
+        nfcStatus = when {
+            reader == null -> "Ponte NFC desligada"
+            !reader.available -> "Este aparelho não tem NFC"
+            !reader.enabled -> "Ligue o NFC nas configurações do Android"
+            else -> "Aproxime a tag com o Gestor aberto"
+        }
+        if (reader?.available == true && reader.enabled) reader.start()
+        onDispose { reader?.stop() }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             serviceEnabled = config.serviceEnabled
@@ -530,6 +557,19 @@ private fun GestorScreen() {
                 }
             }
 
+            Section("NFC") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ler tags NFC")
+                        Text(nfcStatus, style = MaterialTheme.typography.bodySmall)
+                        Text("Última leitura: $lastNfc", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(nfcEnabled, onCheckedChange = {
+                        nfcEnabled = it
+                        config.nfcEnabled = it
+                    })
+                }
+            }
             Section("Serviço em segundo plano") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column { Text("Receber impressões"); Text("Mantém uma notificação ativa", style = MaterialTheme.typography.bodySmall) }

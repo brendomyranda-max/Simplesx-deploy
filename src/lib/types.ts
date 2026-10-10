@@ -75,11 +75,266 @@ export interface Produto {
   exibir_mercado: number;
   observacoes: string | null;
   comentarios?: string[];
+  acrescimos?: ProdutoAcrescimo[];
   categorias: Categoria[];
   codigos_barras: CodigoBarras[];
   ficha?: FichaIngrediente[];
   ficha_count?: number;
   estoque_possivel?: number | null;
+}
+
+export interface ProdutoAcrescimo {
+  insumo_id: number;
+  insumo_nome?: string;
+  valor: number;
+}
+
+export interface OnlineCatalogOption {
+  id: number;
+  nome: string;
+  tipo: 'removivel' | 'adicional';
+  preco_adicional: number;
+  insumo_id?: number | null;
+  ordem?: number;
+  ativo?: number;
+}
+
+export interface OnlineCatalogProduct {
+  id: number;
+  produto_id: number;
+  categoria_id: number | null;
+  cardapio_categoria_id?: number | null;
+  categoria_nome: string | null;
+  nome: string;
+  descricao: string;
+  foto_url: string | null;
+  preco: number | null;
+  ordem: number;
+  disponivel: number;
+  ativo: number;
+  vendidos?: number;
+  opcoes: OnlineCatalogOption[];
+}
+
+export interface OnlineStore {
+  estabelecimento_id?: number;
+  slug: string;
+  nome: string;
+  descricao: string | null;
+  logo_url: string | null;
+  capa_url: string | null;
+  cor_capa?: string | null;
+  taxa_entrega: number;
+  tempo_min_entrega: number | null;
+  tempo_max_entrega: number | null;
+  aceita_entrega: number;
+  aceita_retirada: number;
+  ativo: number;
+  endereco?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  raio_entrega_km?: number | null;
+  valor_por_km?: number | null;
+  modo_entrega?: ModoEntrega | null;
+  valor_entrega?: number | null;
+  taxa_cliente?: number | null;
+  taxa_estabelecimento?: number | null;
+  distancia_km?: number | null;
+  entrega_na_regiao?: number | null;
+  entrega_gratis?: number | null;
+  pix_chave?: string | null;
+  pix_cidade?: string | null;
+  pix_disponivel?: number | null;
+  site_url?: string;
+  segmentos?: string[];
+}
+
+export type ModoEntrega = 'cliente' | 'dividido' | 'gratis';
+
+export interface CategoriaLoja {
+  id: number;
+  nome: string;
+  busca: string;
+}
+
+export interface CategoriaCardapio {
+  id: number;
+  nome: string;
+  ordem: number;
+}
+
+export interface LojaRede {
+  slug: string;
+  nome: string;
+  descricao: string;
+  logo_url: string | null;
+  capa_url: string | null;
+  cor_capa?: string | null;
+  taxa_entrega: number;
+  tempo_min_entrega: number | null;
+  tempo_max_entrega: number | null;
+  aceita_entrega: number;
+  aceita_retirada: number;
+  distancia_km: number | null;
+  entrega_na_regiao: number | null;
+  raio_entrega_km: number | null;
+  valor_por_km?: number | null;
+  modo_entrega?: ModoEntrega | null;
+  valor_entrega?: number | null;
+  taxa_cliente?: number | null;
+  taxa_estabelecimento?: number | null;
+  entrega_gratis?: number | null;
+  segmentos: string[];
+}
+
+export interface AreaEntrega {
+  distancia_km: number | null;
+  entrega_na_regiao: number | null;
+  raio_entrega_km: number | null;
+  endereco?: string;
+  valor_por_km?: number | null;
+  modo_entrega?: ModoEntrega | null;
+  valor_entrega?: number | null;
+  taxa_cliente?: number | null;
+  taxa_estabelecimento?: number | null;
+  entrega_gratis?: number | null;
+}
+
+export interface RedePedidos {
+  categorias: { nome: string; busca: string; lojas: number }[];
+  lojas: LojaRede[];
+}
+
+export interface OnlinePublicStore {
+  loja: OnlineStore;
+  categorias: { id: number; nome: string }[];
+  produtos: OnlineCatalogProduct[];
+}
+
+export interface OnlineOrder {
+  id: number;
+  comanda_id: number | null;
+  mesa_id?: number | null;
+  cliente_nome: string;
+  telefone: string;
+  tipo_entrega: 'entrega' | 'retirada';
+  endereco: string | null;
+  forma_pagamento: string;
+  status: 'recebido' | 'confirmado' | 'cancelado' | 'finalizado';
+  subtotal: number;
+  taxa_entrega: number;
+  valor_entrega?: number | null;
+  distancia_km?: number | null;
+  modo_entrega?: ModoEntrega | null;
+  entrega_gratis?: number | null;
+  total: number;
+  criado_em: string;
+  itens_count?: number;
+}
+
+export interface ItemPedido {
+  id: number;
+  nome: string;
+  quantidade: number;
+  observacao: string;
+  status?: string;
+  preco_unitario: number;
+  total: number;
+  criado_em?: string;
+}
+
+export interface PedidoDelivery {
+  id: number;
+  comanda_id: number | null;
+  mesa_id: number | null;
+  cliente_nome: string;
+  telefone: string;
+  tipo_entrega: 'entrega' | 'retirada';
+  endereco: string | null;
+  forma_pagamento: string;
+  observacao: string;
+  status: 'recebido' | 'confirmado' | 'cancelado' | 'finalizado';
+  etapa: 'aguardando_pix' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
+  comanda_status: string | null;
+  subtotal: number;
+  taxa_entrega: number;
+  valor_entrega?: number | null;
+  distancia_km?: number | null;
+  modo_entrega?: ModoEntrega | null;
+  entrega_gratis?: number | null;
+  total: number;
+  criado_em: string;
+  espera_min: number;
+  itens: ItemPedido[];
+}
+
+export interface PedidoRestaurante {
+  id: number;
+  mesa_id: number;
+  cliente_nome: string;
+  garcom_nome: string;
+  status: string;
+  criado_em: string;
+  espera_min: number;
+  mesa_numero: number;
+  mesa_nome: string;
+  mesa_tipo: string;
+  nfc_uid: string | null;
+  total: number;
+  pendentes: number;
+  itens: ItemPedido[];
+}
+
+export interface PedidoPrioridade {
+  posicao: number;
+  id: number;
+  comanda_id: number;
+  pedido_online_id: number | null;
+  canal: 'delivery' | 'restaurante';
+  nome: string;
+  quantidade: number;
+  observacao: string;
+  status: string;
+  criado_em: string;
+  espera_min: number;
+  cliente_nome: string;
+  garcom_nome: string;
+  telefone: string;
+  tipo_entrega: 'entrega' | 'retirada' | null;
+  endereco: string | null;
+  mesa_numero: number;
+  mesa_nome: string;
+  mesa_tipo: string;
+  nfc_uid: string | null;
+}
+
+export interface PainelPedidos {
+  delivery: PedidoDelivery[];
+  restaurante: PedidoRestaurante[];
+  prioridade: PedidoPrioridade[];
+}
+
+export interface LancamentoCozinha {
+  id: string;
+  comanda_id: number;
+  lugar: string;
+  canal: 'delivery' | 'restaurante';
+  cliente_nome: string;
+  garcom_nome: string;
+  status: 'novo' | 'enviado';
+  criado_em: string;
+  espera_min: number;
+  itens: { id: number; nome: string; quantidade: number; observacao: string; status: string }[];
+}
+
+export interface EstacaoCozinha {
+  id: string;
+  nome: string;
+  lancamentos: LancamentoCozinha[];
+}
+
+export interface PainelCozinha {
+  estacoes: EstacaoCozinha[];
 }
 
 export interface MovimentacaoEstoque {
@@ -127,6 +382,7 @@ export interface Mesa {
   ativo: number;
   aberta_em: string | null;
   tipo?: string;
+  nfc_uid?: string | null;
 }
 
 export interface Comanda {

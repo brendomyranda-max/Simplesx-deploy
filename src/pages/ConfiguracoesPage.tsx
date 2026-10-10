@@ -4,14 +4,17 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Settings, Save } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Settings, Save, Nfc } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { PdaInstalacaoCard } from '@/components/PdaInstalacaoCard';
 import { Button, Card, Field, Input, Select, Spinner, useToast } from '@/components/ui';
 import { configApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
 export function ConfiguracoesPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [cfg, setCfg] = useState<ConfigEmpresa | null>(null);
   const [form, setForm] = useState<any>({});
   const [load, setLoad] = useState(true);
@@ -58,18 +61,39 @@ export function ConfiguracoesPage() {
     }
   };
 
-  if (load || !cfg) return <Spinner />;
-
   return (
     <AnimatedPage>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Configurações</h1>
-          <p className="text-sm text-slate-500">Preferências do sistema</p>
+          <p className="text-sm text-slate-500">Preferências do sistema e instalação do PDA</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="mb-4 space-y-4">
+        <PdaInstalacaoCard />
+        <Card className="border-indigo-200 bg-indigo-50/40 p-5">
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white">
+              <Nfc className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-extrabold text-slate-800">Cartão NFC</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                O cartão é o número da mesa. Ligue o NFC no Gestor de impressoras. Em Mesas, use Adicionar com cartão para abrir,
+                Lançar para cartão para montar o pedido e aproximar, e Fechamento de cartão para receber.
+              </p>
+              <div className="mt-3">
+                <Button type="button" icon={<Nfc className="h-4 w-4" />} onClick={() => navigate('/restaurante')}>Abrir mesas</Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {load && <Spinner />}
+
+      {cfg && <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="p-5">
           <div className="mb-4 flex items-center gap-2">
             <Settings className="h-5 w-5 text-brand-600" />
@@ -104,7 +128,7 @@ export function ConfiguracoesPage() {
             </div>
           </form>
         </Card>
-      </div>
+      </div>}
     </AnimatedPage>
   );
 }

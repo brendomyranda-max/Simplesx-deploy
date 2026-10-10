@@ -8,7 +8,8 @@ import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Sm
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { DevicePrinterTest } from '@/components/DevicePrinterTest';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
-import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi } from '@/lib/api';
+import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi, nfcApi, type NfcEvento } from '@/lib/api';
+import { INSTALADORES } from '@/lib/instaladores';
 import { getBobina, setBobina, type Bobina } from '@/lib/print';
 import {
   cupsHealth,
@@ -49,6 +50,9 @@ export function ImpressorasPage() {
   const [pairing, setPairing] = useState<{ pairing_id: string; code: string; expires_at: string } | null>(null);
   const [gerandoPairing, setGerandoPairing] = useState(false);
   const [gestorDeviceId, setGestorDeviceId] = useState('');
+  const [nfcAtivo, setNfcAtivo] = useState(false);
+  const [nfcPrefixo, setNfcPrefixo] = useState('NFC:');
+  const [nfcHistorico, setNfcHistorico] = useState<NfcEvento[]>([]);
 
   const servidores = [
     ...devices.map((device) => ({ key: `android:${device.id}`, tipo: 'android', id: String(device.id), nome: device.nome, plataforma: 'Android', printers: device.printers || [], online: device.status === 'online' })),
@@ -88,13 +92,14 @@ export function ImpressorasPage() {
   const loadAll = async () => {
     setLoad(true);
     try {
-      const [a, e, cfg, g, cats, ds] = await Promise.all([
+      const [a, e, cfg, g, cats, ds, leituras] = await Promise.all([
         impressoraApi.agentes(),
         impressoraApi.etiquetas(),
         configApi.get().catch(() => null),
         gestorApi.list().catch(() => []),
         categoriaApi.list(),
         deviceApi.list().catch(() => []),
+        nfcApi.historico().catch(() => []),
       ]);
       setAgentes(a);
       setEtiquetas(e);
@@ -102,6 +107,9 @@ export function ImpressorasPage() {
       setCategorias(cats.filter((cat: any) => cat.ativo !== 0));
       setDevices(ds);
       setGestorDeviceId(String((cfg as any)?.config?.gestor_device_id || ''));
+      setNfcAtivo(cfg?.config?.nfc_ativo === '1');
+      setNfcPrefixo(cfg?.config?.nfc_prefixo || 'NFC:');
+      setNfcHistorico(leituras);
       if (cfg?.config?.gestor_token && !gestorToken) {
         setGestorTokenState(cfg.config.gestor_token);
         setGestorToken(cfg.config.gestor_token);
@@ -343,26 +351,49 @@ export function ImpressorasPage() {
           </div>
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
-            <p className="text-sm text-slate-500">Windows, Linux e Android com largura e altura personalizadas e ajuste automático do conteúdo.</p>
+            <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
-          <a
-            className="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            href="/downloads/gestor-windows"
-          >
-            Baixar para Windows (.exe)
-          </a>
-          <a
-            className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            href="/downloads/gestor-linux"
-          >
-            Baixar para Linux (.AppImage)
-          </a>
-          <a
-            className="inline-flex items-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-            href="/downloads/gestor-android"
-          >
-            Baixar para Android (.apk)
-          </a>
+          {INSTALADORES.map((item) => (
+            <a
+              key={item.id}
+              className={item.id === 'windows'
+                ? 'inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700'
+                : item.id === 'android'
+                  ? 'inline-flex items-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100'
+                  : 'inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50'}
+              href={item.href}
+            >
+              Baixar para {item.nome} ({item.arquivo})
+            </a>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="mb-4 border-indigo-200 p-4">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white">
+            <Printer className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-extrabold text-slate-800">Ponte NFC</p>
+              <Badge color={nfcAtivo ? 'green' : 'slate'}>{nfcAtivo ? 'ativa no gestor' : 'desligada'}</Badge>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              No Gestor, ative o NFC e grave o prefixo do leitor USB. No Android, o aplicativo lê a tag com o aparelho aberto.
+              A leitura chega neste sistema e, no PDV em tela cheia, procura o produto. Prefixo atual: {nfcPrefixo}.
+            </p>
+            {nfcHistorico.length > 0 && (
+              <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                {nfcHistorico.slice(0, 5).map((leitura) => (
+                  <li key={leitura.id}>
+                    {leitura.payload || leitura.uid}
+                    <span className="text-slate-400"> · {leitura.origem} · {leitura.consumido_em ? 'recebida' : 'aguardando terminal'}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </Card>
 

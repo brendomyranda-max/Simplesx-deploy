@@ -57,6 +57,10 @@ class SimplexsaApi(private val config: AppConfig) {
         config.tokenExpiresAt = response.optString("token_expires_at")
     }
 
+    fun postNfc(uid: String, payload: String) {
+        request("/device/nfc", JSONObject().put("uid", uid).put("payload", payload).put("leitor", config.deviceName))
+    }
+
     fun heartbeat(status: String = "online", error: String? = null) {
         request("/device/heartbeat", JSONObject().put("status", status).put("version", appVersion).apply {
             if (error != null) put("error", error.take(1000))

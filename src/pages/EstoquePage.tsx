@@ -4,7 +4,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Boxes, Plus, Search, Pencil, Trash2, ScanBarcode, PackageMinus, ChefHat, Layers, Wrench } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Boxes, Plus, Search, Pencil, Trash2, PackageMinus, ChefHat } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import {
   Badge,
@@ -20,16 +21,18 @@ import {
   useToast,
 } from '@/components/ui';
 import { ProdutoForm } from '@/components/ProdutoForm';
+import { OnlineCatalogPage } from '@/pages/OnlineCatalogPage';
 import { produtoApi, estoqueApi, configApi } from '@/lib/api';
 import type { Produto, ConfigEmpresa, ProdutoTipo } from '@/lib/types';
 import { fmtBRL, fmtNum } from '@/lib/format';
 import { avisarEstoqueAtualizado } from '@/lib/estoqueSync';
 
-const TABS: { v: ProdutoTipo | 'todos'; label: string }[] = [
+const TABS: { v: ProdutoTipo | 'todos' | 'delivery'; label: string }[] = [
   { v: 'todos', label: 'Todos' },
   { v: 'produto', label: 'Produtos' },
   { v: 'composto', label: 'Compostos' },
   { v: 'insumo', label: 'Insumos' },
+  { v: 'delivery', label: 'Delivery' },
 ];
 
 const TIPO_LABEL: Record<ProdutoTipo, string> = {
@@ -41,7 +44,9 @@ const TIPO_LABEL: Record<ProdutoTipo, string> = {
 export function EstoquePage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState('');
-  const [tipo, setTipo] = useState<ProdutoTipo | 'todos'>('todos');
+  const [params] = useSearchParams();
+  const [tipo, setTipo] = useState<ProdutoTipo | 'todos' | 'delivery'>(params.get('aba') === 'delivery' ? 'delivery' : 'todos');
+  const [deliveryTick, setDeliveryTick] = useState(0);
   const [load, setLoad] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [abrindoEdicao, setAbrindoEdicao] = useState<number | null>(null);
@@ -67,6 +72,7 @@ export function EstoquePage() {
   };
 
   useEffect(() => {
+    if (tipo === 'delivery') return;
     const t = setTimeout(carregar, 250);
     return () => clearTimeout(t);
   }, [busca, tipo]);
@@ -124,21 +130,37 @@ export function EstoquePage() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Estoque</h1>
           <p className="text-sm text-slate-500">
-            {produtos.length} produtos · {fmtNum(somaEstoque)} unidades
+            {tipo === 'delivery' ? 'Produtos do estoque publicados no site' : `${produtos.length} produtos · ${fmtNum(somaEstoque)} unidades`}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
+          {tipo !== 'delivery' && <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input className="w-64 pl-9" placeholder="Buscar por nome ou código..." value={busca} onChange={(e) => setBusca(e.target.value)} />
-          </div>
+          </div>}
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => { setEdit(null); setFormOpen(true); }}>
-            Novo produto
+            {tipo === 'delivery' ? 'Publicar no delivery' : 'Novo produto'}
           </Button>
         </div>
       </div>
 
-      {load ? (
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {TABS.map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setTipo(t.v)}
+            className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+              tipo === t.v ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tipo === 'delivery' ? (
+        <OnlineCatalogPage key={deliveryTick} embutido />
+      ) : load ? (
         <Spinner />
       ) : produtos.length === 0 ? (
         <Card>
@@ -146,19 +168,6 @@ export function EstoquePage() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-3 pt-3">
-            {TABS.map((t) => (
-              <button
-                key={t.v}
-                onClick={() => setTipo(t.v)}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
-                  tipo === t.v ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50">
@@ -222,7 +231,17 @@ export function EstoquePage() {
         </Card>
       )}
 
-      <ProdutoForm open={formOpen} onClose={() => setFormOpen(false)} produto={edit} onSaved={() => { avisarEstoqueAtualizado(); carregar(); }} />
+      <ProdutoForm
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        produto={edit}
+        canalInicial={tipo === 'delivery' ? 'delivery' : 'cadastro'}
+        onSaved={() => {
+          avisarEstoqueAtualizado();
+          if (tipo === 'delivery') setDeliveryTick((valor) => valor + 1);
+          else carregar();
+        }}
+      />
 
       <Modal open={!!ajuste} onClose={() => setAjuste(null)} title={`Ajustar estoque: ${ajuste?.nome || ''}`}>
         <div className="space-y-4">

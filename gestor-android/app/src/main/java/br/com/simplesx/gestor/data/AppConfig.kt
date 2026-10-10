@@ -51,6 +51,9 @@ class AppConfig(context: Context) {
     var serviceEnabled: Boolean
         get() = prefs.getBoolean("service_enabled", false)
         set(value) = prefs.edit().putBoolean("service_enabled", value).apply()
+    var nfcEnabled: Boolean
+        get() = prefs.getBoolean("nfc_enabled", false)
+        set(value) = prefs.edit().putBoolean("nfc_enabled", value).apply()
     var lastStatus: String
         get() = prefs.getString("last_status", "Parado")!!
         set(value) = prefs.edit().putString("last_status", value).apply()

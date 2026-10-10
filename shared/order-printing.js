@@ -8,7 +8,8 @@ const ids = (value) => [...new Set(String(value || '').split(',').map(Number).fi
 export async function dispatchOrders(c, env, body) {
   const tenant = estabelecimentoId(env);
   const comandaId = Number(body.comanda_id);
-  const command = await env.DB.prepare("SELECT c.*,m.numero FROM comandas c JOIN mesas m ON m.id=c.mesa_id WHERE c.id=?")
+  const command = await env.DB.prepare(`SELECT c.*,m.numero,m.tipo AS mesa_tipo,m.nfc_uid
+    FROM comandas c JOIN mesas m ON m.id=c.mesa_id WHERE c.id=?`)
     .bind(comandaId).first();
   if (!command) throw httpError(404, 'Comanda não encontrada');
   if (command.status !== 'aberta' || command.comanda_origem_id) throw httpError(409, 'Somente comandas abertas podem enviar pedidos');
@@ -55,7 +56,7 @@ export async function dispatchOrders(c, env, body) {
       ].join('\n')) })));
       const header = ascii([
         '='.repeat(32), String(config.empresa_nome || 'MEU NEGÓCIO').toUpperCase(),
-        `MESA: ${command.numero}  GARÇOM: ${actorName}`, `DESTINO: ${route.nome}`,
+        `MESA: ${command.mesa_tipo === 'cartao' && command.nfc_uid ? command.nfc_uid : command.numero}  GARÇOM: ${actorName}`, `DESTINO: ${route.nome}`,
         `PEDIDO: ${batchId.slice(0, 8)}`, '-'.repeat(32), '',
       ].join('\n'));
       const footer = ascii(`\n${'='.repeat(32)}\nEmitida: ${timestamp}\n`);

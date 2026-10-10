@@ -7,15 +7,18 @@
 // internas dos handlers. O ID é numérico e vem de uma sessão autenticada.
 const TABELAS = [
   'categorias', 'fornecedores', 'produtos', 'produto_categorias',
-  'produto_codigos_barras', 'produto_comentarios', 'ficha_tecnica',
+  'produto_codigos_barras', 'produto_comentarios', 'produto_acrescimos', 'ficha_tecnica',
   'estoque_movimentacoes', 'lotes', 'validade_controles', 'mesas', 'comandas',
   'comanda_pessoas', 'comanda_itens', 'vendas', 'venda_itens', 'pagamentos',
   'comanda_item_transferencias',
   'comanda_lancamentos', 'pedido_impressoes',
+  'lojas_online', 'lojas_categorias', 'cardapio_online_categorias', 'cardapio_online_produtos', 'cardapio_online_opcoes',
+  'pedidos_online', 'pedidos_online_itens',
   'perdas', 'despesas', 'contas_pagar', 'contas_receber', 'lancamentos', 'caixa',
   'funcionarios', 'setores_impressao', 'impressora_agentes', 'impressora_etiquetas',
   'gestores', 'gestor_jobs',
   'device_pairing_codes', 'devices', 'device_tasks', 'device_task_events', 'device_audit_events',
+  'nfc_eventos',
   'venda_ajustes',
   'fechamentos_caixa', 'fechamento_caixa_itens',
   'fiscal_config', 'produto_fiscal', 'documentos_fiscais',
@@ -52,7 +55,7 @@ function transformar(sql, estabelecimentoId) {
       continue;
     }
 
-    const selectRef = new RegExp(`\\b(FROM|JOIN)\\s+${t}(?:\\s+(?:AS\\s+)?([A-Za-z_][A-Za-z0-9_]*))?`, 'gi');
+    const selectRef = new RegExp(`\\b(FROM|JOIN)\\s+${t}\\b(?:\\s+(?:AS\\s+)?([A-Za-z_][A-Za-z0-9_]*))?`, 'gi');
     out = out.replace(selectRef, (match, op, alias) => {
       if (alias && !RESERVADAS.has(String(alias).toLowerCase())) {
         return `${op} (SELECT * FROM ${tabela} WHERE estabelecimento_id=${id}) ${alias}`;

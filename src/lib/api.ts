@@ -23,6 +23,16 @@ import type {
   ResumoRelatorio,
   EstadoSistema,
   ConfigEmpresa,
+  OnlineCatalogProduct,
+  OnlineOrder,
+  PainelPedidos,
+  PainelCozinha,
+  OnlinePublicStore,
+  OnlineStore,
+  CategoriaLoja,
+  CategoriaCardapio,
+  RedePedidos,
+  AreaEntrega,
 } from './types';
 
 export interface ApiError {
@@ -32,7 +42,7 @@ export interface ApiError {
 
 export interface OrderSubmission {
   chave: string;
-  itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string }[];
+  itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string; acrescimos?: number[] }[];
 }
 
 // Somente operações protegidas no servidor podem repetir automaticamente.
@@ -227,6 +237,26 @@ export const fiscalApi = {
   cancelar: (id: number, justificativa: string) => api.post<{ ok: boolean; status: string }>(`/fiscal/documentos/${id}/cancelar`, { justificativa }),
 };
 
+export interface CartaoUso {
+  cartao: string;
+  mesa_id: number;
+  mesa_numero: number;
+  comanda_id: number;
+  comanda_status: string;
+  cozinha: { itens: number; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] } | null;
+}
+
+export const cartaoApi = {
+  usar: (b: {
+    acao: 'abrir' | 'lancar' | 'fechar';
+    uid: string;
+    payload?: string;
+    garcom_nome?: string;
+    chave?: string;
+    itens?: { produto_id: number; quantidade: number; observacao?: string }[];
+  }) => api.post<CartaoUso>('/cartoes/usar', b),
+};
+
 export const mesaApi = {
   list: () => api.get<{ mesas: Mesa[]; comandas: (Comanda & { mesa_numero: number; total: number; itens_count: number })[] }>('/mesas'),
   create: (b: { numero: number; nome?: string; capacidade?: number; setor?: string }) => api.post<Mesa>('/mesas', b),
@@ -245,7 +275,7 @@ export const comandaApi = {
     api.put<{ id: number; nome: string; cor: string }>(`/comandas/${id}/pessoas/${pid}`, { nome }),
   addItem: (id: number, b: { produto_id?: number; codigo?: string; nome?: string; quantidade?: number; preco_unitario?: number; pessoa_id?: number; observacao?: string; responsavel?: string }) =>
     api.post<Comanda['itens'][0]>(`/comandas/${id}/itens`, b),
-  updateItem: (id: number, itemId: number, b: { observacao?: string }) =>
+  updateItem: (id: number, itemId: number, b: { observacao?: string; acrescimos?: number[] }) =>
     api.put<Comanda['itens'][0]>(`/comandas/${id}/itens/${itemId}`, b),
   transferirItem: (id: number, itemId: number, b: { mesa_destino_id: number; comanda_destino_id: number | null; pessoa_destino_id: number | null; versao: number }) =>
     api.post<{ ok: boolean; transferencia_id: string; comanda_destino_id: number; abriu_comanda: number }>(`/comandas/${id}/itens/${itemId}/transferir`, b),
@@ -256,6 +286,99 @@ export const comandaApi = {
   reabrir: (id: number) => api.post<{ ok: boolean }>(`/comandas/${id}/reabrir`),
   baixarPessoa: (id: number, b: { pessoa_id: number; forma?: string; responsavel?: string }) =>
     api.post<{ ok: boolean; venda: { id: number; numero: string; total: number }; fechou: boolean; comanda: Comanda }>(`/comandas/${id}/baixar-pessoa`, b),
+};
+
+export const onlineApi = {
+  store: () => api.get<OnlineStore>('/online/loja'),
+  updateStore: (body: Partial<OnlineStore>) => api.put<OnlineStore>('/online/loja', body),
+  categories: () => api.get<CategoriaLoja[]>('/online/categorias'),
+  addCategory: (nome: string) => api.post<CategoriaLoja[]>('/online/categorias', { nome }),
+  removeCategory: (id: number) => api.del<CategoriaLoja[]>(`/online/categorias/${id}`),
+  menuCategories: () => api.get<CategoriaCardapio[]>('/online/cardapio-categorias'),
+  addMenuCategory: (nome: string) => api.post<CategoriaCardapio[]>('/online/cardapio-categorias', { nome }),
+  updateMenuCategory: (id: number, body: { nome?: string; ordem?: number }) => api.put<CategoriaCardapio[]>(`/online/cardapio-categorias/${id}`, body),
+  removeMenuCategory: (id: number) => api.del<CategoriaCardapio[]>(`/online/cardapio-categorias/${id}`),
+  organizeMenu: (body: { categorias: { id: number; ordem: number }[]; produtos: { id: number; cardapio_categoria_id: number | null; ordem: number }[] }) =>
+    api.put<{ ok: boolean; categorias: CategoriaCardapio[] }>('/online/cardapio/organizar', body),
+  products: () => api.get<OnlineCatalogProduct[]>('/online/produtos'),
+  addProduct: (body: {
+    produto_id: number;
+    opcoes?: { nome: string; tipo: 'removivel' | 'adicional'; preco_adicional: number; insumo_id?: number | null; ordem?: number; ativo?: number }[];
+  } & Partial<Omit<OnlineCatalogProduct, 'opcoes'>>) => api.post<OnlineCatalogProduct>('/online/produtos', body),
+  updateProduct: (id: number, body: {
+    opcoes?: { nome: string; tipo: 'removivel' | 'adicional'; preco_adicional: number; insumo_id?: number | null; ordem?: number; ativo?: number }[];
+  } & Partial<Omit<OnlineCatalogProduct, 'opcoes'>>) => api.put<OnlineCatalogProduct>(`/online/produtos/${id}`, body),
+  removeProduct: (id: number) => api.del<{ ok: boolean }>(`/online/produtos/${id}`),
+  orders: (status?: string) => api.get<OnlineOrder[]>(`/online/pedidos${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+};
+
+export const pedidosApi = {
+  painel: () => api.get<PainelPedidos>('/pedidos/painel'),
+  cozinha: () => api.get<PainelCozinha>('/pedidos/cozinha'),
+  statusOnline: (id: number, status: 'confirmado' | 'cancelado' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'pix_recebido') =>
+    api.post<{ ok: boolean; id: number; status: string; etapa: string }>(`/pedidos/online/${id}/status`, { status }),
+  etiqueta: (body: { item_id?: number; comanda_id?: number }) =>
+    api.post<{ impressao: string; jobs: { impressora: string; ok?: boolean; error?: string }[] }>('/pedidos/etiqueta', body),
+};
+
+export const onlinePublicApi = {
+  network: (filtro?: { categoria?: string; q?: string; lat?: number; lng?: number; regiao?: boolean }) => {
+    const params = new URLSearchParams();
+    if (filtro?.categoria) params.set('categoria', filtro.categoria);
+    if (filtro?.q) params.set('q', filtro.q);
+    if (filtro?.lat != null && filtro?.lng != null) {
+      params.set('lat', String(filtro.lat));
+      params.set('lng', String(filtro.lng));
+      if (filtro.regiao === false) params.set('regiao', '0');
+    }
+    const query = params.toString();
+    return api.get<RedePedidos>(`/public/lojas${query ? `?${query}` : ''}`);
+  },
+  locate: (consulta: { q?: string; lat?: number; lng?: number }) => {
+    const params = new URLSearchParams();
+    if (consulta.q) params.set('q', consulta.q);
+    if (consulta.lat != null) params.set('lat', String(consulta.lat));
+    if (consulta.lng != null) params.set('lng', String(consulta.lng));
+    return api.get<{ latitude: number; longitude: number; endereco: string }>(`/public/localizar?${params.toString()}`);
+  },
+  distance: (slug: string, consulta: { q?: string; lat?: number; lng?: number }) => {
+    const params = new URLSearchParams();
+    if (consulta.q) params.set('q', consulta.q);
+    if (consulta.lat != null) params.set('lat', String(consulta.lat));
+    if (consulta.lng != null) params.set('lng', String(consulta.lng));
+    return api.get<AreaEntrega>(`/public/lojas/${encodeURIComponent(slug)}/distancia?${params.toString()}`);
+  },
+  store: (slug: string, ponto?: { lat?: number; lng?: number }) => {
+    const params = new URLSearchParams();
+    if (ponto?.lat != null && ponto?.lng != null) {
+      params.set('lat', String(ponto.lat));
+      params.set('lng', String(ponto.lng));
+    }
+    const query = params.toString();
+    return api.get<OnlinePublicStore>(`/public/lojas/${encodeURIComponent(slug)}${query ? `?${query}` : ''}`);
+  },
+  order: (slug: string, body: {
+    chave: string; cliente_nome: string; telefone: string; tipo_entrega: 'entrega' | 'retirada'; endereco?: string;
+    forma_pagamento: 'pix' | 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
+    itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; observacao?: string }[];
+  }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
+  track: (slug: string, chave: string) => api.get<{
+    id: number;
+    etapa: 'aguardando_pix' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
+    tipo_entrega: 'entrega' | 'retirada';
+    forma_pagamento: string;
+    pix_copia_cola: string | null;
+    total: number;
+    taxa_entrega?: number;
+    valor_entrega?: number | null;
+    distancia_km?: number | null;
+    modo_entrega?: 'cliente' | 'dividido' | 'gratis' | null;
+    entrega_gratis?: number | null;
+    criado_em: string;
+    atualizado_em: string;
+    loja: string;
+    itens: { nome: string; quantidade: number }[];
+  }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos/${encodeURIComponent(chave)}`),
 };
 
 export const perdaApi = {
@@ -316,6 +439,22 @@ export const funcionarioApi = {
   update: (id: number, b: Partial<Funcionario> & { senha_hash?: string; modulos?: string[] | string }) =>
     api.put<{ ok: boolean }>(`/funcionarios/${id}`, b),
   remove: (id: number) => api.del<{ ok: boolean }>(`/funcionarios/${id}`),
+};
+
+export interface NfcEvento {
+  id: number;
+  origem: string;
+  leitor: string;
+  uid: string;
+  payload: string;
+  criado_em: string;
+  consumido_em?: string | null;
+}
+
+export const nfcApi = {
+  pendentes: () => api.get<NfcEvento[]>('/nfc/eventos'),
+  historico: () => api.get<NfcEvento[]>('/nfc/eventos?historico=1'),
+  consumir: (id: number) => api.post<NfcEvento>(`/nfc/eventos/${id}/consumir`),
 };
 
 export const impressoraApi = {

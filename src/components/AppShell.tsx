@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -27,6 +27,8 @@ import {
   Home,
   ClipboardCheck,
   FileCheck2,
+  Bike,
+  ChefHat,
 } from 'lucide-react';
 import { useToast } from '@/components/ui';
 import { useAuth } from '@/store/auth';
@@ -59,6 +61,7 @@ export function AppShell({
   const navigate = useNavigate();
   const toast = useToast();
 
+  const { pathname } = useLocation();
   const isGestor = can('gestor');
   const isPdv = can('pdv_mercado');
   const isRest = can('restaurante');
@@ -127,7 +130,15 @@ export function AppShell({
         { to: '/pdv', label: 'PDV Mercado', icon: <ScanBarcode className="h-5 w-5" /> },
         { to: '/vendas', label: 'Vendas', icon: <ReceiptText className="h-5 w-5" /> },
         { to: '/fiscal', label: 'NFC-e', icon: <FileCheck2 className="h-5 w-5" /> },
+      ],
+    },
+    {
+      area: 'vendas',
+      title: 'Restaurante',
+      items: [
         { to: '/restaurante', label: 'Restaurante', icon: <UtensilsCrossed className="h-5 w-5" />, badge: badges?.mesas },
+        { to: '/restaurante/delivery', label: 'Delivery', icon: <Bike className="h-5 w-5" /> },
+        { to: '/restaurante/cozinha', label: 'Cozinha', icon: <ChefHat className="h-5 w-5" /> },
       ],
     },
     {
@@ -201,17 +212,24 @@ export function AppShell({
                 <NavLink
                   key={it.to}
                   to={it.to}
-                  end={it.to === '/'}
+                  end={it.to === '/' || it.to === '/restaurante'}
                   onClick={() => setOpen(false)}
-                  className={({ isActive }) =>
-                    `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                      isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                    }`
-                  }
+                  className={({ isActive }) => {
+                    const ativo = it.to === '/restaurante'
+                      ? pathname === '/restaurante' || pathname.startsWith('/restaurante/comanda') || pathname.startsWith('/restaurante/lancar-cartao')
+                      : isActive;
+                    return `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                      ativo ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                    }`;
+                  }}
                 >
-                  {({ isActive }) => (
+                  {({ isActive }) => {
+                    const ativo = it.to === '/restaurante'
+                      ? pathname === '/restaurante' || pathname.startsWith('/restaurante/comanda') || pathname.startsWith('/restaurante/lancar-cartao')
+                      : isActive;
+                    return (
                     <>
-                      {isActive && <span className="absolute inset-0 rounded-xl bg-white/10" />}
+                      {ativo && <span className="absolute inset-0 rounded-xl bg-white/10" />}
                       <span className="relative">{it.icon}</span>
                       <span className="relative flex-1 truncate">{it.label}</span>
                       {!!it.badge && it.badge > 0 && (
@@ -220,7 +238,8 @@ export function AppShell({
                         </span>
                       )}
                     </>
-                  )}
+                    );
+                  }}
                 </NavLink>
               ))}
             </div>

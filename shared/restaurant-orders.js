@@ -1,4 +1,5 @@
 import { estabelecimentoId, getProdutoFull, buscarProdutoPorCodigo, httpError, now, sha256 } from './util.js';
+import { idsAcrescimo, observacaoComAcrescimos, precoComAcrescimos, selecionarAcrescimos } from './acrescimos.js';
 
 // A chave pertence à intenção do cliente e sobrevive a timeout/reenvio.
 export async function saveOrderItems(c, env, body) {
@@ -11,6 +12,7 @@ export async function saveOrderItems(c, env, body) {
     nome: String(b.nome || '').trim(), quantidade: b.quantidade == null ? 1 : Number(b.quantidade),
     preco_unitario: b.preco_unitario == null ? null : Number(b.preco_unitario),
     pessoa_id: b.pessoa_id == null ? null : Number(b.pessoa_id), observacao: String(b.observacao || '').trim(),
+    acrescimos: idsAcrescimo(b.acrescimos),
   }));
   for (const b of input) {
     if (!Number.isFinite(b.quantidade) || b.quantidade <= 0 || b.quantidade > 10000 ||
@@ -35,7 +37,18 @@ export async function saveOrderItems(c, env, body) {
   for (const b of input) {
     const product = b.produto_id ? await getProdutoFull(env, b.produto_id) : b.codigo ? await buscarProdutoPorCodigo(env, b.codigo) : null;
     if ((b.produto_id || b.codigo) && (!product || !product.ativo)) throw httpError(400, 'Produto não encontrado ou inativo');
-    items.push({ ...b, produto_id: product?.id ?? null, nome: b.nome || product?.nome || 'Item avulso', preco_unitario: b.preco_unitario ?? Number(product?.preco || 0) });
+    const escolhidos = selecionarAcrescimos(b.acrescimos, product?.acrescimos || []);
+    const preco = escolhidos.length
+      ? precoComAcrescimos(product?.preco, escolhidos)
+      : (b.preco_unitario ?? Number(product?.preco || 0));
+    const observacao = escolhidos.length ? observacaoComAcrescimos(b.observacao, escolhidos) : b.observacao;
+    items.push({
+      ...b,
+      produto_id: product?.id ?? null,
+      nome: b.nome || product?.nome || 'Item avulso',
+      preco_unitario: preco,
+      observacao,
+    });
   }
   const id = crypto.randomUUID();
   const timestamp = now();

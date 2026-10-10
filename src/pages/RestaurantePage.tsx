@@ -5,11 +5,13 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Users, Plus, Pencil, Trash2, ArrowRight } from 'lucide-react';
+import { UtensilsCrossed, Users, Plus, Pencil, Trash2, ArrowRight, Nfc, Wallet } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { RestauranteAbas } from '@/components/RestauranteAbas';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useConfirm, useToast } from '@/components/ui';
-import { mesaApi, funcionarioApi } from '@/lib/api';
+import { mesaApi, funcionarioApi, cartaoApi, type NfcEvento } from '@/lib/api';
+import { NFC_EVENTO } from '@/lib/useNfcBridge';
 import type { Mesa, Funcionario } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
 
@@ -28,6 +30,8 @@ export function RestaurantePage() {
   const [mCapacidade, setMCapacidade] = useState('4');
   const [mSetor, setMSetor] = useState('Salão');
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [espera, setEspera] = useState<'abrir' | 'fechar' | null>(null);
+  const [lendoCartao, setLendoCartao] = useState(false);
 
   useEffect(() => {
     const fixo = localStorage.getItem('simplesx_garcom_fixo') || '';
@@ -60,8 +64,9 @@ export function RestaurantePage() {
     return () => clearInterval(iv);
   }, []);
 
+  const mesasSalao = data.mesas.filter((m) => m.ativo && m.tipo !== 'online');
   const comandaDaMesa = (mesaId: number) => data.comandas.find((c) => c.mesa_id === mesaId);
-  const abertas = data.comandas.filter((c) => c.status === 'aberta').length;
+  const abertas = data.comandas.filter((c) => c.status === 'aberta' && mesasSalao.some((m) => m.id === c.mesa_id)).length;
 
   const abrirMesa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,6 +84,40 @@ export function RestaurantePage() {
       toast('error', err?.error || 'Erro ao abrir mesa');
     }
   };
+
+  const usarCartao = async (acao: 'abrir' | 'fechar', leitura: NfcEvento) => {
+    setLendoCartao(true);
+    try {
+      const resultado = await cartaoApi.usar({
+        acao,
+        uid: leitura.uid,
+        payload: leitura.payload,
+        garcom_nome: garcom || undefined,
+      });
+      setEspera(null);
+      if (acao === 'fechar') {
+        toast('success', `Fechamento do cartão ${resultado.cartao}`);
+        navigate(`/restaurante/comanda/${resultado.comanda_id}?fechar=1`);
+      } else {
+        toast('success', `Cartão ${resultado.cartao} aberto`);
+        navigate(`/restaurante/comanda/${resultado.comanda_id}`);
+      }
+    } catch (error: any) {
+      toast('error', error?.error || 'Não foi possível ler o cartão');
+      setLendoCartao(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!espera || lendoCartao) return;
+    const aoLer = (event: Event) => {
+      const leitura = (event as CustomEvent<NfcEvento>).detail;
+      if (!leitura?.uid && !leitura?.payload) return;
+      void usarCartao(espera, leitura);
+    };
+    window.addEventListener(NFC_EVENTO, aoLer);
+    return () => window.removeEventListener(NFC_EVENTO, aoLer);
+  }, [espera, lendoCartao]);
 
   const criarMesa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,17 +140,22 @@ export function RestaurantePage() {
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Restaurante</h1>
           <p className="text-sm text-slate-500">{abertas} comandas abertas</p>
         </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => setNovaMesa(true)}>Nova mesa</Button>
+        <RestauranteAbas atual="mesas" />
       </div>
+      <div className="mb-5 flex flex-wrap gap-2">
+          <Button icon={<Nfc className="h-4 w-4" />} onClick={() => { setLendoCartao(false); setEspera('abrir'); }}>Adicionar com cartão</Button>
+          <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/restaurante/lancar-cartao')}>Lançar para cartão</Button>
+          <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => { setLendoCartao(false); setEspera('fechar'); }}>Fechamento de cartão</Button>
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setNovaMesa(true)}>Nova mesa</Button>
+        </div>
 
-      {data.mesas.length === 0 ? (
+      {mesasSalao.length === 0 ? (
         <Card>
           <EmptyState icon={<UtensilsCrossed className="h-8 w-8" />} title="Nenhuma mesa cadastrada" />
         </Card>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {data.mesas
-            .filter((m) => m.ativo)
+          {mesasSalao
             .map((m, i) => {
               const com = comandaDaMesa(m.id);
               const preFechada = com?.status === 'pre_fechamento';
@@ -143,8 +187,10 @@ export function RestaurantePage() {
                     }`}
                   >
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="text-2xl font-extrabold text-slate-800">
-                        {isPagamentos ? <UtensilsCrossed className="inline h-6 w-6 text-indigo-500" /> : m.numero}
+                      <span className={`${m.tipo === 'cartao' ? 'break-all text-lg' : 'text-2xl'} font-extrabold text-slate-800`}>
+                        {m.tipo === 'cartao'
+                          ? (m.nfc_uid || m.nome)
+                          : isPagamentos ? <UtensilsCrossed className="inline h-6 w-6 text-indigo-500" /> : m.numero}
                       </span>
                       {ocupada ? (
                         preFechada ? (
@@ -162,10 +208,12 @@ export function RestaurantePage() {
                     </div>
                     {isPagamentos ? (
                       <p className="text-sm font-bold text-indigo-700">{m.nome}</p>
+                    ) : m.tipo === 'cartao' ? (
+                      <p className="text-sm font-semibold text-indigo-700">Cartão NFC</p>
                     ) : (
                       <p className="text-sm text-slate-500">{m.nome} · {m.capacidade} lugares</p>
                     )}
-                    <p className="text-[11px] text-slate-400">{isPagamentos ? 'baixa individual por pessoa' : m.setor || '—'}</p>
+                    <p className="text-[11px] text-slate-400">{isPagamentos ? 'baixa individual por pessoa' : m.tipo === 'cartao' ? 'identificado pela aproximação' : m.setor || '—'}</p>
                     {ocupada && (
                       <div className={`mt-2 border-t pt-2 text-sm ${preFechada ? 'border-amber-200' : 'border-emerald-200'}`}>
                         {preFechada ? (
@@ -213,6 +261,23 @@ export function RestaurantePage() {
             <Button type="submit" icon={<ArrowRight className="h-4 w-4" />}>Abrir mesa</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={espera !== null}
+        onClose={() => { if (!lendoCartao) setEspera(null); }}
+        title={espera === 'fechar' ? 'Fechamento de cartão' : 'Adicionar com cartão'}
+      >
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <Nfc className="h-12 w-12 text-indigo-600" />
+          <p className="text-sm text-slate-600">
+            {espera === 'fechar'
+              ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'
+              : 'Aproxime o cartão. O número dele abre a mesa para lançar os itens.'}
+          </p>
+          <p className="text-xs text-slate-400">O Gestor precisa estar aberto, com o NFC ligado, neste computador ou no celular.</p>
+          {lendoCartao && <Spinner />}
+        </div>
       </Modal>
 
       <Modal open={novaMesa} onClose={() => setNovaMesa(false)} title="Nova mesa">

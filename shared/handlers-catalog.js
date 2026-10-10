@@ -28,6 +28,7 @@ import {
 } from './util.js';
 import { decodificarEtiquetaBalanca } from './balanca.js';
 import { quantidadeEmUnidadesEstoque, arredondar } from './units.js';
+import { normalizarAcrescimos } from './acrescimos.js';
 
 // ============================ AUTH ============================
 
@@ -224,7 +225,7 @@ export async function listProdutosHandler(c, env) {
   const rows = await env.DB.prepare(sql).bind(...params).all();
   const lista = rows.results;
   if (!lista.length) return c.json(lista);
-  const [cats, cods, coments, fichas] = await Promise.all([
+  const [cats, cods, coments, acrescimos, fichas] = await Promise.all([
     env.DB.prepare(
       'SELECT pc.produto_id, c.id, c.nome, c.cor FROM produto_categorias pc JOIN categorias c ON c.id=pc.categoria_id'
     ).all(),
@@ -233,6 +234,11 @@ export async function listProdutosHandler(c, env) {
     ).all(),
     env.DB.prepare(
       'SELECT produto_id, texto FROM produto_comentarios ORDER BY ordem, id'
+    ).all(),
+    env.DB.prepare(
+      `SELECT a.produto_id, a.insumo_id, p.preco AS valor, p.nome AS insumo_nome
+       FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco > 0
+       ORDER BY a.ordem, a.id`
     ).all(),
     env.DB.prepare(
       `SELECT f.produto_id, f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade, p.estoque_atual AS insumo_estoque,
@@ -254,6 +260,11 @@ export async function listProdutosHandler(c, env) {
   for (const r of coments.results) {
     if (!comentsBy.has(r.produto_id)) comentsBy.set(r.produto_id, []);
     comentsBy.get(r.produto_id).push(r.texto);
+  }
+  const acrescimosBy = new Map();
+  for (const r of acrescimos.results) {
+    if (!acrescimosBy.has(r.produto_id)) acrescimosBy.set(r.produto_id, []);
+    acrescimosBy.get(r.produto_id).push({ insumo_id: Number(r.insumo_id), valor: num(r.valor), insumo_nome: r.insumo_nome });
   }
   const fichasBy = new Map();
   for (const r of fichas.results) {
@@ -313,7 +324,14 @@ export async function listProdutosHandler(c, env) {
       categorias: catsBy.get(p.id) || [],
       codigos_barras: codsBy.get(p.id) || [],
       comentarios: comentsBy.get(p.id) || [],
+      acrescimos: acrescimosBy.get(p.id) || [],
       ficha_count: ficha.length,
+      ficha: ficha.map((item) => ({
+        insumo_id: Number(item.insumo_id),
+        quantidade: num(item.quantidade),
+        unidade: item.unidade,
+        insumo_nome: item.insumo_nome,
+      })),
       estoque_possivel,
     };
   });
@@ -465,6 +483,14 @@ export async function createProdutoHandler(c, env) {
   if (tipo === 'composto') {
     custo = await calcularCmvFicha(env, ingredientes);
   }
+  let acrescimos = [];
+  if (tipo === 'composto' && b.acrescimos !== undefined) {
+    try {
+      acrescimos = await normalizarAcrescimos(env, null, b.acrescimos);
+    } catch (error) {
+      return c.json({ error: error?.message || 'Acréscimo inválido' }, error?.status || 400);
+    }
+  }
 
   const r = await env.DB.prepare(
     `INSERT INTO produtos (nome, codigo_interno, unidade, estoque_atual, estoque_minimo, custo, preco, fornecedor_id,
@@ -521,6 +547,17 @@ export async function createProdutoHandler(c, env) {
       env.DB.prepare('INSERT INTO produto_comentarios (produto_id, texto, ordem, criado_em) VALUES (?,?,?,?)').bind(
         id,
         comentarios[i],
+        i,
+        now()
+      )
+    );
+  }
+  for (let i = 0; i < acrescimos.length; i++) {
+    stmts.push(
+      env.DB.prepare('INSERT INTO produto_acrescimos (produto_id, insumo_id, valor, ordem, criado_em) VALUES (?,?,?,?,?)').bind(
+        id,
+        acrescimos[i].insumo_id,
+        acrescimos[i].valor,
         i,
         now()
       )
@@ -611,6 +648,14 @@ export async function updateProdutoHandler(c, env) {
     custo = await calcularCmvFicha(env, fichaFonte);
     await validarFichaSemCiclo(env, c.params.id, fichaFonte);
   }
+  let acrescimosNorm = null;
+  if (tipo === 'composto' && Object.prototype.hasOwnProperty.call(b, 'acrescimos')) {
+    try {
+      acrescimosNorm = await normalizarAcrescimos(env, Number(c.params.id), b.acrescimos);
+    } catch (error) {
+      return c.json({ error: error?.message || 'Acréscimo inválido' }, error?.status || 400);
+    }
+  }
 
   await env.DB.prepare(
     `UPDATE produtos SET nome=?, codigo_interno=?, unidade=?, estoque_minimo=?, custo=?, preco=?, fornecedor_id=?, marca=?,
@@ -683,6 +728,22 @@ export async function updateProdutoHandler(c, env) {
       );
     }
   }
+  if (tipo !== 'composto') {
+    stmts.push(env.DB.prepare('DELETE FROM produto_acrescimos WHERE produto_id=?').bind(c.params.id));
+  } else if (acrescimosNorm) {
+    stmts.push(env.DB.prepare('DELETE FROM produto_acrescimos WHERE produto_id=?').bind(c.params.id));
+    for (let i = 0; i < acrescimosNorm.length; i++) {
+      stmts.push(
+        env.DB.prepare('INSERT INTO produto_acrescimos (produto_id, insumo_id, valor, ordem, criado_em) VALUES (?,?,?,?,?)').bind(
+          c.params.id,
+          acrescimosNorm[i].insumo_id,
+          acrescimosNorm[i].valor,
+          i,
+          now()
+        )
+      );
+    }
+  }
   if (ingredientes) {
     stmts.push(env.DB.prepare('DELETE FROM ficha_tecnica WHERE produto_id=?').bind(c.params.id));
     if (tipo === 'composto') {
@@ -698,6 +759,11 @@ export async function updateProdutoHandler(c, env) {
         );
       }
     }
+  }
+  if ((tipo === 'insumo' || tipo === 'composto') && preco != null && preco > 0 && preco <= 10000) {
+    const valorVenda = arredondar(preco);
+    stmts.push(env.DB.prepare('UPDATE produto_acrescimos SET valor=? WHERE insumo_id=?').bind(valorVenda, c.params.id));
+    stmts.push(env.DB.prepare('UPDATE cardapio_online_opcoes SET preco_adicional=? WHERE insumo_id=?').bind(valorVenda, c.params.id));
   }
   if (stmts.length) await env.DB.batch(stmts);
   await recalcularCmvDeInsumo(env, c.params.id);
@@ -734,6 +800,8 @@ export async function deleteProdutoHandler(c, env) {
     env.DB.prepare('DELETE FROM produto_codigos_barras WHERE produto_id=?').bind(id),
     env.DB.prepare('DELETE FROM produto_categorias WHERE produto_id=?').bind(id),
     env.DB.prepare('DELETE FROM produto_comentarios WHERE produto_id=?').bind(id),
+    env.DB.prepare('DELETE FROM produto_acrescimos WHERE produto_id=?').bind(id),
+    env.DB.prepare('DELETE FROM produto_acrescimos WHERE insumo_id=?').bind(id),
     // Própria ficha técnica (receita) do produto
     env.DB.prepare('DELETE FROM ficha_tecnica WHERE produto_id=?').bind(id),
     // Entradas de mercadorias (lotes) e movimentações de estoque

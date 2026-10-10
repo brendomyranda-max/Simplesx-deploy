@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   UserPlus,
@@ -36,6 +36,8 @@ export function ComandaPage() {
   const { id } = useParams();
   const comandaId = Number(id);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const fecharAutomatico = useRef(searchParams.get('fechar') === '1');
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -74,6 +76,8 @@ export function ComandaPage() {
   const [addUnidade, setAddUnidade] = useState(0);
   const [aplicarEmConjunto, setAplicarEmConjunto] = useState(false);
   const [addCustom, setAddCustom] = useState('');
+  const [addAcrSel, setAddAcrSel] = useState<number[]>([]);
+  const [addAcrUnidades, setAddAcrUnidades] = useState<number[][]>([[]]);
   const [adicionando, setAdicionando] = useState(false);
   const adicionandoRef = useRef(false);
   const enviandoRef = useRef(false);
@@ -113,6 +117,11 @@ export function ComandaPage() {
   }, [comandaId]);
 
   useEffect(() => { authApi.me().then((user) => setActorId(user.id)).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!comanda || !fecharAutomatico.current) return;
+    fecharAutomatico.current = false;
+    setFechar(true);
+  }, [comanda]);
   useEffect(() => {
     if (!storageKey) return;
     try {
@@ -179,6 +188,8 @@ export function ComandaPage() {
     setAddQtd(1);
     setAddObsSel([]);
     setAddObsUnidades([[]]);
+    setAddAcrSel([]);
+    setAddAcrUnidades([[]]);
     setAddUnidade(0);
     setAplicarEmConjunto(false);
     setAddCustom('');
@@ -189,12 +200,27 @@ export function ComandaPage() {
     if (locked || item.status !== 'novo' || !item.produto_id) return;
     try {
       const produtoCompleto = produtos.find((p) => p.id === item.produto_id) || await produtoApi.get(item.produto_id);
-      const atuais = String(item.observacao || '').split(/\n|,/).map((o) => o.replace(/^\(|\)$/g, '').trim()).filter(Boolean);
+      const linhas = String(item.observacao || '').split('\n').map((o) => o.replace(/^\(|\)$/g, '').trim()).filter(Boolean);
+      const cadastrados = produtoCompleto.acrescimos || [];
+      const ids: number[] = [];
+      const livres: string[] = [];
+      for (const linha of linhas) {
+        const acrescimo = cadastrados.find((itemAcrescimo) => `Adicionar: ${itemAcrescimo.insumo_nome}` === linha);
+        if (acrescimo) ids.push(acrescimo.insumo_id);
+        else {
+          for (const parte of linha.split(',')) {
+            const texto = parte.trim();
+            if (texto) livres.push(texto);
+          }
+        }
+      }
       setEditandoItem(item);
       setAddProduto(produtoCompleto);
       setAddQtd(Number(item.quantidade));
-      setAddObsSel(atuais);
-      setAddObsUnidades([atuais]);
+      setAddObsSel(livres);
+      setAddObsUnidades([livres]);
+      setAddAcrSel(ids);
+      setAddAcrUnidades([ids]);
       setAplicarEmConjunto(true);
       setAddCustom('');
       setAdicionando(false);
@@ -204,12 +230,32 @@ export function ComandaPage() {
   };
 
   const observacoesAtuais = aplicarEmConjunto ? addObsSel : (addObsUnidades[addUnidade] || []);
+  const acrescimosAtuais = aplicarEmConjunto ? addAcrSel : (addAcrUnidades[addUnidade] || []);
+  const valorDoAcrescimo = (id: number) => addProduto?.acrescimos?.find((item) => item.insumo_id === id)?.valor || 0;
+  const somaAcrescimos = (ids: number[]) => ids.reduce((soma, id) => soma + valorDoAcrescimo(id), 0);
+  const extraTotal = aplicarEmConjunto
+    ? somaAcrescimos(addAcrSel) * addQtd
+    : addAcrUnidades.slice(0, addQtd).reduce((soma, ids) => soma + somaAcrescimos(ids), 0);
 
   // Cada clique soma uma ocorrência. O botão "−" remove somente uma delas,
   // permitindo pedir, por exemplo, dois copos com a mesma observação.
   const adicionarObs = (o: string) => {
     if (aplicarEmConjunto) return setAddObsSel((prev) => [...prev, o]);
     setAddObsUnidades((prev) => prev.map((lista, i) => i === addUnidade ? [...lista, o] : lista));
+  };
+
+  const adicionarAcrescimo = (id: number) => {
+    if (aplicarEmConjunto) return setAddAcrSel((prev) => [...prev, id]);
+    setAddAcrUnidades((prev) => prev.map((lista, i) => i === addUnidade ? [...lista, id] : lista));
+  };
+
+  const removerAcrescimo = (id: number) => {
+    const removerUm = (lista: number[]) => {
+      const indice = lista.lastIndexOf(id);
+      return indice < 0 ? lista : lista.filter((_, j) => j !== indice);
+    };
+    if (aplicarEmConjunto) return setAddAcrSel(removerUm);
+    setAddAcrUnidades((prev) => prev.map((lista, i) => i === addUnidade ? removerUm(lista) : lista));
   };
 
   const removerObs = (o: string) => {
@@ -225,12 +271,18 @@ export function ComandaPage() {
     const qtd = Math.min(50, Math.max(1, Math.floor(quantidade)));
     setAddQtd(qtd);
     setAddObsUnidades((prev) => Array.from({ length: qtd }, (_, i) => prev[i] || []));
+    setAddAcrUnidades((prev) => Array.from({ length: qtd }, (_, i) => prev[i] || []));
     setAddUnidade((atual) => Math.min(atual, qtd - 1));
   };
 
   const alterarAplicarEmConjunto = (ativar: boolean) => {
-    if (ativar) setAddObsSel(addObsUnidades.flat());
-    else setAddObsUnidades(Array.from({ length: addQtd }, (_, i) => i === 0 ? [...addObsSel] : []));
+    if (ativar) {
+      setAddObsSel(addObsUnidades.flat());
+      setAddAcrSel(addAcrUnidades.flat());
+    } else {
+      setAddObsUnidades(Array.from({ length: addQtd }, (_, i) => i === 0 ? [...addObsSel] : []));
+      setAddAcrUnidades(Array.from({ length: addQtd }, (_, i) => i === 0 ? [...addAcrSel] : []));
+    }
     setAddUnidade(0);
     setAplicarEmConjunto(ativar);
   };
@@ -269,8 +321,8 @@ export function ComandaPage() {
     if (editandoItem) {
       adicionandoRef.current = true; setAdicionando(true);
       try {
-        const observacao = [...observacoesAtuais, addCustom.trim()].filter(Boolean).join('\n') || undefined;
-        await comandaApi.updateItem(comandaId, editandoItem.id, { observacao });
+        const observacao = [...observacoesAtuais, addCustom.trim()].filter(Boolean).join('\n');
+        await comandaApi.updateItem(comandaId, editandoItem.id, { observacao, acrescimos: addAcrSel });
         toast('success', `Observações de ${addProduto.nome} atualizadas`);
         setAddProduto(null); setEditandoItem(null);
         await loadComanda();
@@ -280,10 +332,12 @@ export function ComandaPage() {
     }
     if (pendingRef.current) { await enviarLancamento(pendingRef.current); return; }
     const grupos = aplicarEmConjunto ? [addObsSel] : addObsUnidades.slice(0, addQtd);
+    const gruposAcrescimo = aplicarEmConjunto ? [addAcrSel] : addAcrUnidades.slice(0, addQtd);
     await enviarLancamento({ chave: crypto.randomUUID(), itens: grupos.map((observacoes, index) => ({
       produto_id: addProduto.id, quantidade: aplicarEmConjunto ? addQtd : 1,
       pessoa_id: pessoaSel === 'geral' ? undefined : pessoaSel,
       observacao: [...observacoes, aplicarEmConjunto || index === addUnidade ? addCustom.trim() : ''].filter(Boolean).join('\n') || undefined,
+      acrescimos: gruposAcrescimo[index] || [],
     })) });
   };
 
@@ -1094,6 +1148,23 @@ export function ComandaPage() {
               </div>
             )}
 
+            {(addProduto.acrescimos?.length || 0) > 0 && (
+              <Field label="Acréscimo de produto" hint="Entra como observação. O valor é o preço de venda do insumo.">
+                <div className="flex flex-wrap gap-1.5">
+                  {addProduto.acrescimos!.map((acrescimo) => (
+                    <button
+                      key={acrescimo.insumo_id}
+                      type="button"
+                      onClick={() => adicionarAcrescimo(acrescimo.insumo_id)}
+                      className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+                    >
+                      + {acrescimo.insumo_nome} ({fmtBRL(acrescimo.valor)})
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )}
+
             {(addProduto.comentarios?.length || 0) > 0 ? (
               <Field label="Observações automáticas">
                 <div className="flex flex-wrap gap-1.5">
@@ -1109,13 +1180,22 @@ export function ComandaPage() {
                   ))}
                 </div>
               </Field>
-            ) : (
+            ) : (addProduto.acrescimos?.length ? null : (
               <p className="text-xs text-slate-400">Este produto não tem observações cadastradas.</p>
-            )}
+            ))}
 
-            {observacoesAtuais.length > 0 && (
+            {(acrescimosAtuais.length > 0 || observacoesAtuais.length > 0) && (
               <div className="space-y-1 rounded-xl bg-brand-50 p-3">
                 <p className="text-xs font-bold text-brand-700">Observações adicionadas</p>
+                {acrescimosAtuais.map((id, i) => {
+                  const acrescimo = addProduto.acrescimos?.find((item) => item.insumo_id === id);
+                  return (
+                    <div key={`acr-${id}-${i}`} className="flex items-center justify-between text-xs text-brand-800">
+                      <span>(Adicionar: {acrescimo?.insumo_nome || 'Acréscimo'} · {fmtBRL(acrescimo?.valor || 0)})</span>
+                      <button type="button" className="font-bold text-red-500" onClick={() => removerAcrescimo(id)}>− remover</button>
+                    </div>
+                  );
+                })}
                 {observacoesAtuais.map((o, i) => (
                   <div key={`${o}-${i}`} className="flex items-center justify-between text-xs text-brand-800">
                     <span>({o})</span>
@@ -1140,7 +1220,7 @@ export function ComandaPage() {
 
             <div className="rounded-xl bg-slate-50 p-3 text-center">
               <p className="text-xs text-slate-400">Total</p>
-              <p className="text-xl font-extrabold text-brand-600">{fmtBRL((addProduto.preco || 0) * addQtd)}</p>
+              <p className="text-xl font-extrabold text-brand-600">{fmtBRL((addProduto.preco || 0) * addQtd + extraTotal)}</p>
             </div>
 
             <Button className="w-full" loading={adicionando} disabled={!storageKey} onClick={confirmarAdicao}>

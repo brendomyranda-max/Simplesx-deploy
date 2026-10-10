@@ -13,7 +13,7 @@
   <main>
     <header>
       <div><span class="logo">SX</span></div>
-      <div><h1>Gestor de Impressoras</h1><p>Conecta o SimplexS.A às impressoras deste computador.</p></div>
+      <div><h1>Gestor de Impressoras</h1><p>Conecta o SimplexS.A às impressoras e ao leitor NFC deste computador.</p></div>
       <span id="estado" class="badge offline">Offline</span>
     </header>
 
@@ -31,6 +31,17 @@
         <small id="scanResultado" class="scan-result">Buscando impressoras…</small>
       </label>
       <label class="check full"><input id="iniciar" type="checkbox"> Iniciar automaticamente com o computador</label>
+    </section>
+
+    <section>
+      <h2>NFC</h2>
+      <label class="check full"><input id="nfcAtivo" type="checkbox"> Ativar ponte NFC</label>
+      <label class="full">Prefixo do leitor USB
+        <input id="nfcPrefixo" value="NFC:" autocomplete="off" maxlength="12">
+      </label>
+      <small>Programe o leitor para enviar este prefixo antes do código. A leitura é enviada ao SimplexS.A e o PDV em tela cheia recebe o produto. No Android, o próprio Gestor lê a tag.</small>
+      <p>Última leitura: <strong id="nfcUltimo">Nenhuma</strong></p>
+      <button id="testarNfc" type="button" class="secondary">Testar leitura NFC</button>
     </section>
 
     <div class="actions">

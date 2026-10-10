@@ -32,6 +32,16 @@ function render(status) {
   $('estado').className = `badge ${status.online ? 'online' : 'offline'}`
   const j = status.ultimoJob
   $('job').textContent = j ? `#${j.id} · ${j.impressora} · ${j.status} · ${dataHora(j.em)}${j.erro ? ` · ${j.erro}` : ''}` : 'Nenhum'
+  if ($('nfcAtivo').dataset.servidor !== String(!!status.nfcAtivo)) {
+    $('nfcAtivo').checked = !!status.nfcAtivo
+    $('nfcAtivo').dataset.servidor = String(!!status.nfcAtivo)
+  }
+  const prefixoServidor = status.nfcPrefixo || 'NFC:'
+  if (document.activeElement !== $('nfcPrefixo') && $('nfcPrefixo').dataset.servidor !== prefixoServidor) {
+    $('nfcPrefixo').value = prefixoServidor
+    $('nfcPrefixo').dataset.servidor = prefixoServidor
+  }
+  $('nfcUltimo').textContent = status.ultimoNfc ? `${status.ultimoNfc.payload || status.ultimoNfc.uid} · ${dataHora(status.ultimoNfc.em)}` : 'Nenhuma'
 }
 
 async function carregarImpressoras() {
@@ -157,6 +167,8 @@ $('salvar').onclick = async () => {
       deployUrl: $('deployUrl').value,
       impressoraPadrao: $('impressora').value,
       iniciarComSistema: $('iniciar').checked,
+      nfcAtivo: $('nfcAtivo').checked,
+      nfcPrefixo: $('nfcPrefixo').value,
     })
     render(status)
     toast('Configuração salva')
@@ -172,6 +184,44 @@ $('testar').onclick = async () => {
   catch (e) { toast(`Erro: ${e.message}`) }
   finally { $('testar').disabled = false }
 }
+
+$('testarNfc').onclick = async () => {
+  if ($('nfcAtivo').checked !== !!estado?.nfcAtivo || $('nfcPrefixo').value !== (estado?.nfcPrefixo || 'NFC:')) {
+    toast('Salve a configuração antes de testar o NFC')
+    return
+  }
+  $('testarNfc').disabled = true
+  try {
+    await window.simplexsa.lerNfc(`${estado.nfcPrefixo || 'NFC:'}TESTE1234`)
+    toast('Leitura NFC enviada')
+  } catch (e) {
+    toast(`Erro: ${e.message}`)
+  } finally {
+    $('testarNfc').disabled = false
+  }
+}
+
+let nfcBuffer = ''
+let nfcUltimaTecla = 0
+document.addEventListener('keydown', (event) => {
+  if (!estado?.nfcAtivo) return
+  const alvo = event.target
+  if (alvo && ['INPUT', 'SELECT', 'TEXTAREA'].includes(alvo.tagName)) return
+  const agora = Date.now()
+  if (nfcUltimaTecla && agora - nfcUltimaTecla > 120) nfcBuffer = ''
+  nfcUltimaTecla = agora
+  if (event.key === 'Enter') {
+    const texto = nfcBuffer
+    nfcBuffer = ''
+    const prefixo = estado.nfcPrefixo || 'NFC:'
+    if (texto.startsWith(prefixo) && texto.length > prefixo.length) {
+      event.preventDefault()
+      window.simplexsa.lerNfc(texto).then(() => toast('Leitura NFC enviada')).catch((e) => toast(`Erro: ${e.message}`))
+    }
+    return
+  }
+  if (event.key.length === 1) nfcBuffer += event.key
+})
 
 window.simplexsa.onStatus(render)
 window.simplexsa.status().then(async (s) => { render(s); await carregarImpressoras() }).catch((e) => toast(`Erro: ${e.message}`))
