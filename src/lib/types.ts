@@ -145,6 +145,7 @@ export interface OnlineStore {
   pix_chave?: string | null;
   pix_cidade?: string | null;
   pix_disponivel?: number | null;
+  modo_publicacao?: 'marketplace' | 'cardapio';
   site_url?: string;
   segmentos?: string[];
 }
@@ -220,6 +221,7 @@ export interface OnlineOrder {
   tipo_entrega: 'entrega' | 'retirada';
   endereco: string | null;
   forma_pagamento: string;
+  troco_para?: number | null;
   status: 'recebido' | 'confirmado' | 'cancelado' | 'finalizado';
   subtotal: number;
   taxa_entrega: number;
@@ -252,6 +254,7 @@ export interface PedidoDelivery {
   tipo_entrega: 'entrega' | 'retirada';
   endereco: string | null;
   forma_pagamento: string;
+  troco_para?: number | null;
   observacao: string;
   status: 'recebido' | 'confirmado' | 'cancelado' | 'finalizado';
   etapa: 'aguardando_pix' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';

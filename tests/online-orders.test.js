@@ -7,9 +7,11 @@ import {
   createPublicOrderHandler,
   getPublicOrderHandler,
   getPublicStoreHandler,
+  listPublicStoresHandler,
   addMenuCategoryHandler,
   listOnlineCatalogHandler,
   organizeMenuHandler,
+  painelPedidosHandler,
   removeMenuCategoryHandler,
   removeOnlineCatalogProductHandler,
   updateOnlineCatalogProductHandler,
@@ -404,4 +406,41 @@ test('categorias do cardápio organizam os itens e a remoção sai só do delive
   const solto = raw.prepare('SELECT cardapio_categoria_id, ativo FROM cardapio_online_produtos WHERE produto_id=11').first();
   assert.equal(solto.cardapio_categoria_id, null);
   assert.equal(solto.ativo, 1);
+});
+
+test('cardápio digital usa o link próprio, fica fora do marketplace e registra valor para troco', async (t) => {
+  const raw = new SqliteDb(':memory:');
+  t.after(() => raw.close());
+  raw.prepare("INSERT INTO estabelecimentos (id,nome,ativo) VALUES (1,'Casa Direta',1),(2,'Casa Vitrine',1)").run();
+  raw.prepare(`INSERT INTO produtos (id,estabelecimento_id,nome,codigo_interno,preco,ativo,exibir_restaurante,exibir_mercado,tipo,sem_vencimento,criado_em)
+    VALUES (10,1,'Lanche direto','LD',10,1,1,0,'produto',1,'2026-10-10T00:00:00.000Z')`).run();
+  const direta = { DB: new TenantDb(raw, 1), rawDB: raw, estabelecimentoId: 1 };
+  const vitrine = { DB: new TenantDb(raw, 2), rawDB: raw, estabelecimentoId: 2 };
+  const publico = { DB: raw };
+
+  const lojaDireta = await updateOnlineStoreHandler(context({ slug: 'casa-direta', nome: 'Casa Direta', ativo: true, modo_publicacao: 'cardapio' }), direta);
+  assert.equal(lojaDireta.data.modo_publicacao, 'cardapio');
+  await updateOnlineStoreHandler(context({ slug: 'casa-vitrine', nome: 'Casa Vitrine', ativo: true, modo_publicacao: 'marketplace' }), vitrine);
+  const produto = await upsertOnlineCatalogProductHandler(context({ produto_id: 10, preco: 10 }), direta);
+
+  const vitrinePublica = await listPublicStoresHandler(context(), publico);
+  assert.deepEqual(vitrinePublica.data.lojas.map((loja) => loja.slug), ['casa-vitrine']);
+  const cardapioDireto = await getPublicStoreHandler(context({}, { slug: 'casa-direta' }), publico);
+  assert.equal(cardapioDireto.status, 200);
+
+  const insuficiente = await createPublicOrderHandler(context({
+    chave: 'pedido-troco-menor-0001', cliente_nome: 'Ana', telefone: '11999990000', tipo_entrega: 'retirada', forma_pagamento: 'dinheiro', troco_para: 9,
+    itens: [{ cardapio_produto_id: produto.data.id, quantidade: 1 }],
+  }, { slug: 'casa-direta' }), publico);
+  assert.equal(insuficiente.status, 400);
+  assert.match(insuficiente.data.error, /igual ou maior/);
+
+  const pedido = await createPublicOrderHandler(context({
+    chave: 'pedido-troco-valido-0001', cliente_nome: 'Ana', telefone: '11999990000', tipo_entrega: 'retirada', forma_pagamento: 'dinheiro', troco_para: 50,
+    itens: [{ cardapio_produto_id: produto.data.id, quantidade: 1 }],
+  }, { slug: 'casa-direta' }), publico);
+  assert.equal(pedido.status, 201);
+  assert.equal(raw.prepare('SELECT troco_para FROM pedidos_online WHERE id=?').bind(pedido.data.id).first().troco_para, 50);
+  const painel = await painelPedidosHandler(context(), direta);
+  assert.equal(painel.data.delivery[0].troco_para, 50);
 });

@@ -359,7 +359,7 @@ export const onlinePublicApi = {
   },
   order: (slug: string, body: {
     chave: string; cliente_nome: string; telefone: string; tipo_entrega: 'entrega' | 'retirada'; endereco?: string;
-    forma_pagamento: 'pix' | 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
+    forma_pagamento: 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
     itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; observacao?: string }[];
   }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
   track: (slug: string, chave: string) => api.get<{
@@ -367,6 +367,7 @@ export const onlinePublicApi = {
     etapa: 'aguardando_pix' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
     tipo_entrega: 'entrega' | 'retirada';
     forma_pagamento: string;
+    troco_para?: number | null;
     pix_copia_cola: string | null;
     total: number;
     taxa_entrega?: number;

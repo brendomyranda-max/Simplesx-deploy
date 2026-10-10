@@ -165,6 +165,12 @@ function pagamentoDoPedido(valor) {
   return pagamento;
 }
 
+function modoPublicacaoDaLoja(valor, atual) {
+  const modo = valor === undefined ? (atual || 'marketplace') : String(valor || '').trim();
+  if (!['marketplace', 'cardapio'].includes(modo)) throw httpError(400, 'Escolha marketplace ou cardápio digital.');
+  return modo;
+}
+
 async function storeResponse(env) {
   const store = await ensureStore(env);
   const categorias = await categoriasDaLoja(env);
@@ -349,9 +355,11 @@ export async function updateOnlineStoreHandler(c, env) {
   const taxa = body.taxa_entrega === undefined ? num(current.taxa_entrega) : (optionalNumber(body.taxa_entrega, 'Taxa de entrega', { min: 0, max: 1000 }) || 0);
   let valorPorKm;
   let modo;
+  let modoPublicacao;
   try {
     valorPorKm = body.valor_por_km === undefined ? (current.valor_por_km ?? null) : optionalNumber(body.valor_por_km, 'Valor por km', { min: 0, max: 1000 });
     modo = modoDaLoja(body.modo_entrega, current.modo_entrega);
+    modoPublicacao = modoPublicacaoDaLoja(body.modo_publicacao, current.modo_publicacao);
   } catch (error) {
     return c.json({ error: error?.message || 'Cobrança de entrega inválida' }, error?.status || 400);
   }
@@ -384,12 +392,12 @@ export async function updateOnlineStoreHandler(c, env) {
   }
   await env.DB.prepare(
     `UPDATE lojas_online SET slug=?,nome=?,descricao=?,logo_url=?,capa_url=?,cor_capa=?,taxa_entrega=?,tempo_min_entrega=?,tempo_max_entrega=?,
-     aceita_entrega=?,aceita_retirada=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,pix_chave=?,pix_cidade=?,atualizado_em=? WHERE estabelecimento_id=?`
+     aceita_entrega=?,aceita_retirada=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,atualizado_em=? WHERE estabelecimento_id=?`
   ).bind(
     slug, nome, nulo(descricao), logo, capa, cor,
     taxa, min, max, flag(body.aceita_entrega, current.aceita_entrega), flag(body.aceita_retirada, current.aceita_retirada),
     flag(body.ativo, current.ativo), nulo(local.endereco), nulo(local.latitude), nulo(local.longitude), nulo(local.raio),
-    nulo(valorPorKm), modo, nulo(pix.chave), nulo(pix.cidade), now(), estabelecimentoId(env)
+    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), now(), estabelecimentoId(env)
   ).run();
   return c.json(await storeResponse(env));
 }
@@ -750,6 +758,7 @@ export async function painelPedidosHandler(c, env) {
       tipo_entrega: row.tipo_entrega,
       endereco: row.endereco || null,
       forma_pagamento: row.forma_pagamento,
+      troco_para: row.troco_para == null || row.troco_para === '' ? null : num(row.troco_para),
       observacao: row.observacao || '',
       status: row.status,
       etapa: etapaPainel(row),
@@ -1080,7 +1089,7 @@ export async function listPublicStoresHandler(c, env) {
        l.taxa_entrega, l.tempo_min_entrega, l.tempo_max_entrega, l.aceita_entrega, l.aceita_retirada,
        l.latitude, l.longitude, l.raio_entrega_km, l.valor_por_km, l.modo_entrega
      FROM lojas_online l JOIN estabelecimentos e ON e.id=l.estabelecimento_id
-     WHERE l.ativo=1 AND e.ativo=1
+     WHERE l.ativo=1 AND e.ativo=1 AND COALESCE(l.modo_publicacao, 'marketplace')='marketplace'
      ORDER BY l.nome COLLATE NOCASE, l.estabelecimento_id
      LIMIT 200`
   ).all();
@@ -1140,7 +1149,7 @@ export async function getPublicOrderHandler(c, env) {
   const key = String(c.params.chave || '').trim();
   if (!ORDER_KEY.test(key)) return c.json({ error: 'Pedido não encontrado' }, 404);
   const row = await env.DB.prepare(
-    `SELECT po.id, po.status, po.etapa, po.tipo_entrega, po.forma_pagamento, po.pix_copia_cola, po.total, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.criado_em, po.atualizado_em, c.status AS comanda_status
+    `SELECT po.id, po.status, po.etapa, po.tipo_entrega, po.forma_pagamento, po.troco_para, po.pix_copia_cola, po.total, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.criado_em, po.atualizado_em, c.status AS comanda_status
      FROM pedidos_online po LEFT JOIN comandas c ON c.id=po.comanda_id AND c.estabelecimento_id=po.estabelecimento_id
      WHERE po.estabelecimento_id=? AND po.chave=?`
   ).bind(store.estabelecimento_id, key).first();
@@ -1153,6 +1162,7 @@ export async function getPublicOrderHandler(c, env) {
     etapa: etapaCliente(row),
     tipo_entrega: row.tipo_entrega,
     forma_pagamento: row.forma_pagamento,
+    troco_para: row.troco_para == null || row.troco_para === '' ? null : num(row.troco_para),
     pix_copia_cola: row.forma_pagamento === 'pix' ? (row.pix_copia_cola || null) : null,
     total: num(row.total),
     taxa_entrega: num(row.taxa_entrega),
@@ -1282,7 +1292,9 @@ export async function createPublicOrderHandler(c, env) {
   } catch (error) {
     return c.json({ error: error?.message || 'Escolha Pix, dinheiro ou maquininha.' }, error?.status || 400);
   }
-  const change = payment === 'dinheiro' ? optionalNumber(body?.troco_para, 'Troco', { min: 0, max: 100000 }) : null;
+  const change = payment === 'dinheiro' && body?.troco_para != null && String(body.troco_para).trim() !== ''
+    ? optionalNumber(body.troco_para, 'Valor em dinheiro', { min: 0, max: 100000 })
+    : null;
   const orderObservation = cleanText(body?.observacao, 500, 'Observação');
   if (!Array.isArray(body?.itens) || !body.itens.length || body.itens.length > MAX_ITEMS) return c.json({ error: `Envie de 1 a ${MAX_ITEMS} itens` }, 400);
 
@@ -1327,6 +1339,9 @@ export async function createPublicOrderHandler(c, env) {
   const subtotal = Math.round(items.reduce((sum, item) => sum + item.total, 0) * 100) / 100;
   const deliveryFee = delivery === 'entrega' ? num(cobranca.taxa_cliente) : 0;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
+  if (payment === 'dinheiro' && change != null && change < total) {
+    return c.json({ error: `O valor em dinheiro deve ser igual ou maior que ${total.toFixed(2).replace('.', ',')}.` }, 400);
+  }
   if (payment === 'pix') {
     if (!String(store.pix_chave || '').trim()) return c.json({ error: 'Esta loja não recebe Pix.' }, 400);
     try {

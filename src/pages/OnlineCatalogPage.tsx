@@ -293,7 +293,7 @@ function CategoriasRede() {
 
 function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved: (store: OnlineStore) => void }) {
   const toast = useToast();
-  const [form, setForm] = useState({ slug: '', nome: '', descricao: '', taxa: '0', valorKm: '', modo: 'cliente' as ModoEntrega, min: '', max: '', entrega: true, retirada: true, published: false, endereco: '', raio: '', latitude: null as number | null, longitude: null as number | null, pixChave: '', pixCidade: '' });
+  const [form, setForm] = useState({ slug: '', nome: '', descricao: '', taxa: '0', valorKm: '', modo: 'cliente' as ModoEntrega, publicacao: 'marketplace' as 'marketplace' | 'cardapio', min: '', max: '', entrega: true, retirada: true, published: false, endereco: '', raio: '', latitude: null as number | null, longitude: null as number | null });
   const [saving, setSaving] = useState(false);
   const [lendoLocal, setLendoLocal] = useState(false);
   useEffect(() => {
@@ -305,6 +305,7 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
       taxa: String(store.taxa_entrega),
       valorKm: store.valor_por_km == null ? '' : String(store.valor_por_km).replace('.', ','),
       modo: store.modo_entrega === 'dividido' || store.modo_entrega === 'gratis' ? store.modo_entrega : 'cliente',
+      publicacao: store.modo_publicacao === 'cardapio' ? 'cardapio' : 'marketplace',
       min: store.tempo_min_entrega == null ? '' : String(store.tempo_min_entrega),
       max: store.tempo_max_entrega == null ? '' : String(store.tempo_max_entrega),
       entrega: !!store.aceita_entrega,
@@ -314,8 +315,6 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
       raio: store.raio_entrega_km == null ? '' : String(store.raio_entrega_km).replace('.', ','),
       latitude: store.latitude ?? null,
       longitude: store.longitude ?? null,
-      pixChave: store.pix_chave || '',
-      pixCidade: store.pix_cidade || '',
     });
   }, [store]);
   const usarLocal = () => {
@@ -351,6 +350,7 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
         taxa_entrega: valorTexto ? 0 : taxa,
         valor_por_km: valorTexto ? valorKm : null,
         modo_entrega: form.modo,
+        modo_publicacao: form.publicacao,
         tempo_min_entrega: min,
         tempo_max_entrega: max,
         aceita_entrega: form.entrega ? 1 : 0,
@@ -360,8 +360,6 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
         latitude: form.latitude,
         longitude: form.longitude,
         raio_entrega_km: raio,
-        pix_chave: form.pixChave.trim(),
-        pix_cidade: form.pixCidade.trim(),
       });
       onSaved(next);
       toast('success', form.published ? 'Loja publicada' : 'Rascunho salvo');
@@ -380,8 +378,13 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
           <Field label="Endereço público"><Input value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value.toLowerCase().replace(/\s+/g, '-') })} placeholder="minha-loja" /><p className="mt-1 text-[11px] text-slate-400">Seu link: /pedido/{form.slug || 'minha-loja'}</p></Field>
           <Field label="Nome exibido" hint="Outra loja não pode usar o mesmo nome. Maiúsculas e minúsculas contam como iguais."><Input value={form.nome} onChange={(event) => setForm((atual) => ({ ...atual, nome: event.target.value }))} maxLength={120} /></Field>
           <Field label="Descrição interna" hint="Não aparece na abertura do cardápio do cliente."><Textarea value={form.descricao} onChange={(event) => setForm({ ...form, descricao: event.target.value })} rows={3} /></Field>
-          <Field label="Chave Pix" hint="CPF, CNPJ, e-mail, celular ou chave aleatória. O cliente paga direto esta chave. Deixe vazio para oferecer só dinheiro e maquininha."><Input value={form.pixChave} maxLength={77} onChange={(event) => setForm({ ...form, pixChave: event.target.value })} placeholder="chave@loja.com" /></Field>
-          <Field label="Cidade do recebedor" hint="Entra no código Pix, com até 15 letras."><Input value={form.pixCidade} maxLength={40} onChange={(event) => setForm({ ...form, pixCidade: event.target.value })} placeholder="São Paulo" /></Field>
+          <Field label="Onde o estabelecimento aparece" hint="Em ambos os casos, o link próprio da loja continua funcionando.">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={() => setForm({ ...form, publicacao: 'marketplace' })} className={`rounded-xl border p-3 text-left text-sm ${form.publicacao === 'marketplace' ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-200 bg-white text-slate-700'}`}><b className="block">Marketplace</b><span className="mt-1 block text-xs font-normal text-slate-500">A loja aparece na vitrine DoixP Delivery.</span></button>
+              <button type="button" onClick={() => setForm({ ...form, publicacao: 'cardapio' })} className={`rounded-xl border p-3 text-left text-sm ${form.publicacao === 'cardapio' ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-200 bg-white text-slate-700'}`}><b className="block">Só cardápio digital</b><span className="mt-1 block text-xs font-normal text-slate-500">A loja não aparece na vitrine; clientes acessam pelo seu link.</span></button>
+            </div>
+          </Field>
+          <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><b>Pagamento disponível agora:</b> dinheiro com cálculo de troco e maquininha. Pix, débito e crédito serão liberados em breve.</div>
         </Card>
         <Card className="space-y-5 p-5">
           <div><h2 className="font-bold text-slate-800">Entrega e retirada</h2><p className="mt-1 text-sm text-slate-500">O limite é o máximo que esta loja entrega, como 3,5 km ou 10 km.</p></div>

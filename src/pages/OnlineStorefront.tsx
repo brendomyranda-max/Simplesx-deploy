@@ -85,6 +85,13 @@ function tempoEntrega(loja: OnlineStore) {
   return `${loja.tempo_min_entrega ?? loja.tempo_max_entrega} min`;
 }
 
+function valorMonetario(texto: string) {
+  const limpo = texto.replace(/[^0-9,.-]/g, '');
+  const normalizado = limpo.includes(',') ? limpo.replace(/\./g, '').replace(',', '.') : limpo;
+  const valor = Number(normalizado);
+  return Number.isFinite(valor) ? valor : null;
+}
+
 export function OnlineStorefront() {
   const { chave, slug } = useParams();
   if (chave) return <AcompanharPedido />;
@@ -329,7 +336,7 @@ function LojaOnline() {
     setConfigurando(null);
   };
 
-  const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha' }) => {
+  const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null }) => {
     if (!loja?.slug) throw new Error('Loja indisponível');
     const chave = `web${crypto.randomUUID().replace(/-/g, '')}`;
     await onlinePublicApi.order(loja.slug, {
@@ -339,6 +346,7 @@ function LojaOnline() {
       tipo_entrega: dados.entrega,
       endereco: dados.endereco,
       forma_pagamento: dados.pagamento,
+      troco_para: dados.valorEmDinheiro,
       itens: cart.map((item) => ({
         cardapio_produto_id: item.product.id,
         quantidade: item.quantity,
@@ -409,7 +417,6 @@ function LojaOnline() {
           {configurandoAgora && <p className="online-config-note">O cliente vê o nome da loja, os mais vendidos e todas as categorias. Publique só item do estoque que estiver disponível.</p>}
           {configurandoAgora && <CategoriasDaLoja onChange={(nomes) => setLoja((atual) => atual ? { ...atual, segmentos: nomes } : atual)} />}
           {configurandoAgora && loja && <NomeDaLoja loja={loja} onSaved={setLoja} />}
-          {configurandoAgora && loja && <PixDaLoja loja={loja} onSaved={setLoja} />}
           {configurandoAgora && loja && <AreaDaLoja loja={loja} onSaved={setLoja} />}
           {estado === 'carregando' && <div className="online-empty"><b>Carregando o cardápio…</b></div>}
           {estado === 'vazio' && <div className="online-empty"><Store /><b>Abra o link da loja</b><span>O cliente entra pelo endereço publicado pelo estabelecimento.</span></div>}
@@ -444,7 +451,7 @@ function LojaOnline() {
 
         <section className="online-benefits">
           <div><Bike /><span><b>Entrega</b><small>{loja?.aceita_entrega ? (loja.raio_entrega_km != null ? `Até ${fmtKm(loja.raio_entrega_km)} do estabelecimento.` : 'No endereço informado no pedido.') : 'Esta loja não está aceitando entrega.'}</small></span></div>
-          <div><CreditCard /><span><b>Pagamento</b><small>{loja?.pix_disponivel === 1 ? 'Pix da loja, dinheiro ou maquininha na entrega.' : 'Dinheiro ou maquininha na entrega.'}</small></span></div>
+          <div><CreditCard /><span><b>Pagamento</b><small>Dinheiro ou maquininha na entrega ou retirada.</small></span></div>
           <div><Heart /><span><b>Cardápio real</b><small>Só entra o que foi cadastrado no estoque.</small></span></div>
         </section>
       </main>
@@ -1081,12 +1088,13 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
   );
 }
 
-function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha' }) => Promise<void> }) {
+function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null }) => Promise<void> }) {
   const guardado = lerPontoCliente();
   const entregaPadrao = loja.aceita_entrega ? 'entrega' : 'retirada';
-  const aceitaPix = loja.pix_disponivel === 1;
   const [delivery, setDelivery] = useState<'entrega' | 'retirada'>(entregaPadrao);
-  const [payment, setPayment] = useState<'pix' | 'dinheiro' | 'maquininha'>(aceitaPix ? 'pix' : 'dinheiro');
+  const [payment, setPayment] = useState<'dinheiro' | 'maquininha'>('dinheiro');
+  const [valorEmDinheiro, setValorEmDinheiro] = useState('');
+  const [avisoPagamento, setAvisoPagamento] = useState('');
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [endereco, setEndereco] = useState(guardado?.origem === 'endereco' ? guardado.endereco : '');
@@ -1103,6 +1111,10 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
     : Number(loja.taxa_entrega) || 0;
   const fora = delivery === 'entrega' && area?.entrega_na_regiao === 0;
   const cobranca = textoCobrancaCliente(delivery === 'entrega' ? area : null);
+  const totalPedido = totalBase + (aguardando ? 0 : taxa);
+  const valorInformado = valorMonetario(valorEmDinheiro);
+  const dinheiroInsuficiente = payment === 'dinheiro' && valorInformado != null && valorInformado < totalPedido;
+  const troco = payment === 'dinheiro' && valorInformado != null && valorInformado >= totalPedido ? valorInformado - totalPedido : null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setConsulta(endereco.trim()), 700);
@@ -1136,10 +1148,14 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
           setErro(`Esta loja entrega até ${fmtKm(area?.raio_entrega_km || 0)}. Este endereço fica a ${fmtKm(area?.distancia_km || 0)}.`);
           return;
         }
+        if (payment === 'dinheiro' && (valorInformado == null || valorInformado < totalPedido)) {
+          setErro(`Informe um valor em dinheiro igual ou maior que ${fmtBRL(totalPedido)}.`);
+          return;
+        }
         setEnviando(true);
         setErro('');
         try {
-          await onSubmit({ nome, telefone, entrega: delivery, endereco, pagamento: payment });
+          await onSubmit({ nome, telefone, entrega: delivery, endereco, pagamento: payment, valorEmDinheiro: payment === 'dinheiro' ? valorInformado : null });
         } catch (error: any) {
           setErro(error?.error || error?.message || 'Não foi possível enviar o pedido');
         } finally {
@@ -1172,13 +1188,16 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         )}
         <fieldset className="online-payment">
           <legend>Forma de pagamento</legend>
-          {([['pix', 'Pix'], ['dinheiro', 'Dinheiro'], ['maquininha', 'Maquininha na entrega']] as const)
-            .filter(([value]) => value !== 'pix' || aceitaPix)
-            .map(([value, label]) => <label key={value}><input type="radio" name="payment" checked={payment === value} onChange={() => setPayment(value)} />{label}</label>)}
-          <p className="online-pay-note">{aceitaPix ? 'O Pix abre o QR Code para pagar a chave desta loja. O pedido só sobe depois que o pagamento cair. Dinheiro e maquininha são pagos na hora da entrega ou da retirada.' : 'Dinheiro e maquininha são pagos na hora da entrega ou da retirada.'}</p>
+          <div className="online-payment-options">
+            {([['dinheiro', 'Dinheiro'], ['maquininha', 'Maquininha']] as const).map(([value, label]) => <label key={value} className={payment === value ? 'selected' : ''}><input type="radio" name="payment" checked={payment === value} onChange={() => { setPayment(value); setAvisoPagamento(''); }} />{label}</label>)}
+            {(['Pix', 'Cartão de débito', 'Cartão de crédito'] as const).map((label) => <button key={label} type="button" className="indisponivel" title={`${label}: em breve`} aria-label={`${label}: em breve`} onClick={() => setAvisoPagamento(`${label} estará disponível em breve.`)}>{label}<small>Em breve</small></button>)}
+          </div>
+          {payment === 'dinheiro' && <div className="online-cash-change"><label>Vou pagar com<input required inputMode="decimal" value={valorEmDinheiro} onChange={(event) => { setValorEmDinheiro(event.target.value); setErro(''); }} placeholder="Ex.: 50,00" /></label><div><span>Total do pedido <b>{fmtBRL(totalPedido)}</b></span>{valorInformado != null && <span className={dinheiroInsuficiente ? 'insuficiente' : ''}>{dinheiroInsuficiente ? `Faltam ${fmtBRL(totalPedido - valorInformado)}` : `Troco ${fmtBRL(troco || 0)}`}</span>}</div></div>}
+          <p className="online-pay-note">Dinheiro e maquininha são pagos na entrega ou na retirada. Pix, débito e crédito serão liberados em breve.</p>
+          {avisoPagamento && <p className="online-payment-notice" role="status">{avisoPagamento}</p>}
         </fieldset>
         {erro && <p className="online-erro">{erro}</p>}
-        <button className="online-place-order" type="submit" disabled={enviando || fora || aguardando}>{enviando ? 'Enviando…' : fora ? 'Fora da área de entrega' : aguardando ? 'Informe o endereço' : 'Fazer pedido'} <b>{fmtBRL(totalBase + (aguardando ? 0 : taxa))}</b></button>
+        <button className="online-place-order" type="submit" disabled={enviando || fora || aguardando || dinheiroInsuficiente}>{enviando ? 'Enviando…' : fora ? 'Fora da área de entrega' : aguardando ? 'Informe o endereço' : 'Fazer pedido'} <b>{fmtBRL(totalPedido)}</b></button>
       </form>
     </div>
   );
@@ -1338,6 +1357,7 @@ function AcompanharPedido() {
             </ul>
             <p className="online-track-total"><span>Total</span><b>{fmtBRL(pedido.total)}</b></p>
             <p className="online-track-note">Pagamento: {rotuloPagamento(pedido.forma_pagamento)}.</p>
+            {pedido.forma_pagamento === 'dinheiro' && pedido.troco_para != null && <p className="online-track-note">Você pagará com {fmtBRL(pedido.troco_para)} e receberá {fmtBRL(Math.max(0, pedido.troco_para - pedido.total))} de troco.</p>}
             {pedido.etapa !== 'cancelado' && pedido.etapa !== 'aguardando_pix' && pedido.forma_pagamento === 'pix' && pedido.pix_copia_cola && <PixDoPedido codigo={pedido.pix_copia_cola} loja={pedido.loja} aguardando={false} />}
             {pedido.tipo_entrega === 'entrega' && (pedido.entrega_gratis === 1 || pedido.modo_entrega === 'gratis') && <p className="online-track-note">Entrega grátis inclusa.</p>}
             {pedido.tipo_entrega === 'entrega' && pedido.modo_entrega !== 'gratis' && pedido.entrega_gratis !== 1 && (pedido.taxa_entrega || 0) > 0 && (

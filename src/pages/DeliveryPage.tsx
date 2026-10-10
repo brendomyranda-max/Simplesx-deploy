@@ -150,6 +150,7 @@ export function DeliveryPage() {
                     </div>
                     <p className="mt-1 text-sm text-slate-600">{pedido.telefone}{pedido.endereco ? ` · ${pedido.endereco}` : ''}</p>
                     <p className="text-xs text-slate-400">Pagamento: {rotuloPagamento(pedido.forma_pagamento)} · {fmtBRL(pedido.total)}</p>
+                    {pedido.forma_pagamento === 'dinheiro' && pedido.troco_para != null && <p className="text-xs font-semibold text-slate-600">Cliente paga com {fmtBRL(pedido.troco_para)} · Troco {fmtBRL(Math.max(0, pedido.troco_para - pedido.total))}</p>}
                     {pedido.forma_pagamento === 'pix' && pedido.etapa === 'aguardando_pix' && <p className="text-xs font-semibold text-slate-500">O cliente já tem o QR Code. O pedido só sobe depois que o Pix cair na conta da loja.</p>}
                     {pedido.forma_pagamento === 'pix' && pedido.etapa !== 'aguardando_pix' && <p className="text-xs font-semibold text-slate-500">Pix na chave desta loja. Confira o recebimento na conta do estabelecimento.</p>}
                     {pedido.tipo_entrega === 'entrega' && pedido.valor_entrega != null && (
