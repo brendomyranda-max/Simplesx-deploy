@@ -178,7 +178,7 @@ export function RestaurantePage() {
                     onClick={aoClicar}
                     className={`relative cursor-pointer rounded-2xl border-2 p-4 shadow-soft transition-colors ${
                       isPagamentos
-                        ? 'border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100'
+                        ? 'border-brand-200 bg-brand-50/60 hover:bg-brand-100'
                         : preFechada
                           ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
                           : ocupada
@@ -190,7 +190,7 @@ export function RestaurantePage() {
                       <span className={`${m.tipo === 'cartao' ? 'break-all text-lg' : 'text-2xl'} font-extrabold text-slate-800`}>
                         {m.tipo === 'cartao'
                           ? (m.nfc_uid || m.nome)
-                          : isPagamentos ? <UtensilsCrossed className="inline h-6 w-6 text-indigo-500" /> : m.numero}
+                          : isPagamentos ? <UtensilsCrossed className="inline h-6 w-6 text-brand-500" /> : m.numero}
                       </span>
                       {ocupada ? (
                         preFechada ? (
@@ -207,9 +207,9 @@ export function RestaurantePage() {
                       )}
                     </div>
                     {isPagamentos ? (
-                      <p className="text-sm font-bold text-indigo-700">{m.nome}</p>
+                      <p className="text-sm font-bold text-brand-700">{m.nome}</p>
                     ) : m.tipo === 'cartao' ? (
-                      <p className="text-sm font-semibold text-indigo-700">Cartão NFC</p>
+                      <p className="text-sm font-semibold text-brand-700">Cartão NFC</p>
                     ) : (
                       <p className="text-sm text-slate-500">{m.nome} · {m.capacidade} lugares</p>
                     )}
@@ -231,7 +231,7 @@ export function RestaurantePage() {
                       </div>
                     )}
                     {isPagamentos && !com && (
-                      <p className="mt-1 text-[11px] text-indigo-500">Nenhuma conta pendente</p>
+                      <p className="mt-1 text-[11px] text-brand-500">Nenhuma conta pendente</p>
                     )}
                   </motion.div>
                 </motion.div>
@@ -269,13 +269,13 @@ export function RestaurantePage() {
         title={espera === 'fechar' ? 'Fechamento de cartão' : 'Adicionar com cartão'}
       >
         <div className="flex flex-col items-center gap-3 py-6 text-center">
-          <Nfc className="h-12 w-12 text-indigo-600" />
+          <Nfc className="h-12 w-12 text-brand-600" />
           <p className="text-sm text-slate-600">
             {espera === 'fechar'
               ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'
               : 'Aproxime o cartão. O número dele abre a mesa para lançar os itens.'}
           </p>
-          <p className="text-xs text-slate-400">O Gestor precisa estar aberto, com o NFC ligado, neste computador ou no celular.</p>
+          <p className="text-xs text-slate-400">O Servidor DoixP precisa estar aberto, com o NFC ligado, neste computador ou no celular.</p>
           {lendoCartao && <Spinner />}
         </div>
       </Modal>

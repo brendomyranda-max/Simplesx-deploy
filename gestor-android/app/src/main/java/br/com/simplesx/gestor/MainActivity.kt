@@ -181,7 +181,7 @@ private fun GestorScreen() {
         val reader = if (activity != null && nfcEnabled) NfcReader(activity) { uid, payload ->
             val codigo = payload.ifBlank { uid }
             lastNfc = codigo
-            if (!paired) message = "Pareie o Gestor antes de enviar o NFC"
+            if (!paired) message = "Pareie o Servidor DoixP antes de enviar o NFC"
             else screenScope.launch {
                 val erro = withContext(Dispatchers.IO) {
                     runCatching { SimplexsaApi(config).postNfc(uid, codigo) }.exceptionOrNull()
@@ -212,14 +212,14 @@ private fun GestorScreen() {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("SimplexS.A Gestor") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Servidor DoixP") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusCard(serviceEnabled, paired, serviceStatus, lastJob)
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodyMedium)
 
-            Section("Conexão com o SimplexS.A") {
-                OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço do SimplexS.A") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(deviceName, { deviceName = it }, label = { Text("Nome deste gestor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Section("Conexão com a DoixP") {
+                OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço da DoixP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(deviceName, { deviceName = it }, label = { Text("Nome deste servidor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 if (!paired) {
                     OutlinedTextField(pairingId, { pairingId = it }, label = { Text("ID do pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(pairingCode, { pairingCode = it.uppercase() }, label = { Text("Código de pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -243,7 +243,7 @@ private fun GestorScreen() {
             }
 
             Section("Impressoras") {
-                Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado no SimplexS.A (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
+                Text("Cadastre uma rota para cada impressora. O nome deve ser igual ao nome configurado na DoixP (ex.: Cozinha, Bar ou Caixa).", style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     printers.forEachIndexed { index, item ->
                         OutlinedButton(onClick = {
@@ -291,7 +291,7 @@ private fun GestorScreen() {
                         usbExpanded = refreshUsb()
                     }, modifier = Modifier.weight(1f)) { Text("USB") }
                 }
-                OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota no SimplexS.A") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota na DoixP") }, modifier = Modifier.fillMaxWidth())
                 Text("Protocolo", fontWeight = FontWeight.Bold)
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     PrinterProtocol.entries.chunked(2).forEach { row ->
@@ -538,7 +538,7 @@ private fun GestorScreen() {
                     } else {
                         val testPrinter = validatedPrinter
                         background {
-                            val test = "SimplexS.A - TESTE DE IMPRESSAO\n${testPrinter.protocol.name} · ${testPrinter.dpi} DPI\nConexao ${testPrinter.connection.name} OK"
+                            val test = "DOIXP - TESTE DE IMPRESSAO\n${testPrinter.protocol.name} · ${testPrinter.dpi} DPI\nConexao ${testPrinter.connection.name} OK"
                             val bytes = PrinterCommands.document(test, testPrinter)
                             PrinterTransport.send(context, testPrinter, bytes)
                             val syncError = runCatching {

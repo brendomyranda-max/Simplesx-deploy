@@ -181,7 +181,7 @@ export function ImpressorasPage() {
     try {
       await configApi.update({ gestor_device_id: deviceId });
       setGestorDeviceId(deviceId);
-      toast('success', deviceId ? 'Gestor Android definido como destino das impressões' : 'Destino Android removido');
+      toast('success', deviceId ? 'Servidor Android definido como destino das impressões' : 'Destino Android removido');
     } catch (err: any) {
       toast('error', err?.error || 'Não foi possível salvar o destino');
     }
@@ -222,7 +222,7 @@ export function ImpressorasPage() {
       setGestorToken(t);
       const g = await gestorApi.list().catch(() => []);
       setGestores(g);
-      toast('success', t ? 'Token do gestor salvo' : 'Token removido — impressões voltam ao modo local');
+      toast('success', t ? 'Token do Servidor DoixP salvo' : 'Token removido — impressões voltam ao modo local');
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao salvar token');
     } finally {
@@ -235,7 +235,7 @@ export function ImpressorasPage() {
     try {
       const res = await gestorApi.enviar({
         tipo: 'texto',
-        conteudo: 'TESTE DE IMPRESSAO\n' + new Date().toLocaleString('pt-BR') + '\n\nAcentuacao: c a e i o u a o\nConexao com o gestor OK!',
+        conteudo: 'DOIXP - TESTE DE IMPRESSAO\n' + new Date().toLocaleString('pt-BR') + '\n\nAcentuacao: c a e i o u a o\nConexao com o Servidor DoixP OK!',
         gestor_token: gestorToken.trim() || undefined,
       });
       toast('success', 'Impressão enviada — confira a impressora (pode levar alguns segundos)');
@@ -344,20 +344,20 @@ export function ImpressorasPage() {
         <Button icon={<Plus className="h-4 w-4" />} onClick={abrir}>Novo</Button>
       </div>
 
-      <Card className="mb-4 border-blue-200 bg-gradient-to-r from-blue-50 to-white p-4">
+      <Card className="mb-4 border-brand-200 bg-gradient-to-r from-brand-50 to-white p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-600 text-white">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
             <Download className="h-5 w-5" />
           </div>
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Baixar Gestor de Impressoras</p>
+            <p className="font-extrabold text-slate-800">Baixar Servidor DoixP</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
           {INSTALADORES.map((item) => (
             <a
               key={item.id}
               className={item.id === 'windows'
-                ? 'inline-flex items-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700'
+                ? 'inline-flex items-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700'
                 : item.id === 'android'
                   ? 'inline-flex items-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100'
                   : 'inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50'}
@@ -369,9 +369,9 @@ export function ImpressorasPage() {
         </div>
       </Card>
 
-      <Card className="mb-4 border-indigo-200 p-4">
+      <Card className="mb-4 border-brand-200 p-4">
         <div className="flex flex-wrap items-start gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
             <Printer className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -379,8 +379,8 @@ export function ImpressorasPage() {
               <p className="font-extrabold text-slate-800">Ponte NFC</p>
               <Badge color={nfcAtivo ? 'green' : 'slate'}>{nfcAtivo ? 'ativa no gestor' : 'desligada'}</Badge>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
-              No Gestor, ative o NFC e grave o prefixo do leitor USB. No Android, o aplicativo lê a tag com o aparelho aberto.
+              <p className="mt-1 text-sm text-slate-500">
+              No Servidor DoixP, ative o NFC e grave o prefixo do leitor USB. No Android, o aplicativo lê a tag com o aparelho aberto.
               A leitura chega neste sistema e, no PDV em tela cheia, procura o produto. Prefixo atual: {nfcPrefixo}.
             </p>
             {nfcHistorico.length > 0 && (
@@ -404,7 +404,7 @@ export function ImpressorasPage() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-extrabold text-slate-800">Gestor Android</p>
+              <p className="font-extrabold text-slate-800">Servidor Android DoixP</p>
               <Badge color={devices.some((d) => d.status === 'online') ? 'green' : 'slate'}>
                 {devices.length ? `${devices.length} dispositivo(s)` : 'nenhum pareado'}
               </Badge>
@@ -466,7 +466,7 @@ export function ImpressorasPage() {
         )}
       </Card>
 
-      <Card className="mb-4 border-violet-200 p-4">
+      <Card className="mb-4 border-brand-200 p-4">
         <div className="mb-4">
           <p className="font-extrabold text-slate-800">Destinos por finalidade</p>
           <p className="mt-1 text-sm text-slate-500">Escolha diretamente qual impressora recebe cada tipo de documento.</p>
@@ -519,7 +519,7 @@ export function ImpressorasPage() {
         <Card className="p-4">
           <p className="font-bold text-slate-800">Papel e driver</p>
           <p className="mt-1 text-sm leading-relaxed text-slate-500">
-            O gestor reconhece as impressoras instaladas no Windows e no Linux. Para impressoras térmicas, mantenha no
+            O Servidor DoixP reconhece as impressoras instaladas no Windows e no Linux. Para impressoras térmicas, mantenha no
             driver o papel de {bobina}mm e margens mínimas; impressoras comuns usam o papel configurado no próprio driver.
           </p>
         </Card>
@@ -528,7 +528,7 @@ export function ImpressorasPage() {
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <p className="font-bold text-slate-800">Impressão direta (gestor local)</p>
+            <p className="font-bold text-slate-800">Impressão direta (Servidor DoixP local)</p>
             {cupsOnline === null ? (
               <Badge color="slate">verificando…</Badge>
             ) : cupsOnline ? (
@@ -542,14 +542,14 @@ export function ImpressorasPage() {
           </Button>
         </div>
         <p className="mt-1 text-sm leading-relaxed text-slate-500">
-          Ao tocar em "Imprimir", o app envia o recibo direto para o gestor (sem diálogo do navegador),
+          Ao tocar em "Imprimir", o app envia o recibo direto para o Servidor DoixP (sem diálogo do navegador),
           usando o serviço rodando em <code className="rounded bg-slate-100 px-1">http://127.0.0.1:8410</code>.
           Se o servidor estiver offline, a impressão cai automaticamente para o diálogo do navegador.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="flex items-center gap-3">
-            <Toggle checked={direct} onChange={mudarDirect} label="Impressão direta via gestor" />
-            <span className="text-sm text-slate-600">{direct ? 'Direto via gestor (sem diálogo)' : 'Diálogo do navegador'}</span>
+            <Toggle checked={direct} onChange={mudarDirect} label="Impressão direta via Servidor DoixP" />
+            <span className="text-sm text-slate-600">{direct ? 'Direto via Servidor DoixP (sem diálogo)' : 'Diálogo do navegador'}</span>
           </div>
           <Field label="Impressora da bobina 80mm">
             <Select value={printer80} onChange={(e) => mudarPrinter('80', e.target.value)}>
@@ -575,19 +575,19 @@ export function ImpressorasPage() {
           <div className="flex items-center gap-2">
             <p className="font-bold text-slate-800">Servidores Windows/Linux</p>
             {gestores.length === 0 ? (
-              <Badge color="slate">sem gestor pareado</Badge>
+              <Badge color="slate">sem servidor pareado</Badge>
             ) : (
-              <Badge color="green">{gestores.length} gestor(es)</Badge>
+              <Badge color="green">{gestores.length} servidor(es)</Badge>
             )}
           </div>
         </div>
         <p className="mt-1 text-sm leading-relaxed text-slate-500">
-          Cole o token exibido pelo Gestor para vincular este computador. Para usar o servidor em outro estabelecimento,
+          Cole o token exibido pelo Servidor DoixP para vincular este computador. Para usar o servidor em outro estabelecimento,
           desconecte a sessão atual no aplicativo. Uma conexão ativa não pode ser substituída nem excluída.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2 flex items-end gap-2">
-            <Field label="Token do gestor">
+            <Field label="Token do Servidor DoixP">
               <Input
                 value={gestorToken}
                 onChange={(e) => setGestorTokenState(e.target.value)}
@@ -608,7 +608,7 @@ export function ImpressorasPage() {
           </div>
           <div className="text-sm text-slate-600">
             {gestores.length === 0 ? (
-              <p>Nenhum gestor registrado ainda. Inicie o gestor no PC das impressoras e cole o token aqui.</p>
+              <p>Nenhum servidor registrado ainda. Inicie o Servidor DoixP no PC das impressoras e cole o token aqui.</p>
             ) : (
               <ul className="space-y-1">
                 {gestores.map((g) => {
@@ -766,8 +766,8 @@ export function ImpressorasPage() {
                   </Select>
                 </Field>
               </div>
-              {servidores.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Nenhum servidor sincronizado. Abra o Gestor Android, Windows ou Linux e aguarde alguns segundos.</p>}
-              {servidorSelecionado && servidorSelecionado.printers.length === 0 && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">Nenhuma impressora foi publicada por este servidor. Você pode salvar assim mesmo; o gestor usará sua impressora padrão.</p>}
+              {servidores.length === 0 && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Nenhum servidor sincronizado. Abra o Servidor DoixP no Android, Windows ou Linux e aguarde alguns segundos.</p>}
+              {servidorSelecionado && servidorSelecionado.printers.length === 0 && <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700">Nenhuma impressora foi publicada por este servidor. Você pode salvar assim mesmo; o Servidor DoixP usará sua impressora padrão.</p>}
               <Field label="Categorias que imprimem nesta impressora">
                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
                   {categorias.filter((cat) => !cat.categoria_pai_id).map((categoria) => (

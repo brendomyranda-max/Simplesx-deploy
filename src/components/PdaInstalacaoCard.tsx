@@ -26,7 +26,7 @@ export function PdaInstalacaoCard() {
     try {
       const resultado = await pedido;
       if (resultado === 'aceito') {
-        setAviso('PDA instalado. Abra o SimplexS.A pela tela inicial ou pelo menu de aplicativos. Ele entra em tela cheia.');
+        setAviso('PDA instalado. Abra a DoixP pela tela inicial ou pelo menu de aplicativos. Ele entra em tela cheia.');
       } else if (resultado === 'recusado') {
         setAviso('A instalação foi cancelada. O botão continua nesta tela.');
       } else {
@@ -38,16 +38,16 @@ export function PdaInstalacaoCard() {
   };
 
   return (
-    <Card className="border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5">
+    <Card className="border-brand-200 bg-gradient-to-r from-brand-50 to-white p-5">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
           <Download className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-extrabold text-slate-800">PDA em tela cheia</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Instale o SimplexS.A para abrir o sistema em tela cheia no Windows, no Linux e no Android.
-            Os dados continuam no servidor. O Gestor de impressoras continua na tela Impressoras.
+            Instale a DoixP para abrir o sistema em tela cheia no Windows, no Linux e no Android.
+            Os dados continuam no servidor. O Servidor DoixP continua na tela Impressoras.
           </p>
         </div>
       </div>
@@ -60,13 +60,13 @@ export function PdaInstalacaoCard() {
             <div
               key={sistema.id}
               className={atual
-                ? 'rounded-xl border border-indigo-300 bg-white p-3'
+                ? 'rounded-xl border border-brand-300 bg-white p-3'
                 : 'rounded-xl border border-slate-200 bg-white/70 p-3'}
             >
               <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                <Icone className="h-4 w-4 text-indigo-600" />
+                <Icone className="h-4 w-4 text-brand-600" />
                 {sistema.nome}
-                {atual && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">Este aparelho</span>}
+                {atual && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-semibold text-brand-700">Este aparelho</span>}
               </div>
               <p className="mt-1 text-xs text-slate-500">{sistema.onde}</p>
             </div>
@@ -76,7 +76,7 @@ export function PdaInstalacaoCard() {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {estado.instalado ? (
-          <p className="text-sm font-semibold text-indigo-700">
+          <p className="text-sm font-semibold text-brand-700">
             {estado.emTelaCheia
               ? 'O PDA está instalado e em tela cheia neste aparelho.'
               : 'O PDA está instalado neste aparelho.'}
@@ -108,7 +108,7 @@ export function PdaInstalacaoCard() {
         </div>
       )}
 
-      <div className="mt-4 grid gap-3 border-t border-indigo-100 pt-4 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 border-t border-brand-100 pt-4 sm:grid-cols-3">
         {SISTEMAS_PDA.map((sistema) => (
           <div key={sistema.id}>
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{sistema.nome}</p>

@@ -1,6 +1,6 @@
 /**
  * Pix estático com valor, no padrão do Banco Central.
- * O código leva a chave da própria loja. O SimplexS.A não recebe o pagamento.
+ * O código leva a chave da própria loja. A DoixP não recebe o pagamento.
  */
 
 import { httpError } from './util.js';

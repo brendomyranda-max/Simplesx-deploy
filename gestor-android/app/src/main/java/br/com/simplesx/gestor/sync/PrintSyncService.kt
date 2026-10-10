@@ -55,10 +55,10 @@ class PrintSyncService : Service() {
             createChannel()
             // A conexão contínua com impressoras é connectedDevice. dataSync
             // tem limite de duração e não pode iniciar no boot no Android 15.
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Conectando ao SimplexS.A…"),
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Conectando à DoixP…"),
                 if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0)
             wakeLock = getSystemService(PowerManager::class.java)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SimplexS.A:PrintSync")
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DoixP:PrintSync")
                 .apply { acquire() }
             foregroundReady = true
         } catch (error: RuntimeException) {
@@ -94,7 +94,7 @@ class PrintSyncService : Service() {
         while (scope.isActive && config.serviceEnabled) {
             var receivedTasks = false
             try {
-                check(config.deviceToken.isNotBlank()) { "Pareie este aparelho com o SimplexS.A" }
+                check(config.deviceToken.isNotBlank()) { "Pareie este aparelho com a DoixP" }
                 val api = SimplexsaApi(config)
                 if (heartbeatCounter++ % 5 == 0) api.heartbeat()
                 val tasks = api.pullTasks()
@@ -169,7 +169,7 @@ class PrintSyncService : Service() {
         }
         val payload = task.payload
         val content = payload.optStringAny("content", "conteudo", "text", "texto")
-        val fallback = if (task.type == "TEST_PRINTER") "SimplexS.A - TESTE DE IMPRESSAO\nConexao com o Gestor Android OK" else ""
+        val fallback = if (task.type == "TEST_PRINTER") "DOIXP - TESTE DE IMPRESSAO\nConexao com o Servidor Android OK" else ""
         require(content.isNotBlank() || fallback.isNotBlank()) { "Trabalho sem conteúdo de impressão" }
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
         val feed = payload.optIntAny("feed", "alimentar", default = 3)
@@ -200,7 +200,7 @@ class PrintSyncService : Service() {
 
     private fun notification(text: String) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_menu_info_details)
-        .setContentTitle("SimplexS.A Gestor ativo")
+        .setContentTitle("Servidor DoixP ativo")
         .setContentText(text)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
@@ -224,7 +224,7 @@ class PrintSyncService : Service() {
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         config.serviceEnabled = false
-        config.lastStatus = "Recepção parada pelo Android. Abra o gestor e ative Receber impressões."
+        config.lastStatus = "Recepção parada pelo Android. Abra o Servidor DoixP e ative Receber impressões."
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -237,7 +237,7 @@ class PrintSyncService : Service() {
 
         private fun recordStartFailure(config: AppConfig, error: RuntimeException) {
             config.serviceEnabled = false
-            config.lastStatus = "Recepção parada. Abra o gestor e ative Receber impressões. Detalhe: ${error.message ?: error.javaClass.simpleName}"
+            config.lastStatus = "Recepção parada. Abra o Servidor DoixP e ative Receber impressões. Detalhe: ${error.message ?: error.javaClass.simpleName}"
             Log.e("PrintSyncService", "Não foi possível iniciar a recepção", error)
         }
 
@@ -245,7 +245,7 @@ class PrintSyncService : Service() {
             val config = AppConfig(context)
             if (config.deviceToken.isBlank()) {
                 config.serviceEnabled = false
-                config.lastStatus = "Pareie este aparelho com o SimplexS.A"
+                config.lastStatus = "Pareie este aparelho com a DoixP"
                 return false
             }
             config.serviceEnabled = true

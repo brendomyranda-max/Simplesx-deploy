@@ -34,7 +34,7 @@ public static class RawPrinter {
     IntPtr printer;
     if (!OpenPrinter(printerName, out printer, IntPtr.Zero)) throw new Win32Exception();
     try {
-      var info = new DOC_INFO_1 { pDocName = "SimplexS.A", pDataType = "RAW" };
+      var info = new DOC_INFO_1 { pDocName = "DoixP", pDataType = "RAW" };
       if (StartDocPrinter(printer, 1, info) == 0) throw new Win32Exception();
       try {
         if (!StartPagePrinter(printer)) throw new Win32Exception();

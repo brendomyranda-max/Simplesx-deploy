@@ -72,6 +72,6 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
-  console.log(`SimplexS.A local rodando em http://localhost:${PORT}`);
+  console.log(`DoixP local rodando em http://localhost:${PORT}`);
   console.log(`Banco: ${DB_FILE}`);
 });

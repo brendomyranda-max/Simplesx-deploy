@@ -10,7 +10,7 @@ Cadastre estes três valores no ambiente **Production** do projeto
 
 - `PAGBANK_API_TOKEN`: token Bearer da aplicação PagBank (comece pelo sandbox);
 - `PAGBANK_TAPON_APP_KEY`: AppKey de QA fornecida após aprovação da integração Tap On;
-- `PAGBANK_SIMPLEXSA_ACCOUNT_ID`: Account ID PagBank habilitado para a SimplexS.A receber split.
+- `PAGBANK_SIMPLEXSA_ACCOUNT_ID`: nome técnico legado do Account ID PagBank habilitado para a DoixP receber split.
 
 Não coloque esses valores no `wrangler.toml`, GitHub, frontend, APK ou conversa.
 O valor de um secret não pode ser visualizado novamente no Cloudflare depois de salvo.

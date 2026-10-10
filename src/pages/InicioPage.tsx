@@ -4,6 +4,7 @@
  */
 
 import { Investimento } from '@/components/Investimento';
+import { BrandLogo } from '@/components/BrandLogo';
 import { useMemo } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -57,7 +58,7 @@ const AREAS: AreaCard[] = [
     descricao: 'Financeiro, fechamento de caixa e controle de perdas.',
     icon: <Wallet className="h-7 w-7" />,
     to: '/financeiro',
-    corIcone: 'text-violet-600 bg-violet-50',
+    corIcone: 'text-brand-600 bg-brand-50',
   },
   {
     key: 'estoque',
@@ -73,7 +74,7 @@ const AREAS: AreaCard[] = [
     descricao: 'Funcionários, impressoras e preferências da empresa.',
     icon: <Settings className="h-7 w-7" />,
     to: '/funcionarios',
-    corIcone: 'text-sky-600 bg-sky-50',
+    corIcone: 'text-brand-600 bg-brand-50',
   },
 ];
 
@@ -95,7 +96,7 @@ const MODULOS: ModuloCard[] = [
     descricao: 'Aplicação completa: vendas, estoque, financeiro, relatórios e configurações.',
     icon: <LayoutDashboard className="h-7 w-7" />,
     to: '/dashboard',
-    gradiente: 'from-brand-500 to-indigo-600',
+    gradiente: 'from-brand-500 to-brand-700',
     corIcone: 'text-brand-600 bg-brand-50',
     bloqueadoMsg: 'Sem permissão para o Gestor',
   },
@@ -182,11 +183,11 @@ export function InicioPage() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 18 }}
-            className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500 text-3xl font-extrabold text-white shadow-2xl shadow-brand-500/40"
+            className="mb-3"
           >
-            S
+            <BrandLogo className="h-16 w-16 rounded-2xl shadow-2xl shadow-black/40" />
           </motion.div>
-          <h1 className="text-2xl font-extrabold text-white">SimplexS.A</h1>
+          <h1 className="text-2xl font-extrabold text-white">DoixP</h1>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-400">
             <Building2 className="h-4 w-4" />
             {nome || 'Bem-vindo(a)!'}

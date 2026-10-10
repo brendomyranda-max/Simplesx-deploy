@@ -1,4 +1,4 @@
-# Guia do projeto SimplexS.A
+# Guia do projeto DoixP
 
 Este documento explica como o projeto está organizado, qual é o caminho dos dados e para que serve cada arquivo autoral. Ele também separa arquivos que devem ser editados daqueles que são criados automaticamente pelas ferramentas.
 
@@ -9,7 +9,7 @@ O repositório contém quatro partes que trabalham juntas:
 1. **Aplicação web (`src/`)**: interface React usada no navegador.
 2. **API (`functions/`, `shared/` e `server/`)**: regras de negócio e acesso ao banco. O mesmo núcleo atende a produção no Cloudflare e o servidor local.
 3. **Banco (`migrations/` e `data/`)**: estrutura versionada e dados locais em SQLite/D1; `data/` não acompanha o repositório.
-4. **Gestores de impressão (`gestor-impressora/` e `gestor-android/`)**: programas instalados perto das impressoras para receber e imprimir trabalhos enviados pelo sistema.
+4. **Servidores DoixP (`gestor-impressora/` e `gestor-android/`)**: programas instalados perto das impressoras para receber e imprimir trabalhos enviados pelo sistema.
 
 O fluxo mais comum é:
 
@@ -48,7 +48,7 @@ Os demais JSON vistos na pasta pertencem principalmente a:
 - `.wrangler/`: estado e cache local do simulador do Cloudflare.
 - arquivos `*.tsbuildinfo`: cache do compilador TypeScript; apesar do conteúdo parecido com JSON, são artefatos gerados.
 
-Esses arquivos gerados não representam centenas de partes do SimplexS.A. Eles são como peças internas das ferramentas. Não devem receber comentários, e `package-lock.json` também não aceita comentários. JSON padrão não permite `//` nem `/* ... */`; colocar comentários nele pode impedir o build. A explicação deve ficar neste guia ou em um README.
+Esses arquivos gerados não representam centenas de partes da DoixP. Eles são como peças internas das ferramentas. Não devem receber comentários, e `package-lock.json` também não aceita comentários. JSON padrão não permite `//` nem `/* ... */`; colocar comentários nele pode impedir o build. A explicação deve ficar neste guia ou em um README.
 
 ## Raiz e configuração
 
@@ -56,7 +56,7 @@ Esses arquivos gerados não representam centenas de partes do SimplexS.A. Eles s
 - `.env.example` e `.dev.vars.example`: modelos sem credenciais reais para Express e Wrangler.
 - `wrangler.toml.example`: modelo dos bindings Cloudflare; copie para o `wrangler.toml` local e informe seus IDs.
 - `SEGURANCA.md`: configurações privadas, assinatura Android e publicação do portfólio.
-- `README.md`: instruções operacionais para criar estabelecimentos, administrar tokens, usar NFC-e e configurar o Gestor Local.
+- `README.md`: instruções operacionais para criar estabelecimentos, administrar tokens, usar NFC-e e configurar o Servidor DoixP.
 - `index.html`: página HTML mínima em que o React é montado; carrega `src/main.tsx`.
 - `package.json`: manifesto npm principal, descrito acima. Os comandos mais usados são `npm run dev`, `build`, `test`, `server` e `deploy`.
 - `package-lock.json`: fotografia exata da árvore de dependências principal.

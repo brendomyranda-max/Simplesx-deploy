@@ -137,7 +137,7 @@ export function LancarCartaoPage() {
 
       <Modal open={espera} onClose={() => { if (!enviando) setEspera(false); }} title="Aproxime o cartão">
         <div className="flex flex-col items-center gap-3 py-6 text-center">
-          <Nfc className="h-12 w-12 text-indigo-600" />
+          <Nfc className="h-12 w-12 text-brand-600" />
           <p className="text-sm text-slate-600">
             O leitor identifica o cartão, guarda estes itens nessa mesa e envia o pedido à cozinha.
           </p>

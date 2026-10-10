@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Tema visual nativo aplicado às telas do gestor Android. -->
 <resources>
-    <style name="Theme.Simplexsa" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.DoixP" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#2563EB</item>
+        <item name="android:colorAccent">#A61F33</item>
         <item name="android:navigationBarColor">#F8FAFC</item>
         <item name="android:statusBarColor">#F8FAFC</item>
         <item name="android:windowLightStatusBar">true</item>

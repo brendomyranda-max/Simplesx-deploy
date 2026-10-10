@@ -31,6 +31,7 @@ import {
   ChefHat,
 } from 'lucide-react';
 import { useToast } from '@/components/ui';
+import { BrandLogo } from '@/components/BrandLogo';
 import { useAuth } from '@/store/auth';
 import { areaSelecionada, type AreaApp } from '@/lib/areas';
 
@@ -85,10 +86,8 @@ export function AppShell({
     return (
       <div className="flex min-h-viewport flex-col">
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2.5 border-b border-slate-200 bg-white/80 px-3 pt-[env(safe-area-inset-top)] pb-1 backdrop-blur">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-sm font-extrabold text-white shadow-md shadow-brand-500/30">
-            S
-          </div>
-          <p className="min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplexS.A'}</p>
+          <BrandLogo className="h-8 w-8 shrink-0 rounded-lg shadow-md shadow-black/20" />
+          <p className="min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'DoixP'}</p>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {modulosAtivos > 1 && (
               <button
@@ -187,11 +186,9 @@ export function AppShell({
   const sidebar = (
     <div className="flex h-full flex-col bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300">
       <div className="flex shrink-0 items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-base font-extrabold text-white shadow-lg shadow-brand-500/40">
-          S
-        </div>
+        <BrandLogo className="h-9 w-9 rounded-xl shadow-lg shadow-black/30" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold text-white">SimplexS.A</p>
+          <p className="truncate text-sm font-extrabold text-white">DoixP</p>
           <p className="truncate text-[11px] text-slate-400">{empresaNome || 'Meu Negócio'}</p>
         </div>
         <button
@@ -316,7 +313,7 @@ export function AppShell({
           >
             <Home className="h-6 w-6" />
           </button>
-          <p className="ml-1 min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'SimplexS.A'}</p>
+          <p className="ml-1 min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'DoixP'}</p>
 
         </header>
         <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{children}</main>

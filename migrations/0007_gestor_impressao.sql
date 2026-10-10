@@ -1,5 +1,5 @@
 -- ============================================================
--- SimplexS.A - Fila de impressão via deploy (gestor local ↔ Cloudflare)
+-- DoixP - Fila de impressão via deploy (Servidor DoixP ↔ Cloudflare)
 -- O gestor local se registra (token + nome + IP) e busca trabalhos
 -- de impressão por polling. A fila fica aqui no D1.
 -- ============================================================

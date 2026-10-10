@@ -1,5 +1,5 @@
 -- ============================================================
--- SimplexS.A - Módulos de acesso por funcionário
+-- DoixP - Módulos de acesso por funcionário
 -- modulos: lista separada por vírgula. Valores possíveis:
 --   gestor       -> aplicação completa
 --   pdv_mercado  -> somente PDV Mercado

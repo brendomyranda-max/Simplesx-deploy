@@ -1,9 +1,9 @@
-// Conteúdo editorial adaptado de Simplex_Apresentacao_Investidores.docx,
+// Conteúdo editorial adaptado da apresentação institucional da DoixP,
 // fornecido pelo fundador. Planos e dados em definição não são resultados obtidos.
 export const contatoInvestimento = {
   telefone: '5511939417895',
   telefoneFormatado: '(11) 93941-7895',
-  mensagem: 'Olá, Brendo! Li a apresentação da SimplexS.A e tenho interesse em investir. Gostaria de conversar sobre a proposta.',
+  mensagem: 'Olá, Brendo! Li a apresentação da DoixP e tenho interesse em investir. Gostaria de conversar sobre a proposta.',
 };
 
 export const pilares = [

@@ -10,6 +10,7 @@ import { useAuth } from '@/store/auth';
 import { authApi, type SignupPolicy } from '@/lib/api';
 import { Button, Field, Input, useToast } from '@/components/ui';
 import { Investimento } from '@/components/Investimento';
+import { BrandLogo } from '@/components/BrandLogo';
 import { Turnstile } from '@/components/Turnstile';
 import { useNavigate } from 'react-router-dom';
 
@@ -61,8 +62,8 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-brand-950 to-slate-900 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center">
-          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500 text-3xl font-extrabold text-white shadow-2xl shadow-brand-500/40">S</div>
-          <h1 className="text-2xl font-extrabold text-white">SimplexS.A</h1>
+          <BrandLogo className="mb-3 h-16 w-16 rounded-2xl shadow-2xl shadow-black/40" />
+          <h1 className="text-2xl font-extrabold text-white">DoixP</h1>
           <p className="mt-1 text-sm text-slate-400">Acesso seguro ao seu estabelecimento</p>
         </div>
         <div className="card p-6">

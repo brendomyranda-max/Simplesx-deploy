@@ -78,7 +78,7 @@ export function FechamentoCaixaPage() {
     </div>
     <div className="mb-4 grid gap-3 md:grid-cols-3">
       <Card className="p-4"><div className="flex items-center gap-2 text-brand-600"><Store className="h-5 w-5"/><b>PDV Mercado</b></div><p className="mt-2 text-2xl font-extrabold">{fmtBRL(resumo.total_mercado)}</p><p className="text-xs text-slate-500">{resumo.vendas_mercado} vendas confirmadas</p></Card>
-      <Card className="p-4"><div className="flex items-center gap-2 text-purple-600"><UtensilsCrossed className="h-5 w-5"/><b>Restaurante</b></div><p className="mt-2 text-2xl font-extrabold">{fmtBRL(resumo.total_restaurante)}</p><p className="text-xs text-slate-500">{resumo.vendas_restaurante} contas confirmadas</p></Card>
+      <Card className="p-4"><div className="flex items-center gap-2 text-brand-600"><UtensilsCrossed className="h-5 w-5"/><b>Restaurante</b></div><p className="mt-2 text-2xl font-extrabold">{fmtBRL(resumo.total_restaurante)}</p><p className="text-xs text-slate-500">{resumo.vendas_restaurante} contas confirmadas</p></Card>
       <Card className={`p-4 ${resumo.vendas_canceladas ? 'border-amber-200 bg-amber-50' : ''}`}><div className="flex items-center gap-2 text-amber-700"><AlertTriangle className="h-5 w-5"/><b>Cancelamentos</b></div><p className="mt-2 text-2xl font-extrabold">{resumo.vendas_canceladas}</p><p className="text-xs text-slate-500">Vendas que não devem entrar no recebimento</p></Card>
     </div>
     <div className="grid gap-4 lg:grid-cols-2">

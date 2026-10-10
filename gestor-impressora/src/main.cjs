@@ -21,7 +21,7 @@ const executarArquivo = promisify(execFile)
 
 const PORTA_LOCAL = 8410
 const INTERVALO_POLL = 3000
-const DEPLOY_PADRAO = 'https://simplesx-projeto-beta.pages.dev'
+const DEPLOY_PADRAO = 'https://doixp.com'
 
 let janela
 let tray
@@ -67,7 +67,7 @@ function configPadrao() {
   return {
     deployUrl: DEPLOY_PADRAO,
     token: crypto.randomBytes(16).toString('hex'),
-    nome: `Gestor ${os.hostname()}`,
+    nome: `Servidor DoixP ${os.hostname()}`,
     impressoraPadrao: '',
     largurasImpressoras: {},
     alturasImpressoras: {},
@@ -108,7 +108,7 @@ async function salvarConfig(novaConfig) {
     ...config,
     deployUrl,
     token: String(novaConfig.token || config?.token || '').trim(),
-    nome: String(novaConfig.nome || `Gestor ${os.hostname()}`).trim(),
+    nome: String(novaConfig.nome || `Servidor DoixP ${os.hostname()}`).trim(),
     impressoraPadrao: String(novaConfig.impressoraPadrao || ''),
     largurasImpressoras: normalizarLarguras(novaConfig.largurasImpressoras || config?.largurasImpressoras),
     alturasImpressoras: normalizarAlturas(novaConfig.alturasImpressoras || config?.alturasImpressoras),
@@ -196,7 +196,7 @@ async function api(endpoint, body) {
   const contentType = resposta.headers.get('content-type') || ''
   const data = contentType.includes('application/json') ? await resposta.json().catch(() => ({})) : {}
   if (!contentType.includes('application/json')) {
-    throw new Error(`Endereço não é um servidor SimplexS.A (resposta ${resposta.status})`)
+    throw new Error(`Endereço não é um servidor DoixP (resposta ${resposta.status})`)
   }
   if (!resposta.ok) throw new Error(data.error || `Servidor respondeu ${resposta.status}`)
   return data
@@ -583,7 +583,7 @@ function criarJanela() {
     height: 700,
     minWidth: 700,
     minHeight: 580,
-    title: 'SimplexS.A Gestor de Impressoras',
+    title: 'Servidor DoixP',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   })
   janela.loadFile(path.join(__dirname, 'index.html'))
@@ -595,11 +595,11 @@ function criarJanela() {
 }
 
 function criarTray() {
-  const icon = nativeImage.createFromPath(path.join(__dirname, 'tray.svg')).resize({ width: 18, height: 18 })
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'doixp-logo.png')).resize({ width: 18, height: 18 })
   tray = new Tray(icon)
-  tray.setToolTip('SimplexS.A Gestor de Impressoras')
+  tray.setToolTip('Servidor DoixP')
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir SimplexS.A Gestor', click: () => janela.show() },
+    { label: 'Abrir Servidor DoixP', click: () => janela.show() },
     { type: 'separator' },
     { label: 'Sincronizar agora', click: sincronizar },
     { label: 'Sair', click: () => app.quit() },
@@ -618,7 +618,7 @@ ipcMain.handle('salvar-config', async (_e, value) => {
 ipcMain.handle('desconectar', desconectar)
 ipcMain.handle('listar-impressoras', () => listarImpressoras(true))
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
-  await imprimirRaw({ texto: 'SimplexS.A - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
+  await imprimirRaw({ texto: 'DOIXP - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
   return { ok: true }
 })
 ipcMain.handle('salvar-impressora', async (_e, value) => {
@@ -655,7 +655,7 @@ if (instanciaUnica) {
     await sincronizar()
     timer = setInterval(sincronizar, INTERVALO_POLL)
   }).catch((erro) => {
-    dialog.showErrorBox('Não foi possível abrir o SimplexS.A Gestor', erro?.message || String(erro))
+    dialog.showErrorBox('Não foi possível abrir o Servidor DoixP', erro?.message || String(erro))
     app.quit()
   })
 }

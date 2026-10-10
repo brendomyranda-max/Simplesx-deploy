@@ -17,7 +17,7 @@ if (-not $document.PrinterSettings.IsValid) { throw "Impressora não encontrada:
 
 $widthHundredths = [Math]::Max(1, [int][Math]::Round($WidthMm / 25.4 * 100))
 $heightHundredths = [Math]::Max(1, [int][Math]::Round($HeightMm / 25.4 * 100))
-$document.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('SimplexS.A', $widthHundredths, $heightHundredths)
+$document.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('DoixP', $widthHundredths, $heightHundredths)
 $document.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
 $document.OriginAtMargins = $true
 

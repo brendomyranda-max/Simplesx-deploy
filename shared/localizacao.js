@@ -1,6 +1,6 @@
 import { kvGet, kvPut, sha256 } from './util.js';
 
-const AGENTE = 'SimplexSA-Delivery/1.0 (https://simplesx-projeto-beta.pages.dev)';
+const AGENTE = 'DoixP-Delivery/1.0 (https://doixp.com)';
 const TOLERANCIA_KM = 0.15;
 
 export function coordenadaValida(latitude, longitude) {

@@ -261,7 +261,7 @@ export function CategoriasPage() {
               </div>
             </Field>
             {categoriaPaiId ? (
-              <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-700">A subcategoria herdará automaticamente a impressora da categoria principal.</div>
+              <div className="rounded-xl bg-brand-50 p-3 text-sm text-brand-700">A subcategoria herdará automaticamente a impressora da categoria principal.</div>
             ) : (
               <Field label="Destino dos pedidos">
                 <Select value={servidorTipo && servidorId ? `server:${servidorTipo}:${servidorId}` : impressoraId ? `route:${impressoraId}` : ''} onChange={(e) => {
@@ -277,7 +277,7 @@ export function CategoriasPage() {
                     {impressoras.filter((i) => i.impressora_destino || !i.servidor_tipo).map((i) => <option key={i.id} value={`route:${i.id}`}>{i.nome} ({i.largura_mm || 80}mm)</option>)}
                   </optgroup>
                 </Select>
-                <p className="mt-1 text-xs text-slate-500">Escolhendo somente o servidor, o gestor usará sua impressora padrão.</p>
+                <p className="mt-1 text-xs text-slate-500">Escolhendo somente o servidor, o Servidor DoixP usará sua impressora padrão.</p>
               </Field>
             )}
             </>

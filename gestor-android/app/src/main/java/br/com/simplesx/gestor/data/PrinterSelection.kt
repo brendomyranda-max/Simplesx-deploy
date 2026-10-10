@@ -6,5 +6,5 @@ fun selectPrinter(printers: List<PrinterConfig>, route: String?, defaultName: St
         return printers.firstOrNull { it.name.trim().equals(requested, ignoreCase = true) }
             ?: throw IllegalArgumentException("A rota de impressão \"$requested\" não está cadastrada neste Android. Confira o nome no gestor e no sistema web")
     }
-    return printers.firstOrNull() ?: throw IllegalStateException("Cadastre uma impressora no gestor Android")
+    return printers.firstOrNull() ?: throw IllegalStateException("Cadastre uma impressora no Servidor Android DoixP")
 }

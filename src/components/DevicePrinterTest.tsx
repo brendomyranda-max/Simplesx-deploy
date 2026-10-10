@@ -73,11 +73,11 @@ export function DevicePrinterTest({ device }: { device: PrintDevice }) {
   };
 
   let result = '';
-  if (task?.status === 'pending') result = `Teste na fila para ${printerName}. Aguardando o Gestor Android.`;
-  if (task?.status === 'sent') result = `Teste recebido pelo Gestor Android para ${printerName}.`;
-  if (task?.status === 'processing') result = `Gestor Android está imprimindo em ${printerName}…`;
-  if (task?.status === 'success') result = `Gestor confirmou o envio para ${printerName}. Confira o teste no papel.`;
-  if (task?.status === 'failed') result = `Falha no teste: ${task.erro_mensagem || 'O Gestor não conseguiu imprimir.'}`;
+  if (task?.status === 'pending') result = `Teste na fila para ${printerName}. Aguardando o Servidor Android.`;
+  if (task?.status === 'sent') result = `Teste recebido pelo Servidor Android para ${printerName}.`;
+  if (task?.status === 'processing') result = `Servidor Android está imprimindo em ${printerName}…`;
+  if (task?.status === 'success') result = `Servidor confirmou o envio para ${printerName}. Confira o teste no papel.`;
+  if (task?.status === 'failed') result = `Falha no teste: ${task.erro_mensagem || 'O Servidor não conseguiu imprimir.'}`;
   if (task?.status === 'cancelled') result = 'Teste cancelado.';
 
   return (
@@ -99,8 +99,8 @@ export function DevicePrinterTest({ device }: { device: PrintDevice }) {
           {pending ? 'Aguardando resultado…' : sendError ? 'Verificar envio' : 'Testar impressora'}
         </Button>
       </div>
-      {!device.online && <p className="text-xs text-amber-700">Abra o Gestor Android e ative Receber impressões para realizar o teste.</p>}
-      {!printers.length && <p className="text-xs text-slate-500">Salve a impressora no Gestor Android e aguarde a sincronização.</p>}
+      {!device.online && <p className="text-xs text-amber-700">Abra o Servidor Android e ative Receber impressões para realizar o teste.</p>}
+      {!printers.length && <p className="text-xs text-slate-500">Salve a impressora no Servidor Android e aguarde a sincronização.</p>}
       {result && <p role="status" className={`text-sm ${task?.status === 'failed' || task?.status === 'cancelled' ? 'text-red-700' : task?.status === 'success' ? 'text-emerald-700' : 'text-slate-700'}`}>{result}</p>}
       {sendError && <p role="alert" className="text-sm text-red-700">Envio não confirmado: {sendError}. Use Verificar envio para consultar ou concluir este mesmo teste.</p>}
       {readError && <p role="alert" className="text-sm text-amber-700">{readError}. O resultado ainda não foi confirmado; a consulta será repetida.</p>}

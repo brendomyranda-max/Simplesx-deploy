@@ -28,7 +28,7 @@ async function publicarLocal(texto: string) {
     body: JSON.stringify({ text: texto }),
   });
   const dados = await resposta.json().catch(() => ({}));
-  if (!resposta.ok) throw new Error(dados.error || 'O Gestor não recebeu a leitura NFC');
+  if (!resposta.ok) throw new Error(dados.error || 'O Servidor DoixP não recebeu a leitura NFC');
   return dados as NfcEvento;
 }
 

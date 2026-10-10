@@ -210,9 +210,9 @@ export function ValidadePage() {
             <p className="text-xs font-semibold text-amber-600">Vencem em até 7 dias</p>
             <p className="text-2xl font-extrabold text-amber-700">{controles.filter((v) => { const d = diasAte(v.data_vencimento); return d !== null && d > 0 && d <= 7; }).length}</p>
           </Card>
-          <Card className="border-blue-200 bg-blue-50 p-3">
-            <p className="text-xs font-semibold text-blue-600">Exibidos no filtro</p>
-            <p className="text-2xl font-extrabold text-blue-700">{controles.length}</p>
+          <Card className="border-brand-200 bg-brand-50 p-3">
+            <p className="text-xs font-semibold text-brand-600">Exibidos no filtro</p>
+            <p className="text-2xl font-extrabold text-brand-700">{controles.length}</p>
           </Card>
         </div>
       )}

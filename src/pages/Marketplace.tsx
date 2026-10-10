@@ -1,10 +1,11 @@
 /**
- * Vitrine da rede. Ao entrar, pede a localização e mostra quem entrega na região.
+ * Vitrine DoixP Delivery. Ao entrar, pede a localização e mostra quem entrega na região.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bike, Clock3, Flame, MapPin, Search, Store } from 'lucide-react';
+import { Bike, Clock3, MapPin, Search, Store } from 'lucide-react';
+import { BrandLogo } from '@/components/BrandLogo';
 import { authApi, onlineApi, onlinePublicApi } from '@/lib/api';
 import type { OnlineStore, RedePedidos } from '@/lib/types';
 import { fmtKm, gravarPontoCliente, lerPontoCliente, observarLocalizacao, textoEntrega, type PontoCliente } from '@/lib/localizacao-cliente';
@@ -137,12 +138,12 @@ export function Marketplace() {
     <div className="online-storefront min-h-viewport">
       <header className="online-topbar">
         <Link className="online-brand" to="/pedido">
-          <span className="online-brand-mark"><Flame aria-hidden="true" /></span>
-          <span>rede</span>
+          <span className="online-brand-mark"><BrandLogo aria-hidden="true" alt="" /></span>
+          <span>DoixP Delivery</span>
         </Link>
       </header>
       <main className="online-market">
-        <p className="online-eyebrow">REDE DE PEDIDOS</p>
+        <p className="online-eyebrow">DOIXP DELIVERY</p>
         <h1>O que você quer pedir?</h1>
         <p className="online-market-lead">Ao entrar, pedimos sua localização para mostrar os restaurantes que entregam na sua região. Digite o endereço para ver a distância de cada um.</p>
         <section className="online-where" aria-label="Sua localização">
@@ -180,12 +181,12 @@ export function Marketplace() {
           <div className="online-market-owner">
             <div>
               <b>{minhaLoja.nome || 'Sua loja'}</b>
-              <span>{minhaLoja.ativo ? 'Publicada na rede.' : 'Ainda em rascunho.'} {minhaLoja.segmentos?.length ? minhaLoja.segmentos.join(' · ') : 'Crie uma categoria para o cliente encontrar você.'}</span>
+              <span>{minhaLoja.ativo ? 'Publicada no DoixP Delivery.' : 'Ainda em rascunho.'} {minhaLoja.segmentos?.length ? minhaLoja.segmentos.join(' · ') : 'Crie uma categoria para o cliente encontrar você.'}</span>
             </div>
             <Link to={`/pedido/${minhaLoja.slug}?configurar=1`}>Configurar minha loja</Link>
           </div>
         )}
-        <div className="online-categories" aria-label="Categorias da rede">
+        <div className="online-categories" aria-label="Categorias do DoixP Delivery">
           <button type="button" className={categoria === '' ? 'active' : ''} onClick={() => setCategoria('')}>Todos</button>
           {rede.categorias.map((item) => (
             <button key={item.busca} type="button" className={categoria === item.busca ? 'active' : ''} onClick={() => setCategoria(item.busca)}>
@@ -194,12 +195,12 @@ export function Marketplace() {
           ))}
         </div>
         {estado === 'carregando' && <div className="online-empty"><b>Carregando restaurantes…</b></div>}
-        {estado === 'erro' && <div className="online-empty"><Store /><b>Rede indisponível</b><span>{mensagem}</span></div>}
+        {estado === 'erro' && <div className="online-empty"><Store /><b>DoixP Delivery indisponível</b><span>{mensagem}</span></div>}
         {estado === 'pronto' && rede.lojas.length === 0 && (
           <div className="online-empty">
             <Store />
             <b>{vazioRegiao ? 'Nenhum restaurante entrega nesta região ainda' : (categoria || consulta ? 'Nenhum restaurante nesta busca' : 'Nenhum restaurante publicado')}</b>
-            <span>{vazioRegiao ? 'Cada estabelecimento define o limite, como 3,5 km ou 10 km. Você pode ver todas as lojas da rede.' : 'A categoria entra aqui quando o estabelecimento cria o modelo da loja e publica o cardápio.'}</span>
+            <span>{vazioRegiao ? 'Cada estabelecimento define o limite, como 3,5 km ou 10 km. Você pode ver todas as lojas do DoixP Delivery.' : 'A categoria entra aqui quando o estabelecimento cria o modelo da loja e publica o cardápio.'}</span>
             {vazioRegiao && <button type="button" onClick={() => setRegiao(false)}>Ver todas</button>}
           </div>
         )}

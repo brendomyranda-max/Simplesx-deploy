@@ -37,10 +37,10 @@ class AppConfig(context: Context) {
     val deviceId: String = "android-${Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)}"
 
     var deployUrl: String
-        get() = prefs.getString("deploy_url", "https://simplesx-projeto-beta.pages.dev")!!
+        get() = prefs.getString("deploy_url", "https://doixp.com")!!
         set(value) = prefs.edit().putString("deploy_url", value.trim().trimEnd('/')).apply()
     var deviceName: String
-        get() = prefs.getString("device_name", "Gestor Android")!!
+        get() = prefs.getString("device_name", "Servidor Android DoixP")!!
         set(value) = prefs.edit().putString("device_name", value.trim()).apply()
     var deviceToken: String
         get() = prefs.getString("device_token", "")!!

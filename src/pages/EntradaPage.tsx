@@ -340,7 +340,7 @@ export function EntradaPage() {
               <li className="flex gap-2"><span className="text-brand-500">•</span> Um mesmo produto pode ter vários códigos de barras de fornecedores ou embalagens.</li>
             </ul>
             {config?.modo === 'estoque' && (
-              <p className="mt-3 rounded-xl bg-blue-50 p-3 text-xs text-blue-700">
+              <p className="mt-3 rounded-xl bg-brand-50 p-3 text-xs text-brand-700">
                 Modo <b>Controle de Estoque</b> ativo: preço não é obrigatório.
               </p>
             )}
@@ -362,7 +362,7 @@ export function EntradaPage() {
       />
       <Modal open={vincularCodigo} onClose={() => setVincularCodigo(false)} title="Vincular novo código de barras" width="max-w-lg">
         <div className="space-y-4">
-          <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-700">
+          <div className="rounded-xl bg-brand-50 p-3 text-sm text-brand-700">
             O código <b className="font-mono">{codigo}</b> será adicionado ao produto escolhido. O estoque continuará unificado.
           </div>
           <Field label="Buscar produto">

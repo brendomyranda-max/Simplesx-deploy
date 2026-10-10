@@ -1,6 +1,6 @@
-# SimplexS.A Gestor para Android
+# Servidor DoixP para Android
 
-Aplicativo Android que recebe trabalhos da fila segura do SimplexS.A e imprime em
+Aplicativo Android que recebe trabalhos da fila segura da DoixP e imprime em
 impressoras térmicas ESC/POS e impressoras de etiquetas TSPL/TSPL2, ZPL, CPCL
 e EPL/EPL2 por:
 
@@ -29,7 +29,7 @@ Gradle e use **Build → Build APK(s)**. O APK de desenvolvimento será criado e
 
 ## Configurar
 
-1. No SimplexS.A, abra **Impressoras → Gestor Android** e gere o pareamento.
+1. Na DoixP, abra **Impressoras → Servidor Android** e gere o pareamento.
 2. Digite no aplicativo o ID e o código exibidos (expiram em dez minutos).
 3. Escolha o protocolo indicado no autoteste: **ESC/POS**, **TSPL**, **ZPL**,
    **CPCL** ou **EPL**.
@@ -53,7 +53,7 @@ a impressora avançar várias etiquetas procurando o próximo espaço ou marca.
 
 O serviço mostra uma notificação permanente porque o Android pode suspender
 aplicativos em segundo plano. Em aparelhos com otimização agressiva de bateria,
-autorize o SimplexS.A Gestor a executar sem restrições.
+autorize o Servidor DoixP a executar sem restrições.
 
 Na versão 1.5.11, o serviço usa o tipo Android `connectedDevice`, adequado às
 conexões USB, Bluetooth e de rede com impressoras. O tipo anterior, `dataSync`,

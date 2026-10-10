@@ -5,22 +5,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
-  <title>SimplexS.A Gestor</title>
+  <title>Servidor DoixP</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="settings.css">
 </head>
 <body>
   <main>
     <header>
-      <div><span class="logo">SX</span></div>
-      <div><h1>Gestor de Impressoras</h1><p>Conecta o SimplexS.A às impressoras e ao leitor NFC deste computador.</p></div>
+      <div><img class="logo" src="doixp-logo.png" alt="DoixP"></div>
+      <div><h1>Servidor DoixP</h1><p>Conecta a DoixP às impressoras e ao leitor NFC deste computador.</p></div>
       <span id="estado" class="badge offline">Offline</span>
     </header>
 
     <section class="token-card">
       <label>Token deste gestor</label>
       <div class="token-row"><code id="token">carregando...</code><button id="copiar">Copiar</button></div>
-      <small>Cole este token em Configurações → Impressoras no SimplexS.A.</small>
+      <small>Cole este token em Configurações → Impressoras na DoixP.</small>
     </section>
 
     <section class="grid">
@@ -39,7 +39,7 @@
       <label class="full">Prefixo do leitor USB
         <input id="nfcPrefixo" value="NFC:" autocomplete="off" maxlength="12">
       </label>
-      <small>Programe o leitor para enviar este prefixo antes do código. A leitura é enviada ao SimplexS.A e o PDV em tela cheia recebe o produto. No Android, o próprio Gestor lê a tag.</small>
+      <small>Programe o leitor para enviar este prefixo antes do código. A leitura é enviada à DoixP e o PDV em tela cheia recebe o produto. No Android, o próprio Servidor lê a tag.</small>
       <p>Última leitura: <strong id="nfcUltimo">Nenhuma</strong></p>
       <button id="testarNfc" type="button" class="secondary">Testar leitura NFC</button>
     </section>

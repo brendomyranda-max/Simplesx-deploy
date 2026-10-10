@@ -57,7 +57,7 @@ export function Dashboard() {
   const atalhos = [
     { to: '/pdv', label: 'Abrir PDV', icon: <ScanBarcode className="h-5 w-5" />, color: 'bg-brand-600 text-white' },
     { to: '/restaurante', label: 'Mesas', icon: <UtensilsCrossed className="h-5 w-5" />, color: 'bg-emerald-600 text-white' },
-    { to: '/entrada', label: 'Entrada de Mercadorias', icon: <PackagePlus className="h-5 w-5" />, color: 'bg-blue-600 text-white' },
+    { to: '/entrada', label: 'Entrada de Mercadorias', icon: <PackagePlus className="h-5 w-5" />, color: 'bg-brand-600 text-white' },
     { to: '/validade', label: 'Validade', icon: <CalendarClock className="h-5 w-5" />, color: 'bg-amber-500 text-white' },
   ];
 

@@ -1,11 +1,12 @@
-# SimplexS.A — gestão de mercados e restaurantes
+# DoixP — gestão de mercados e restaurantes
 
 Aplicação web com PDV, mesas e comandas, estoque, ficha técnica, validade,
 financeiro e impressão por agentes desktop e Android. React e TypeScript no
 frontend; API JavaScript compartilhada entre Express/SQLite local e Cloudflare
 Pages/D1/KV. Os dados são separados por estabelecimento.
 
-A marca pública é **SimplexS.A**; pacotes e novos arquivos usam **simplexsa**.
+A marca pública é **DoixP**; o ambiente de pedidos é **DoixP Delivery** e o
+agente local é o **Servidor DoixP**.
 Consulte [MARCA.md](./MARCA.md) para a compatibilidade da atualização com as
 instalações, os dados e os endereços existentes.
 
@@ -41,7 +42,8 @@ Para configurar o Cloudflare, copie `wrangler.toml.example` para `wrangler.toml`
 informe os IDs do seu D1/KV e use Secrets do Cloudflare para credenciais. Os IDs
 identificam recursos e não são senhas; cada instalação mantém sua configuração local.
 O projeto Pages e o banco usados nos comandos são `simplesx-projeto-beta` e
-`simplesx-db`; se os renomear, ajuste também os comandos de deploy e administração.
+`simplesx-db`; são identificadores técnicos existentes. Associe `doixp.com` ao
+projeto Pages para disponibilizar o domínio público sem renomeá-los.
 
 Consulte [SEGURANCA.md](./SEGURANCA.md) para a relação de variáveis, assinatura
 Android e cuidados ao publicar um repositório que já teve dados no histórico.

@@ -17,8 +17,8 @@ export function Badge({
     green: 'bg-emerald-100 text-emerald-700',
     red: 'bg-red-100 text-red-700',
     amber: 'bg-amber-100 text-amber-700',
-    blue: 'bg-blue-100 text-blue-700',
-    purple: 'bg-purple-100 text-purple-700',
+    blue: 'bg-brand-100 text-brand-700',
+    purple: 'bg-brand-100 text-brand-700',
     brand: 'bg-brand-100 text-brand-700',
   };
   return <span className={`chip ${colors[color]} ${className}`}>{children}</span>;

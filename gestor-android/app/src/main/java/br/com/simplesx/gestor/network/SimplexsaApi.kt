@@ -39,7 +39,7 @@ class SimplexsaApi(private val config: AppConfig) {
             val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = runCatching { JSONObject(text) }.getOrElse {
-                throw IllegalStateException("Endereço não é um servidor SimplexS.A ou retornou uma resposta inválida (HTTP ${connection.responseCode})")
+                throw IllegalStateException("Endereço não é um servidor DoixP ou retornou uma resposta inválida (HTTP ${connection.responseCode})")
             }
             if (connection.responseCode !in 200..299) throw IllegalStateException(json.optString("error", "Servidor respondeu ${connection.responseCode}"))
             json

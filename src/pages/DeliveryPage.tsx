@@ -1,5 +1,5 @@
 /**
- * Pedidos do site e o acesso à rede de restaurantes.
+ * Pedidos do site e o acesso ao DoixP Delivery.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -128,12 +128,12 @@ export function DeliveryPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RestauranteAbas atual="delivery" />
-          <Button variant="secondary" icon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open('/pedido', '_blank', 'noopener,noreferrer')}>Ver a rede de pedidos</Button>
+          <Button variant="secondary" icon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open('/pedido', '_blank', 'noopener,noreferrer')}>Ver o DoixP Delivery</Button>
         </div>
       </div>
 
       {load ? <Card className="p-8 text-center text-sm text-slate-500">Carregando pedidos…</Card> : painel.delivery.length === 0 ? (
-        <Card><EmptyState icon={<Bike className="h-8 w-8" />} title="Nenhum pedido de delivery em aberto" subtitle="Quando um cliente pedir pelo site, o pedido aparece aqui. A rede mostra os outros restaurantes publicados." /></Card>
+        <Card><EmptyState icon={<Bike className="h-8 w-8" />} title="Nenhum pedido de delivery em aberto" subtitle="Quando um cliente pedir pelo site, o pedido aparece aqui. O DoixP Delivery mostra os outros restaurantes publicados." /></Card>
       ) : (
         <div className="space-y-3">
           {painel.delivery.map((pedido) => {
@@ -168,9 +168,9 @@ export function DeliveryPage() {
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'entrega' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'saiu_entrega')} loading={ocupado === `status-${pedido.id}`}>Saiu para entrega</Button>}
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'retirada' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pronto_retirada')} loading={ocupado === `status-${pedido.id}`}>Pronto para retirada</Button>}
                     {(pedido.etapa === 'saiu_entrega' || pedido.etapa === 'pronto_retirada') && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'entregue')} loading={ocupado === `status-${pedido.id}`}>{pedido.tipo_entrega === 'retirada' ? 'Marcar retirado' : 'Marcar entregue'}</Button>}
-                    {pedido.comanda_id && <Button size="sm" variant="secondary" onClick={() => enviarCozinha(pedido.comanda_id, `cozinha-${pedido.id}`)} loading={ocupado === `cozinha-${pedido.id}`}>Enviar à cozinha</Button>}
-                    {pedido.comanda_id && <Button size="sm" variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => imprimirEtiqueta(pedido.comanda_id, `etiqueta-${pedido.id}`)} loading={ocupado === `etiqueta-${pedido.id}`}>Etiqueta</Button>}
-                    {pedido.comanda_id && <Button size="sm" variant="secondary" onClick={() => navigate(`/restaurante/comanda/${pedido.comanda_id}`)}>Abrir comanda</Button>}
+                    {pedido.comanda_id && <Button size="sm" variant="secondary" onClick={() => enviarCozinha(pedido.comanda_id!, `cozinha-${pedido.id}`)} loading={ocupado === `cozinha-${pedido.id}`}>Enviar à cozinha</Button>}
+                    {pedido.comanda_id && <Button size="sm" variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => imprimirEtiqueta(pedido.comanda_id!, `etiqueta-${pedido.id}`)} loading={ocupado === `etiqueta-${pedido.id}`}>Etiqueta</Button>}
+                    {pedido.comanda_id && <Button size="sm" variant="secondary" onClick={() => navigate(`/restaurante/comanda/${pedido.comanda_id!}`)}>Abrir comanda</Button>}
                     {pedido.etapa !== 'entregue' && <Button size="sm" variant="danger" onClick={() => mudarStatus(pedido.id, 'cancelado')} loading={ocupado === `status-${pedido.id}`}>Cancelar</Button>}
                   </div>
                 </div>

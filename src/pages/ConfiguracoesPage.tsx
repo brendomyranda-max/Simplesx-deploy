@@ -72,15 +72,15 @@ export function ConfiguracoesPage() {
 
       <div className="mb-4 space-y-4">
         <PdaInstalacaoCard />
-        <Card className="border-indigo-200 bg-indigo-50/40 p-5">
+        <Card className="border-brand-200 bg-brand-50/40 p-5">
           <div className="flex flex-wrap items-start gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
               <Nfc className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-extrabold text-slate-800">Cartão NFC</h2>
               <p className="mt-1 text-sm text-slate-500">
-                O cartão é o número da mesa. Ligue o NFC no Gestor de impressoras. Em Mesas, use Adicionar com cartão para abrir,
+                O cartão é o número da mesa. Ligue o NFC no Servidor DoixP. Em Mesas, use Adicionar com cartão para abrir,
                 Lançar para cartão para montar o pedido e aproximar, e Fechamento de cartão para receber.
               </p>
               <div className="mt-3">

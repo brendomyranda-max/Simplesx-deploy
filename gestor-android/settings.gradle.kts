@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SimplexsaGestorAndroid"
+rootProject.name = "ServidorDoixPAndroid"
 include(":app")

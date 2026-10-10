@@ -3,7 +3,7 @@
  * Responsabilidade: Permite instalar o app e reabrir a interface sem guardar dados do servidor.
  */
 
-const CACHE = 'simplexsa-shell-v1';
+const CACHE = 'doixp-shell-v1';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());

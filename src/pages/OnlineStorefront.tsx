@@ -1,7 +1,7 @@
 /**
  * Site público de delivery.
  * O cliente só vê produtos publicados a partir do estoque.
- * Quem entra com o módulo Gestor do SimplexS.A ganha a aba Configurar.
+ * Quem entra com o módulo Gestor da DoixP ganha a aba Configurar.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -17,6 +17,7 @@ import { authApi, onlineApi, onlinePublicApi, produtoApi } from '@/lib/api';
 import type { AreaEntrega, CategoriaCardapio, CategoriaLoja, ModoEntrega, OnlineCatalogProduct, OnlineStore, Produto } from '@/lib/types';
 import { fmtKm, lerPontoCliente, previaEntrega, taxaDaSacola, textoCobrancaCliente, textoEntrega } from '@/lib/localizacao-cliente';
 import { Marketplace } from '@/pages/Marketplace';
+import { BrandLogo } from '@/components/BrandLogo';
 import { FotoGaleria } from '@/components/FotoGaleria';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
@@ -369,8 +370,9 @@ function LojaOnline() {
   return (
     <div className="online-storefront min-h-viewport">
       <header className="online-topbar">
-        <Link className="online-brand" to="/pedido" aria-label="Voltar para a rede de restaurantes">
-          <span>{loja?.nome || 'Delivery'}</span>
+        <Link className="online-brand" to="/pedido" aria-label="Voltar para o DoixP Delivery">
+          {!loja?.nome && <span className="online-brand-mark"><BrandLogo aria-hidden="true" alt="" /></span>}
+          <span>{loja?.nome || 'DoixP Delivery'}</span>
         </Link>
         <Link className="online-market-back" to="/pedido">Todas as lojas</Link>
         <div className="online-address"><MapPin aria-hidden="true" /><span>Entregar em</span><b>{enderecoTopo || (loja?.aceita_entrega ? 'Informar no pedido' : 'Retirada no balcão')}</b><ChevronRight aria-hidden="true" /></div>
@@ -447,7 +449,7 @@ function LojaOnline() {
         </section>
       </main>
 
-      <footer className="online-footer"><span className="online-brand">{loja?.nome || 'Delivery'}</span><p>Seu pedido, do seu jeito.</p><small>Uma experiência de pedidos com SimplexS.A</small></footer>
+      <footer className="online-footer"><span className="online-brand">{loja?.nome || 'DoixP Delivery'}</span><p>Seu pedido, do seu jeito.</p><small>Uma experiência de pedidos com DoixP</small></footer>
 
       {aba === 'cardapio' && cartCount > 0 && <button className="online-mobile-cart" type="button" onClick={() => setCartOpen(true)}><ShoppingBag /><span><b>Ver sacola</b><small>{cartCount} {cartCount === 1 ? 'item' : 'itens'}</small></span><strong>{fmtBRL(subtotal)}</strong></button>}
       {customizing && <ProductCustomizer product={customizing} onClose={() => setCustomizing(null)} onAdd={addToCart} />}
@@ -517,7 +519,7 @@ function CategoriasDaLoja({ onChange }: { onChange: (nomes: string[]) => void })
       <div>
         <p className="online-eyebrow">CATEGORIA DA LOJA</p>
         <h3>Como o cliente encontra você</h3>
-        <p>Crie o modelo desta loja. A categoria só aparece na rede depois que você publica.</p>
+        <p>Crie o modelo desta loja. A categoria só aparece no DoixP Delivery depois que você publica.</p>
       </div>
       <div className="online-market-tags">
         {lista.map((categoria) => <button key={categoria.id} type="button" disabled={ocupado} onClick={() => remover(categoria.id)}>{categoria.nome} ×</button>)}
@@ -567,7 +569,7 @@ function CategoriasDoCardapio({
   return <form className="online-cardapio-org" onSubmit={(event) => { event.preventDefault(); criar(); }}>
     <p className="online-eyebrow">CARDÁPIO</p>
     <h3>Categorias do cardápio</h3>
-    <p>Crie as seções que o cliente percorre, como Lanches e Bebidas. A ordem daqui é a ordem do cardápio. Isso não muda a categoria da rede.</p>
+    <p>Crie as seções que o cliente percorre, como Lanches e Bebidas. A ordem daqui é a ordem do cardápio. Isso não muda a categoria do DoixP Delivery.</p>
     <div className="online-cardapio-linha">
       <input value={nome} maxLength={40} onChange={(event) => setNome(event.target.value)} placeholder="Ex.: Lanches" aria-label="Nome da categoria" />
       <button type="submit" disabled={ocupado}>Criar categoria</button>
@@ -957,7 +959,7 @@ function PixDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onlin
     <section className="online-category-box online-aparencia">
       <p className="online-eyebrow">PIX DA LOJA</p>
       <h3>Chave que recebe os pedidos</h3>
-      <p>O cliente paga direto esta chave. O valor não passa pelo SimplexS.A. Cada estabelecimento usa a própria chave. Deixe a chave vazia para oferecer só dinheiro e maquininha.</p>
+      <p>O cliente paga direto esta chave. O valor não passa pela DoixP. Cada estabelecimento usa a própria chave. Deixe a chave vazia para oferecer só dinheiro e maquininha.</p>
       <label>Chave Pix
         <input value={chave} maxLength={77} onChange={(event) => setChave(event.target.value)} placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória" />
       </label>

@@ -1,5 +1,5 @@
 -- ============================================================
--- SimplexS.A - Schema completo
+-- DoixP - Schema completo
 -- Usado pelo Cloudflare D1 e pelo servidor local (node:sqlite)
 -- ============================================================
 

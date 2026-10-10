@@ -34,7 +34,7 @@ export function passosInstalacao(plataforma, ua) {
     return [
       'Abra este site no Chrome do celular ou do tablet.',
       'Toque no menu e escolha Instalar app ou Adicionar à tela inicial.',
-      'Confirme. O ícone do SimplexS.A abre o sistema em tela cheia.',
+      'Confirme. O ícone da DoixP abre o sistema em tela cheia.',
     ];
   }
   if (plataforma === 'windows' || plataforma === 'linux') {
@@ -56,7 +56,7 @@ export function passosInstalacao(plataforma, ua) {
     return [
       'No Safari, toque em Compartilhar.',
       'Escolha Adicionar à Tela de Início.',
-      'Abra o ícone do SimplexS.A para usar em tela cheia.',
+      'Abra o ícone da DoixP para usar em tela cheia.',
     ];
   }
   return [

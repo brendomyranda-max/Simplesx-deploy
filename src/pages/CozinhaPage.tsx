@@ -60,7 +60,7 @@ export function CozinhaPage() {
   useEffect(() => {
     const total = painel.estacoes.reduce((soma, estacao) => soma + estacao.lancamentos.length, 0);
     const anterior = document.title;
-    document.title = total ? `Cozinha (${total}) · SimplexS.A` : 'Cozinha · SimplexS.A';
+    document.title = total ? `Cozinha (${total}) · DoixP` : 'Cozinha · DoixP';
     return () => { document.title = anterior; };
   }, [painel]);
 

@@ -19,9 +19,11 @@
 
     <application
         android:allowBackup="false"
-        android:label="SimplexS.A Gestor"
+        android:icon="@drawable/doixp_logo"
+        android:roundIcon="@drawable/doixp_logo"
+        android:label="Servidor DoixP"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Simplexsa"
+        android:theme="@style/Theme.DoixP"
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"

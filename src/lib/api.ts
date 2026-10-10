@@ -528,7 +528,7 @@ export const deviceApi = {
     device_id: deviceId,
     type: 'TEST_PRINTER',
     payload: {
-      content: `SimplexS.A - TESTE ANDROID\nImpressora: ${printer.name}\n${new Date().toLocaleString('pt-BR')}\nConexao com o Gestor Android OK`,
+      content: `DOIXP - TESTE ANDROID\nImpressora: ${printer.name}\n${new Date().toLocaleString('pt-BR')}\nConexao com o Servidor Android OK`,
       printer: printer.name, width_mm: printer.width_mm || 80, cut: true, feed: 3,
     },
     idempotency_key: idempotencyKey,

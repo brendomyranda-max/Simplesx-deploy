@@ -1,11 +1,11 @@
 {
-  "name": "simplexsa-gestor-impressora",
+  "name": "servidor-doixp",
   "version": "1.5.14",
   "private": true,
-  "description": "Agente local de impressao do SimplexS.A",
-  "homepage": "https://simplesx-projeto-beta.pages.dev",
+  "description": "Servidor local de impressão da DoixP",
+  "homepage": "https://doixp.com",
   "author": {
-    "name": "SimplexS.A"
+    "name": "DoixP"
   },
   "main": "src/main.cjs",
   "scripts": {
@@ -25,8 +25,8 @@
   },
   "build": {
     "appId": "com.simplesx.gestorimpressora",
-    "productName": "SimplexS.A Gestor",
-    "artifactName": "simplexsa-gestor-${os}-${arch}.${ext}",
+    "productName": "Servidor DoixP",
+    "artifactName": "servidor-doixp-${os}-${arch}.${ext}",
     "files": [
       "src/**/*",
       "package.json"
@@ -42,8 +42,8 @@
         "AppImage"
       ],
       "category": "Utility",
-      "maintainer": "SimplexS.A",
-      "synopsis": "Agente local de impressao do SimplexS.A"
+      "maintainer": "DoixP",
+      "synopsis": "Servidor local de impressão da DoixP"
     },
     "win": {
       "target": [

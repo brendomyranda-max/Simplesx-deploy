@@ -1,6 +1,6 @@
-# SimplexS.A Gestor de Impressoras
+# Servidor DoixP
 
-Aplicativo local que conecta o deploy do SimplexS.A às impressoras instaladas no Windows ou no Linux.
+Aplicativo local que conecta a DoixP às impressoras instaladas no Windows ou no Linux.
 
 ## Desenvolvimento
 
