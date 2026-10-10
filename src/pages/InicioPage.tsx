@@ -185,7 +185,7 @@ export function InicioPage() {
             transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 18 }}
             className="mb-3"
           >
-            <BrandLogo className="h-16 w-16 rounded-2xl shadow-2xl shadow-black/40" />
+            <BrandLogo className="h-20 w-20 rounded-2xl shadow-2xl shadow-black/40" />
           </motion.div>
           <h1 className="text-2xl font-extrabold text-white">DoixP</h1>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-400">

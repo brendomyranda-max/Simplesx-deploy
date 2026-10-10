@@ -48,7 +48,7 @@ export default function InvestidoresPage() {
     <header className="border-b border-white/10 bg-slate-950 text-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-5 sm:px-8">
         <Link to={autenticado ? '/' : '/login'} aria-label="DoixP — voltar ao sistema" className={`flex items-center gap-3 rounded-lg ${foco}`}>
-          <BrandLogo className="h-10 w-10 rounded-xl" />
+          <BrandLogo className="h-12 w-12 rounded-2xl" />
           <span className="text-lg font-extrabold tracking-tight">DoixP</span>
         </Link>
         <Link to={autenticado ? '/' : '/login'} className={`inline-flex items-center gap-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white ${foco}`}>

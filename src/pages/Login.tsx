@@ -62,7 +62,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-brand-950 to-slate-900 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center">
-          <BrandLogo className="mb-3 h-16 w-16 rounded-2xl shadow-2xl shadow-black/40" />
+          <BrandLogo className="mb-4 h-20 w-20 rounded-2xl shadow-2xl shadow-black/40" />
           <h1 className="text-2xl font-extrabold text-white">DoixP</h1>
           <p className="mt-1 text-sm text-slate-400">Acesso seguro ao seu estabelecimento</p>
         </div>

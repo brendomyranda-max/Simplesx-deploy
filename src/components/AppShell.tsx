@@ -86,7 +86,7 @@ export function AppShell({
     return (
       <div className="flex min-h-viewport flex-col">
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2.5 border-b border-slate-200 bg-white/80 px-3 pt-[env(safe-area-inset-top)] pb-1 backdrop-blur">
-          <BrandLogo className="h-8 w-8 shrink-0 rounded-lg shadow-md shadow-black/20" />
+          <BrandLogo className="h-10 w-10 shrink-0 rounded-xl shadow-md shadow-black/20" />
           <p className="min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'DoixP'}</p>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {modulosAtivos > 1 && (
@@ -186,7 +186,7 @@ export function AppShell({
   const sidebar = (
     <div className="flex h-full flex-col bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300">
       <div className="flex shrink-0 items-center gap-2.5 px-5 py-5">
-        <BrandLogo className="h-9 w-9 rounded-xl shadow-lg shadow-black/30" />
+        <BrandLogo className="h-11 w-11 rounded-2xl shadow-lg shadow-black/30" />
         <div className="min-w-0">
           <p className="truncate text-sm font-extrabold text-white">DoixP</p>
           <p className="truncate text-[11px] text-slate-400">{empresaNome || 'Meu Negócio'}</p>

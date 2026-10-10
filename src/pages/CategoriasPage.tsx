@@ -10,7 +10,7 @@ import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Selec
 import { categoriaApi, fornecedorApi, impressoraApi, deviceApi, gestorApi } from '@/lib/api';
 import type { Categoria, Fornecedor } from '@/lib/types';
 
-const CORES = ['#1c090c', '#3c0d14', '#65131f', '#881829', '#a61f33', '#c9364a', '#e77a88', '#f7a8b1'];
+const CORES = ['#0a0a0a', '#262626', '#404040', '#525252', '#737373', '#a3a3a3', '#d4d4d4', '#f5f5f5'];
 
 export function CategoriasPage() {
   const toast = useToast();

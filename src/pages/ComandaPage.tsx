@@ -30,7 +30,7 @@ import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
 
-const CORES = ['#1c090c', '#65131f', '#881829', '#a61f33', '#c9364a', '#e77a88'];
+const CORES = ['#0a0a0a', '#262626', '#404040', '#525252', '#737373', '#a3a3a3'];
 
 export function ComandaPage() {
   const { id } = useParams();

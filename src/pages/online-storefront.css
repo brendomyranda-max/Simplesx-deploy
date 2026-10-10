@@ -1,10 +1,10 @@
 .online-storefront {
-  --online-ink: #171113;
-  --online-muted: #6c6264;
-  --online-paper: #fffefe;
-  --online-line: #ebe5e6;
-  --online-green: #a61f33;
-  --online-lime: #ffdfe3;
+  --online-ink: #171717;
+  --online-muted: #626262;
+  --online-paper: #ffffff;
+  --online-line: #e5e5e5;
+  --online-green: #171717;
+  --online-lime: #f5f5f5;
   background: var(--online-paper);
   color: var(--online-ink);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
@@ -215,25 +215,34 @@
 .online-pix textarea { width: 100%; min-height: 72px; resize: none; border: 1px solid #dfe2dc; border-radius: 10px; padding: 8px; background: white; }
 .online-pix button { justify-self: start; min-height: 40px; border: 0; border-radius: 10px; padding: 0 14px; background: var(--online-lime); font-size: 13px; font-weight: 800; }
 
-/* A vitrine segue a mesma base DoixP: branco, grafite e vermelho discreto. */
-.online-brand-mark { background: #171113; transform: none; overflow: hidden; }
+/* A vitrine segue a mesma base DoixP: branco, preto e grafite. */
+.online-brand-mark { background: #171717; transform: none; overflow: hidden; }
 .online-brand-mark img { width: 100%; height: 100%; object-fit: cover; }
-.online-hero { background: #eee7e8; }
-.online-hero-copy > p, .online-loja-resumo { color: #675a5d; }
-.online-hero-meta { color: #3b3032; }
-.online-hero-meta svg, .online-art-note svg, .note-two svg { color: #a61f33; }
-.online-hero-art.tem-capa, .online-market-logo.tem-capa, .online-footer { background: #171113; }
-.online-hero-glow { background: #e7b0b8; }
-.online-burger-art { background: linear-gradient(145deg, #fff7f7 10%, #d17a87); box-shadow: 22px 28px 0 rgb(100 20 34 / 12%), 0 15px 35px rgb(100 20 34 / 18%); }
-.online-search:focus-within, .online-note textarea:focus, .online-checkout > label input:focus { border-color: #c9364a; box-shadow: 0 0 0 3px rgb(166 31 51 / 10%); }
-.online-categories button:hover { border-color: #e6a6af; }
-.online-product-card:hover, .online-market-card:hover { box-shadow: 0 14px 24px rgb(60 13 20 / 10%); }
-.online-benefits, .online-market-owner { background: #fff1f2; }
-.online-benefits > div + div { border-color: #f0c5ca; }
-.online-benefits small { color: #786468; }
-.online-overlay { background: rgb(23 17 19 / 56%); }
-.online-customizer, .online-checkout, .online-success { box-shadow: 0 24px 60px rgb(28 9 12 / 28%); }
-.online-delivery-choice label.selected { background: #fff5f5; }
-.online-market-logo { background: #f5e1e4; }
-.online-market-tags span, .online-market-tags button, .online-category-suggestions button { background: #fff0f1; }
-.online-pix { background: #fff5f5; }
+.online-hero { background: #ededed; }
+.online-hero-copy > p, .online-loja-resumo { color: #626262; }
+.online-hero-meta { color: #404040; }
+.online-hero-meta svg, .online-art-note svg, .note-two svg { color: #171717; }
+.online-hero-art.tem-capa, .online-market-logo.tem-capa, .online-footer { background: #171717; }
+.online-hero-glow { background: #d4d4d4; }
+.online-burger-art { background: linear-gradient(145deg, #fafafa 10%, #bdbdbd); box-shadow: 22px 28px 0 rgb(23 23 23 / 12%), 0 15px 35px rgb(23 23 23 / 18%); }
+.online-search:focus-within, .online-note textarea:focus, .online-checkout > label input:focus { border-color: #525252; box-shadow: 0 0 0 3px rgb(23 23 23 / 10%); }
+.online-categories button:hover { border-color: #a3a3a3; }
+.online-product-card:hover, .online-market-card:hover { box-shadow: 0 14px 24px rgb(23 23 23 / 10%); }
+.online-benefits, .online-market-owner { background: #f5f5f5; }
+.online-benefits > div + div { border-color: #d4d4d4; }
+.online-benefits small { color: #626262; }
+.online-overlay { background: rgb(23 23 23 / 56%); }
+.online-customizer, .online-checkout, .online-success { box-shadow: 0 24px 60px rgb(10 10 10 / 28%); }
+.online-delivery-choice label.selected { background: #f5f5f5; }
+.online-market-logo { background: #e5e5e5; }
+.online-market-tags span, .online-market-tags button, .online-category-suggestions button { background: #f5f5f5; }
+.online-pix { background: #f5f5f5; }
+
+/* Logo DoixP em maior destaque nas interfaces públicas. */
+.online-brand-mark { width: 42px; height: 42px; border-radius: 12px 12px 16px 16px; }
+.online-hero-logo-grande { width: min(54%, 270px); padding: 8px; }
+.online-footer .online-brand-mark { width: 36px; height: 36px; }
+@media (max-width: 760px) {
+  .online-topbar { height: 70px; }
+  .online-brand-mark { width: 34px; height: 34px; }
+}
