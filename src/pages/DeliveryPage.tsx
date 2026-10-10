@@ -33,9 +33,9 @@ function rotuloPagamento(forma: string) {
 
 function etapaDelivery(pedido: PedidoDelivery) {
   if (pedido.etapa === 'aguardando_pix') return { texto: 'Aguardando Pix', cor: 'amber' as const };
-  if (pedido.etapa === 'preparando') return { texto: 'Sendo preparado', cor: 'blue' as const };
-  if (pedido.etapa === 'saiu_entrega') return { texto: 'Saiu para entrega', cor: 'purple' as const };
-  if (pedido.etapa === 'pronto_retirada') return { texto: 'Pronto para retirada', cor: 'purple' as const };
+  if (pedido.etapa === 'preparando') return { texto: 'Sendo preparado', cor: 'amber' as const };
+  if (pedido.etapa === 'saiu_entrega') return { texto: 'Saiu para entrega', cor: 'brand' as const };
+  if (pedido.etapa === 'pronto_retirada') return { texto: 'Pronto para retirada', cor: 'green' as const };
   if (pedido.etapa === 'entregue') return { texto: pedido.tipo_entrega === 'retirada' ? 'Retirado' : 'Entregue', cor: 'green' as const };
   if (pedido.etapa === 'cancelado') return { texto: 'Cancelado', cor: 'red' as const };
   return { texto: 'Recebido', cor: 'amber' as const };
@@ -123,7 +123,7 @@ export function DeliveryPage() {
     <AnimatedPage>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Delivery</h1>
+          <h1 className="text-xl font-extrabold tracking-tight text-slate-800">DoixP Delivery</h1>
           <p className="text-sm text-slate-500">Pedidos que chegaram pelo site deste estabelecimento.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
