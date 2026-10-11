@@ -151,6 +151,18 @@ reserva temporária durante o fechamento, preservando os pedidos existentes.
 
 ## Gestor Local v2
 
+Na versão **1.5.14**, o aplicativo de impressoras e cartões NFC se apresenta como
+**Servidor DoixP**, com a logo na interface e nos ícones Android, Windows e Linux.
+A ativação do NFC fica no próprio servidor: em **Cartões NFC**, ative a leitura
+no aparelho utilizado. No Windows/Linux, configure o prefixo do leitor USB e use
+**Salvar e conectar**. No Android, a opção é salva imediatamente; mantenha o
+Servidor DoixP aberto durante a aproximação do cartão.
+
+Em **Impressoras**, baixe o instalador atualizado e consulte as últimas leituras.
+Em **Mesas → Lançar para cartão**, monte o pedido e aproxime o cartão físico para
+registrá-lo na comanda. A ativação não fica em Configurações gerais e cada
+servidor mantém sua própria preferência de NFC.
+
 Na versão **1.5.13**, as rotas com **Usar a impressora padrão do servidor**
 respeitam a seleção feita no Gestor Windows, Linux ou Android. O nome da rota
 (por exemplo, Cozinha ou Bar) não substitui o nome da impressora física.

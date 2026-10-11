@@ -2,7 +2,7 @@
   "name": "servidor-doixp",
   "version": "1.5.14",
   "private": true,
-  "description": "Servidor local de impressão da DoixP",
+  "description": "Servidor DoixP para impressoras e cartões NFC",
   "homepage": "https://doixp.com",
   "author": {
     "name": "DoixP"
@@ -38,18 +38,20 @@
       "output": "release"
     },
     "linux": {
+      "icon": "src/doixp-logo.png",
       "target": [
         "AppImage"
       ],
       "category": "Utility",
       "maintainer": "DoixP",
-      "synopsis": "Servidor local de impressão da DoixP"
+      "synopsis": "Servidor DoixP para impressoras e cartões NFC"
     },
     "win": {
+      "icon": "src/doixp-logo.png",
+      "artifactName": "servidor-doixp-windows-${arch}.${ext}",
       "target": [
         "nsis"
-      ],
-      "signAndEditExecutable": false
+      ]
     },
     "nsis": {
       "oneClick": false,

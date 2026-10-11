@@ -1,4 +1,4 @@
-name: Gestor de Impressoras
+name: Servidor DoixP
 
 on:
   workflow_dispatch:
@@ -41,8 +41,9 @@ jobs:
       - run: ${{ matrix.comando }}
       - uses: actions/upload-artifact@v4
         with:
-          name: gestor-${{ runner.os }}
-          path: gestor-impressora/release/simplexsa-gestor-*
+          name: servidor-doixp-${{ runner.os }}
+          path: gestor-impressora/release/servidor-doixp-*
+          if-no-files-found: error
 
   android:
     runs-on: ubuntu-latest
@@ -70,11 +71,12 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle :app:testDebugUnitTest :app:assembleRelease
       - name: Preparar APK
-        run: cp app/build/outputs/apk/release/app-release.apk simplexsa-gestor-android.apk
+        run: cp app/build/outputs/apk/release/app-release.apk servidor-doixp-android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: gestor-Android
-          path: gestor-android/simplexsa-gestor-android.apk
+          name: servidor-doixp-Android
+          path: gestor-android/servidor-doixp-android.apk
+          if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -89,4 +91,4 @@ jobs:
         with:
           files: artefatos/*
           make_latest: false
-# Testa e empacota versões Linux e Windows do gestor quando uma release é criada.
+# Testa e publica os instaladores Android, Linux e Windows do Servidor DoixP.

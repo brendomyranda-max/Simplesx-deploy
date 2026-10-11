@@ -584,6 +584,7 @@ function criarJanela() {
     minWidth: 700,
     minHeight: 580,
     title: 'Servidor DoixP',
+    icon: path.join(__dirname, 'doixp-logo.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   })
   janela.loadFile(path.join(__dirname, 'index.html'))

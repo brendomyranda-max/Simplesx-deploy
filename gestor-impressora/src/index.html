@@ -18,13 +18,13 @@
     </header>
 
     <section class="token-card">
-      <label>Token deste gestor</label>
+      <label>Token deste servidor</label>
       <div class="token-row"><code id="token">carregando...</code><button id="copiar">Copiar</button></div>
-      <small>Cole este token em Configurações → Impressoras na DoixP.</small>
+      <small>Cole este token em Impressoras → Servidores Windows/Linux na DoixP.</small>
     </section>
 
     <section class="grid">
-      <label>Nome do computador<input id="nome" autocomplete="off"></label>
+      <label>Nome deste servidor<input id="nome" autocomplete="off"></label>
       <label>Endereço do deploy<input id="deployUrl" type="url" autocomplete="off"></label>
       <label class="full">Impressora padrão
         <span class="printer-row"><select id="impressora"><option value="">Padrão do sistema</option></select><button id="tamanho" type="button" class="gear" title="Configurar impressora" aria-label="Configurar impressora">⚙ Configurar</button></span>
@@ -34,12 +34,12 @@
     </section>
 
     <section>
-      <h2>NFC</h2>
-      <label class="check full"><input id="nfcAtivo" type="checkbox"> Ativar ponte NFC</label>
+      <h2>Cartões NFC</h2>
+      <label class="check full"><input id="nfcAtivo" type="checkbox"> Ativar leitura de cartões NFC neste computador</label>
       <label class="full">Prefixo do leitor USB
         <input id="nfcPrefixo" value="NFC:" autocomplete="off" maxlength="12">
       </label>
-      <small>Programe o leitor para enviar este prefixo antes do código. A leitura é enviada à DoixP e o PDV em tela cheia recebe o produto. No Android, o próprio Servidor lê a tag.</small>
+      <small>Configure o leitor USB para enviar este prefixo antes do código do cartão e Enter ao final. Clique em Salvar e conectar para aplicar. Na DoixP, monte o pedido em Mesas → Lançar para cartão e aproxime o cartão para registrar os itens na comanda.</small>
       <p>Última leitura: <strong id="nfcUltimo">Nenhuma</strong></p>
       <button id="testarNfc" type="button" class="secondary">Testar leitura NFC</button>
     </section>

@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -47,8 +49,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import br.com.simplesx.gestor.data.AppConfig
@@ -96,7 +100,7 @@ private fun GestorScreen() {
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var nfcEnabled by remember { mutableStateOf(config.nfcEnabled) }
-    var nfcStatus by remember { mutableStateOf("Ponte NFC desligada") }
+    var nfcStatus by remember { mutableStateOf("Leitura de cartões NFC desligada") }
     var lastNfc by remember { mutableStateOf("Nenhuma") }
     var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
     var disconnecting by remember { mutableStateOf(false) }
@@ -190,10 +194,10 @@ private fun GestorScreen() {
             }
         } else null
         nfcStatus = when {
-            reader == null -> "Ponte NFC desligada"
+            reader == null -> "Leitura de cartões NFC desligada"
             !reader.available -> "Este aparelho não tem NFC"
             !reader.enabled -> "Ligue o NFC nas configurações do Android"
-            else -> "Aproxime a tag com o Gestor aberto"
+            else -> "Aproxime o cartão com o Servidor DoixP aberto"
         }
         if (reader?.available == true && reader.enabled) reader.start()
         onDispose { reader?.stop() }
@@ -212,7 +216,17 @@ private fun GestorScreen() {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Servidor DoixP") }) }) { padding ->
+    Scaffold(topBar = {
+        TopAppBar(title = {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Image(painterResource(R.drawable.doixp_logo), contentDescription = "DoixP", modifier = Modifier.size(44.dp))
+                Column {
+                    Text("Servidor DoixP", style = MaterialTheme.typography.titleLarge)
+                    Text("Impressoras e cartões NFC", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        })
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusCard(serviceEnabled, paired, serviceStatus, lastJob)
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodyMedium)
@@ -240,6 +254,22 @@ private fun GestorScreen() {
                         message = "Desconectando. Aguarde os trabalhos em andamento para parear em outra conta."
                     }, enabled = !disconnecting) { Text(if (disconnecting) "Desconectando…" else "Desconectar e trocar de conta") }
                 }
+            }
+
+            Section("Cartões NFC") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ativar cartões NFC")
+                        Text(nfcStatus, style = MaterialTheme.typography.bodySmall)
+                        Text("Última leitura: $lastNfc", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(nfcEnabled, onCheckedChange = {
+                        nfcEnabled = it
+                        config.nfcEnabled = it
+                    })
+                }
+                Text("A ativação é salva neste aparelho. Mantenha o Servidor DoixP aberto durante a leitura.", style = MaterialTheme.typography.bodySmall)
+                Text("Na DoixP, monte o pedido em Mesas → Lançar para cartão. Depois aproxime o cartão deste aparelho para registrar os itens na comanda.", style = MaterialTheme.typography.bodySmall)
             }
 
             Section("Impressoras") {
@@ -557,19 +587,6 @@ private fun GestorScreen() {
                 }
             }
 
-            Section("NFC") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Ler tags NFC")
-                        Text(nfcStatus, style = MaterialTheme.typography.bodySmall)
-                        Text("Última leitura: $lastNfc", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(nfcEnabled, onCheckedChange = {
-                        nfcEnabled = it
-                        config.nfcEnabled = it
-                    })
-                }
-            }
             Section("Serviço em segundo plano") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column { Text("Receber impressões"); Text("Mantém uma notificação ativa", style = MaterialTheme.typography.bodySmall) }

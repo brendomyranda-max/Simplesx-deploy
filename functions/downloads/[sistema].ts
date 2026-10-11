@@ -4,9 +4,9 @@
  */
 
 const DOWNLOADS: Record<string, string> = {
-  'gestor-windows': 'https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v1.5.13/simplexsa-gestor-win-x64.exe',
-  'gestor-linux': 'https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v1.5.13/simplexsa-gestor-linux-x86_64.AppImage',
-  'gestor-android': 'https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v1.5.13/simplexsa-gestor-android.apk',
+  'gestor-windows': 'https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v1.5.14/servidor-doixp-windows-x64.exe',
+  'gestor-linux': 'https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v1.5.14/servidor-doixp-linux-x86_64.AppImage',
+  'gestor-android': 'https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v1.5.14/servidor-doixp-android.apk',
 };
 
 export const onRequestGet: PagesFunction = async ({ params }) => {

@@ -4,8 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Settings, Save, Nfc } from 'lucide-react';
+import { Settings, Save } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { PdaInstalacaoCard } from '@/components/PdaInstalacaoCard';
 import { Button, Card, Field, Input, Select, Spinner, useToast } from '@/components/ui';
@@ -14,7 +13,6 @@ import type { ConfigEmpresa } from '@/lib/types';
 
 export function ConfiguracoesPage() {
   const toast = useToast();
-  const navigate = useNavigate();
   const [cfg, setCfg] = useState<ConfigEmpresa | null>(null);
   const [form, setForm] = useState<any>({});
   const [load, setLoad] = useState(true);
@@ -72,23 +70,6 @@ export function ConfiguracoesPage() {
 
       <div className="mb-4 space-y-4">
         <PdaInstalacaoCard />
-        <Card className="border-brand-200 bg-brand-50/40 p-5">
-          <div className="flex flex-wrap items-start gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
-              <Nfc className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-extrabold text-slate-800">Cartão NFC</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                O cartão é o número da mesa. Ligue o NFC no Servidor DoixP. Em Mesas, use Adicionar com cartão para abrir,
-                Lançar para cartão para montar o pedido e aproximar, e Fechamento de cartão para receber.
-              </p>
-              <div className="mt-3">
-                <Button type="button" icon={<Nfc className="h-4 w-4" />} onClick={() => navigate('/restaurante')}>Abrir mesas</Button>
-              </div>
-            </div>
-          </div>
-        </Card>
       </div>
 
       {load && <Spinner />}

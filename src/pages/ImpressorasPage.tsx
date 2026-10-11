@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone, Trash2 } from 'lucide-react';
+import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone, Trash2, Nfc } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { DevicePrinterTest } from '@/components/DevicePrinterTest';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
@@ -50,8 +50,6 @@ export function ImpressorasPage() {
   const [pairing, setPairing] = useState<{ pairing_id: string; code: string; expires_at: string } | null>(null);
   const [gerandoPairing, setGerandoPairing] = useState(false);
   const [gestorDeviceId, setGestorDeviceId] = useState('');
-  const [nfcAtivo, setNfcAtivo] = useState(false);
-  const [nfcPrefixo, setNfcPrefixo] = useState('NFC:');
   const [nfcHistorico, setNfcHistorico] = useState<NfcEvento[]>([]);
 
   const servidores = [
@@ -107,8 +105,6 @@ export function ImpressorasPage() {
       setCategorias(cats.filter((cat: any) => cat.ativo !== 0));
       setDevices(ds);
       setGestorDeviceId(String((cfg as any)?.config?.gestor_device_id || ''));
-      setNfcAtivo(cfg?.config?.nfc_ativo === '1');
-      setNfcPrefixo(cfg?.config?.nfc_prefixo || 'NFC:');
       setNfcHistorico(leituras);
       if (cfg?.config?.gestor_token && !gestorToken) {
         setGestorTokenState(cfg.config.gestor_token);
@@ -350,7 +346,7 @@ export function ImpressorasPage() {
             <Download className="h-5 w-5" />
           </div>
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Baixar Servidor DoixP</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.14</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
           {INSTALADORES.map((item) => (
@@ -372,16 +368,20 @@ export function ImpressorasPage() {
       <Card className="mb-4 border-brand-200 p-4">
         <div className="flex flex-wrap items-start gap-3">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
-            <Printer className="h-5 w-5" />
+            <Nfc className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-extrabold text-slate-800">Ponte NFC</p>
-              <Badge color={nfcAtivo ? 'green' : 'slate'}>{nfcAtivo ? 'ativa no gestor' : 'desligada'}</Badge>
+              <p className="font-extrabold text-slate-800">Cartões NFC no Servidor DoixP</p>
             </div>
-              <p className="mt-1 text-sm text-slate-500">
-              No Servidor DoixP, ative o NFC e grave o prefixo do leitor USB. No Android, o aplicativo lê a tag com o aparelho aberto.
-              A leitura chega neste sistema e, no PDV em tela cheia, procura o produto. Prefixo atual: {nfcPrefixo}.
+            <p className="mt-1 text-sm text-slate-500">
+              A ativação fica no aplicativo Servidor DoixP, no mesmo aparelho das impressoras. No Windows e Linux,
+              ative a leitura de cartões, configure o prefixo do leitor USB e clique em Salvar e conectar.
+              No Android, ative Cartões NFC e mantenha o Servidor DoixP aberto para aproximar o cartão.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Em Mesas, use Adicionar com cartão para abrir a comanda, Lançar para cartão para montar o pedido e
+              aproximar o cartão, e Fechamento de cartão para receber. Cada aparelho controla sua própria leitura NFC.
             </p>
             {nfcHistorico.length > 0 && (
               <ul className="mt-2 space-y-1 text-sm text-slate-600">
@@ -404,7 +404,7 @@ export function ImpressorasPage() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-extrabold text-slate-800">Servidor Android DoixP</p>
+              <p className="font-extrabold text-slate-800">Servidor DoixP Android</p>
               <Badge color={devices.some((d) => d.status === 'online') ? 'green' : 'slate'}>
                 {devices.length ? `${devices.length} dispositivo(s)` : 'nenhum pareado'}
               </Badge>

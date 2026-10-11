@@ -10,7 +10,7 @@ function prefixoValido(prefixo) {
 }
 
 function interpretarLeituraNfc(config, texto) {
-  if (!config?.nfcAtivo) throw new Error('Ponte NFC desligada no Gestor')
+  if (!config?.nfcAtivo) throw new Error('Leitura de cartões NFC desligada no Servidor DoixP')
   const prefixo = String(config.nfcPrefixo || PREFIXO_PADRAO)
   if (!prefixoValido(prefixo)) throw new Error('Prefixo NFC inválido')
   const bruto = String(texto || '').replace(/[\u0000-\u001F\u007F]/g, '').trim()

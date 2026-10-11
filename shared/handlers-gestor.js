@@ -25,7 +25,7 @@ export async function registerGestorHandler(c, env) {
 
   const token = (b.token && String(b.token).trim()) || gerarToken();
   const sessionId = String(b.session_id || '').trim();
-  if (!sessionId || sessionId.length > 100) return c.json({ error: 'Atualize o Gestor de Impressoras para conectar com uma sessão segura.' }, 400);
+  if (!sessionId || sessionId.length > 100) return c.json({ error: 'Atualize o Servidor DoixP para conectar com uma sessão segura.' }, 400);
   if (token.length > 256) return c.json({ error: 'Token inválido' }, 400);
   const nome = (b.nome && String(b.nome).trim()) || 'Gestor';
   const ip = (b.ip && String(b.ip).trim()) || '';

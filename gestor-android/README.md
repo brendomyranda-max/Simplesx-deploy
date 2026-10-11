@@ -8,6 +8,9 @@ e EPL/EPL2 por:
 - Bluetooth clássico SPP/RFCOMM;
 - USB Host/OTG com envio direto à interface da impressora.
 
+A versão 1.5.14 inclui a logo DoixP no cabeçalho e no ícone do aplicativo. A
+seção **Cartões NFC** fica logo após a conexão com a DoixP.
+
 ## Requisitos
 
 - Android 8.0 ou superior;
@@ -39,6 +42,13 @@ Gradle e use **Build → Build APK(s)**. O APK de desenvolvimento será criado e
    do Android e escolha **Bluetooth**.
 6. Toque em **Salvar rota e imprimir teste**.
 7. Ative **Receber impressões** e permita notificações/Bluetooth.
+
+Para usar cartões físicos como comandas, ative **Cartões NFC** no próprio
+Servidor DoixP. A preferência é salva imediatamente neste aparelho; se o NFC do
+Android estiver desligado, ligue-o também nas configurações do aparelho.
+Mantenha o Servidor DoixP aberto para ler o cartão. No sistema web, monte o
+pedido em **Mesas → Lançar para cartão** antes de aproximá-lo. O servidor precisa
+estar pareado e conectado à internet para enviar a leitura ao estabelecimento.
 
 Para trocar de estabelecimento, toque em **Desconectar e trocar de conta**, aguarde
 os trabalhos em andamento e faça um novo pareamento com o código da outra conta.

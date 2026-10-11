@@ -1,6 +1,7 @@
 # Servidor DoixP
 
-Aplicativo local que conecta a DoixP às impressoras instaladas no Windows ou no Linux.
+Aplicativo local que conecta a DoixP às impressoras e aos leitores de cartões NFC
+no Windows ou no Linux.
 
 ## Desenvolvimento
 
@@ -9,7 +10,20 @@ npm install
 npm start
 ```
 
-O gestor gera um token na primeira execução. Copie-o para **Configurações → Impressoras** no sistema web. O aplicativo registra-se no deploy, consulta trabalhos a cada três segundos, imprime silenciosamente e confirma o resultado ao servidor.
+O servidor gera um token na primeira execução. Copie-o para **Impressoras → Servidores Windows/Linux** no sistema web. O aplicativo registra-se no deploy, consulta trabalhos a cada três segundos, imprime silenciosamente e confirma o resultado ao servidor.
+
+## Cartões NFC
+
+Na versão 1.5.14, abra **Cartões NFC** no Servidor DoixP, marque **Ativar leitura
+de cartões NFC neste computador**, configure o prefixo do leitor USB e clique em
+**Salvar e conectar**. O leitor deve enviar o prefixo (por padrão, `NFC:`), o
+código do cartão e Enter. Cada computador salva sua própria configuração.
+
+Na DoixP, abra **Mesas → Lançar para cartão**, monte o pedido e aproxime o cartão
+físico para registrar os itens na comanda. O leitor pode enviar a leitura com a
+janela do Servidor DoixP em foco ou com o sistema web em foco no mesmo computador.
+Use **Testar leitura NFC** para verificar a comunicação com o deploy; esse botão
+envia uma leitura simulada, sem testar o leitor físico.
 
 A partir da versão 1.5.8, cada execução usa uma sessão exclusiva. Outro computador
 com o mesmo token só consegue conectar após a sessão atual desconectar ou ficar

@@ -40,7 +40,7 @@ class AppConfig(context: Context) {
         get() = prefs.getString("deploy_url", "https://doixp.com")!!
         set(value) = prefs.edit().putString("deploy_url", value.trim().trimEnd('/')).apply()
     var deviceName: String
-        get() = prefs.getString("device_name", "Servidor Android DoixP")!!
+        get() = prefs.getString("device_name", "Servidor DoixP Android")!!
         set(value) = prefs.edit().putString("device_name", value.trim()).apply()
     var deviceToken: String
         get() = prefs.getString("device_token", "")!!
