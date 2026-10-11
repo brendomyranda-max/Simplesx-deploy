@@ -10,6 +10,7 @@ e EPL/EPL2 por:
 
 A versão 1.5.14 inclui a logo DoixP no cabeçalho e no ícone do aplicativo. A
 seção **Cartões NFC** fica logo após a conexão com a DoixP.
+A versão 1.5.15 usa a variante **LogoDoixPAmarelo** no cabeçalho e no ícone.
 
 ## Requisitos
 

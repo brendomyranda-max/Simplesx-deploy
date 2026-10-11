@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Download, Smartphone, Trash2, Nfc } from 'lucide-react';
+import { Printer, Plus, Network, LayoutTemplate, RefreshCw, Pencil, Smartphone, Trash2, Nfc } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { DevicePrinterTest } from '@/components/DevicePrinterTest';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
@@ -342,11 +342,9 @@ export function ImpressorasPage() {
 
       <Card className="mb-4 border-brand-200 bg-gradient-to-r from-brand-50 to-white p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
-            <Download className="h-5 w-5" />
-          </div>
+          <img src="/brand/LogoDoixPAmarelo.png" alt="Servidor DoixP" className="h-11 w-11 shrink-0 rounded-xl object-contain" />
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.14</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.15</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
           {INSTALADORES.map((item) => (

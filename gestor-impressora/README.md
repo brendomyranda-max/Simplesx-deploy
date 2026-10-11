@@ -3,6 +3,9 @@
 Aplicativo local que conecta a DoixP às impressoras e aos leitores de cartões NFC
 no Windows ou no Linux.
 
+A versão 1.5.15 usa a **LogoDoixPAmarelo** no cabeçalho, na bandeja e nos ícones
+do aplicativo e do instalador.
+
 ## Desenvolvimento
 
 ```bash

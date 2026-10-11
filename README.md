@@ -151,6 +151,10 @@ reserva temporária durante o fechamento, preservando os pedidos existentes.
 
 ## Gestor Local v2
 
+Na versão **1.5.15**, o Servidor DoixP usa a **LogoDoixPAmarelo** no Android,
+Windows e Linux, incluindo o cabeçalho, a bandeja e os ícones dos instaladores.
+Os downloads em **Impressoras** entregam os instaladores dessa versão.
+
 Na versão **1.5.14**, o aplicativo de impressoras e cartões NFC se apresenta como
 **Servidor DoixP**, com a logo na interface e nos ícones Android, Windows e Linux.
 A ativação do NFC fica no próprio servidor: em **Cartões NFC**, ative a leitura

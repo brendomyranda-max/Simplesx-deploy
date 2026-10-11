@@ -4,9 +4,14 @@ A marca pública é **DoixP** e o domínio principal é **https://doixp.com**.
 O ambiente de pedidos para clientes se chama **DoixP Delivery**. Os aplicativos
 locais de impressão e NFC se chamam **Servidor DoixP**.
 
-O logotipo oficial está em `public/brand/doixp-logo.png`; os ícones web e o
-ícone Android são gerados a partir dele. Use esse arquivo nos novos pontos de
+O logotipo oficial está em `public/brand/doixp-logo.png`; os ícones do aplicativo
+web são gerados a partir dele. Use esse arquivo nos novos pontos de
 contato da marca, nunca uma letra substituta ou logo anterior.
+
+O **Servidor DoixP** usa a variante **LogoDoixPAmarelo**, em
+`public/brand/LogoDoixPAmarelo.png`, no cabeçalho e nos ícones Android, Windows e
+Linux. Os arquivos locais `doixp-logo.png` e `doixp_logo.png` dos servidores são
+derivados dessa variante. O sistema web principal mantém o logotipo branco.
 
 ## Paleta
 

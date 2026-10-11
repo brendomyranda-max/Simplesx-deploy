@@ -1,6 +1,6 @@
 {
   "name": "servidor-doixp",
-  "version": "1.5.14",
+  "version": "1.5.15",
   "private": true,
   "description": "Servidor DoixP para impressoras e cartões NFC",
   "homepage": "https://doixp.com",
@@ -8,6 +8,7 @@
     "name": "DoixP"
   },
   "main": "src/main.cjs",
+  "desktopName": "servidor-doixp.desktop",
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.cjs",
@@ -39,6 +40,7 @@
     },
     "linux": {
       "icon": "src/doixp-logo.png",
+      "syncDesktopName": true,
       "target": [
         "AppImage"
       ],
