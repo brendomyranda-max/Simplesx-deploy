@@ -56,6 +56,7 @@ export function ComandaPage() {
   const [editPessoaNome, setEditPessoaNome] = useState('');
   const [fechar, setFechar] = useState(false);
   const [baixar, setBaixar] = useState(false);
+  const [liberarVazia, setLiberarVazia] = useState(false);
   const [tipo, setTipo] = useState<'unica' | 'divisao' | 'individual'>('unica');
   const [taxaEditada, setTaxaEditada] = useState<EdicaoTaxaServico | null>(null);
   const taxa = taxaServicoAtual(comandaId, comanda?.taxa_garcom_pct, taxaEditada);
@@ -113,6 +114,7 @@ export function ComandaPage() {
   useEffect(() => {
     setTaxaEditada(null);
     setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setTransferenciaMesa(null); setArrastando(null);
+    setFechar(false); setBaixar(false); setLiberarVazia(false);
     loadComanda();
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
       setProdutos(ps); setCategorias(cs);
@@ -142,6 +144,10 @@ export function ComandaPage() {
   const itensNovos = ativos.filter((i) => i.status === 'novo');
   const subtotal = useMemo(() => ativos.reduce((s, i) => s + Number(i.quantidade) * Number(i.preco_unitario), 0), [ativos]);
   const locked = comanda?.status !== 'aberta';
+  const mesaVazia = ativos.length === 0 && !comanda?.comanda_origem_id &&
+    !['aberta', 'pre_fechamento'].includes(comanda?.transfer_comanda_status || '') &&
+    ['aberta', 'pre_fechamento'].includes(comanda?.status || '');
+  const vendasAnteriores = comanda?.vendas_anteriores || [];
   const podeTransferir = (item: ComandaItem) => !locked && !transferindo && ['novo', 'enviado', 'entregue'].includes(item.status);
 
   const transferirItem = async (item: ComandaItem, mesaId: number, destinoId: number | null, pessoaId: number | null) => {
@@ -486,6 +492,7 @@ export function ComandaPage() {
       toast('info', 'Aguarde a confirmação do pedido e do envio antes de fechar a conta.');
       return;
     }
+    if (mesaVazia) { setLiberarVazia(true); return; }
     iniciaValores();
     setFechar(true);
   };
@@ -504,6 +511,25 @@ export function ComandaPage() {
     return true;
   };
 
+  const falhaFechamento = (err: any, fallback: string) => {
+    setFechar(false); setBaixar(false); setLiberarVazia(false);
+    toast('error', err?.error || fallback);
+    // A atualização da comanda não pode manter o diálogo e o botão presos.
+    void loadComanda();
+  };
+
+  const liberarMesaVazia = async () => {
+    if (!comanda || !iniciarFechamento()) return;
+    try {
+      const r = await comandaApi.fechar(comandaId, { tipo: 'unica', liberar_vazia: true });
+      setLiberarVazia(false);
+      toast('success', r.vendas_anteriores?.length ? 'Mesa liberada sem nova baixa. As vendas anteriores foram preservadas para conferência.' : 'Mesa vazia liberada sem cobrança.');
+      navigate('/restaurante');
+    } catch (err: any) {
+      falhaFechamento(err, 'Não foi possível liberar a mesa vazia');
+    } finally { finalizandoRef.current = false; setFinalizando(false); }
+  };
+
   const finalizar = async () => {
     if (!comanda || !iniciarFechamento()) return;
     try {
@@ -517,8 +543,7 @@ export function ComandaPage() {
       setFechar(false);
       navigate('/restaurante');
     } catch (err: any) {
-      toast('error', err?.error || 'Erro ao fechar comanda');
-      await loadComanda();
+      falhaFechamento(err, 'Erro ao fechar comanda');
     } finally {
       finalizandoRef.current = false;
       setFinalizando(false);
@@ -536,6 +561,7 @@ export function ComandaPage() {
         pre_fechar: true,
       });
       setFechar(false);
+      if (r.mesa_liberada) { toast('success', r.mensagem || 'Mesa vazia liberada'); navigate('/restaurante'); return; }
       await loadComanda();
       try {
         const imp = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
@@ -545,8 +571,7 @@ export function ComandaPage() {
         toast('error', `Conta pré-fechada, mas a impressão não foi confirmada: ${err?.error || 'falha de conexão'}. Use Imprimir para tentar novamente.`);
       }
     } catch (err: any) {
-      toast('error', err?.error || 'Erro ao pré-fechar');
-      await loadComanda();
+      falhaFechamento(err, 'Erro ao pré-fechar');
     } finally {
       finalizandoRef.current = false;
       setFinalizando(false);
@@ -555,6 +580,7 @@ export function ComandaPage() {
 
   const abrirBaixa = () => {
     if (!comanda) return;
+    if (mesaVazia) { abrirFechamento(); return; }
     setTipo((comanda.fechamento_tipo || 'unica') as 'unica' | 'divisao' | 'individual');
     setBaixar(true);
   };
@@ -572,8 +598,7 @@ export function ComandaPage() {
       setBaixar(false);
       navigate('/restaurante');
     } catch (err: any) {
-      toast('error', err?.error || 'Erro ao baixar conta');
-      await loadComanda();
+      falhaFechamento(err, 'Erro ao baixar conta');
     } finally {
       finalizandoRef.current = false;
       setFinalizando(false);
@@ -618,8 +643,7 @@ export function ComandaPage() {
         navigate('/restaurante');
       }
     } catch (err: any) {
-      toast('error', err?.error || 'Erro ao gerar contas individuais');
-      await loadComanda();
+      falhaFechamento(err, 'Erro ao gerar contas individuais');
     } finally {
       finalizandoRef.current = false;
       setFinalizando(false);
@@ -662,7 +686,9 @@ export function ComandaPage() {
           <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={imprimirComanda}>
             Imprimir
           </Button>
-          {!locked ? (
+          {mesaVazia ? (
+            <Button variant="secondary" icon={<CheckCheck className="h-4 w-4" />} onClick={abrirFechamento}>Liberar mesa vazia</Button>
+          ) : !locked ? (
             <Button variant="success" icon={<HandCoins className="h-4 w-4" />} onClick={abrirFechamento}>
               Fechar conta ({fmtBRL(totalComTaxa)})
             </Button>
@@ -685,6 +711,13 @@ export function ComandaPage() {
       {pendente && <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
         <p className="text-sm text-amber-900">{adicionando ? 'Confirmando lançamento…' : 'Lançamento aguardando confirmação. Tente novamente para concluir sem duplicar.'}</p>
         <Button loading={adicionando} onClick={() => void enviarLancamento(pendente)}>Tentar novamente</Button>
+      </div>}
+
+      {vendasAnteriores.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="font-semibold">Comanda nº {comanda.id}: vendas {vendasAnteriores.map((v) => `#${v.id}`).join(', ')} já registradas.</p>
+        <p className="mt-1">Esses números são de vendas, não de comandas. O histórico precisa de conferência; isso não significa que há um fechamento em andamento.</p>
+        <p className="mt-1">{comanda.status === 'fechada' ? 'A ocupação da mesa foi encerrada sem nova baixa. As vendas anteriores continuam no histórico para conferência.' : mesaVazia ? 'Como não há produtos ativos, você pode liberar apenas a mesa, preservando os registros anteriores.' : 'Uma nova baixa está bloqueada para evitar duplicar a cobrança e o estoque.'}</p>
+        <Button variant="ghost" size="sm" className="mt-2" onClick={() => navigate('/restaurante')}>Voltar às mesas</Button>
       </div>}
 
       {preFechada && (
@@ -946,7 +979,9 @@ export function ComandaPage() {
               </div>
             )}
 
-            {!locked ? (
+            {mesaVazia ? (
+              <Button variant="secondary" className="mt-4 w-full" size="lg" icon={<CheckCheck className="h-5 w-5" />} onClick={abrirFechamento}>Liberar mesa vazia</Button>
+            ) : !locked ? (
               <Button variant="success" className="mt-4 w-full" size="lg" icon={<HandCoins className="h-5 w-5" />} onClick={abrirFechamento}>
                 Fechar conta
               </Button>
@@ -981,6 +1016,19 @@ export function ComandaPage() {
       {transferencia && <TransferItemModal item={transferencia.item} source={comanda} initialMode={transferencia.mode} busy={transferindo}
         onClose={() => setTransferencia(null)} onTransfer={transferirItem} />}
       {transferenciaMesa && <TransferTableModal source={transferenciaMesa} busy={transferindo} onClose={() => setTransferenciaMesa(null)} onTransfer={transferirMesa} />}
+
+      <Modal open={liberarVazia} onClose={() => { if (!finalizandoRef.current) setLiberarVazia(false); }} title="Liberar mesa vazia">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-700">A comanda nº {comanda.id} não tem produtos ativos. Esta ação encerra somente a ocupação e deixa a mesa disponível novamente.</p>
+          <p className="text-sm text-slate-600">Não gera venda, cobrança, pagamento, impressão ou movimentação de estoque. O histórico permanece intacto.</p>
+          {vendasAnteriores.length > 0 && <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">As vendas {vendasAnteriores.map((v) => `#${v.id}`).join(', ')} continuarão registradas e precisam ser conferidas separadamente. Liberar a mesa não cancela nem regulariza essas vendas.</div>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => navigate('/restaurante')}>Voltar às mesas</Button>
+            <Button variant="secondary" disabled={finalizando} onClick={() => setLiberarVazia(false)}>Cancelar</Button>
+            <Button variant="success" loading={finalizando} onClick={liberarMesaVazia}>Confirmar liberação</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Fechamento */}
       <Modal open={fechar} onClose={() => { if (!finalizandoRef.current) setFechar(false); }} title="Fechamento da comanda" width="max-w-2xl">
@@ -1135,6 +1183,10 @@ export function ComandaPage() {
               </Button>
             </div>
           )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" disabled={finalizando} onClick={() => setFechar(false)}>Fechar esta tela</Button>
+            <Button variant="ghost" onClick={() => navigate('/restaurante')}>Voltar às mesas</Button>
+          </div>
         </div>
       </Modal>
 
@@ -1161,6 +1213,10 @@ export function ComandaPage() {
           <Button className="w-full" size="lg" loading={finalizando} icon={<HandCoins className="h-5 w-5" />} onClick={finalizarBaixa}>
             Confirmar baixa
           </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" disabled={finalizando} onClick={() => setBaixar(false)}>Fechar esta tela</Button>
+            <Button variant="ghost" onClick={() => navigate('/restaurante')}>Voltar às mesas</Button>
+          </div>
         </div>
       </Modal>
 

@@ -682,6 +682,9 @@ async function getComandaFull(env, id) {
   )
     .bind(id)
     .first();
+  const vendasAnteriores = (['aberta', 'pre_fechamento'].includes(c.status) || c.fechamento_tipo === 'sem_consumo') && !c.comanda_origem_id
+    ? (await env.DB.prepare("SELECT id,numero,total FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(id).all()).results
+    : [];
   return {
     ...c,
     mesa: mesa || null,
@@ -690,6 +693,7 @@ async function getComandaFull(env, id) {
     subtotal,
     transfer_comanda_id: transfer?.id ?? null,
     transfer_comanda_status: transfer?.status ?? null,
+    vendas_anteriores: vendasAnteriores,
   };
 }
 
@@ -817,7 +821,12 @@ export async function fecharComandaHandler(c, env) {
     WHERE id=? AND status IN ('aberta','pre_fechamento')
     AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?)`)
     .bind(until, c.params.id, now()).run();
-  if (!acquired.meta.changes) return c.json({ error: 'Comanda fechada ou com fechamento em andamento. Atualize e tente novamente.' }, 409);
+  if (!acquired.meta.changes) {
+    const atual = await env.DB.prepare('SELECT id,status FROM comandas WHERE id=?').bind(c.params.id).first();
+    if (!atual) return c.json({ error: 'Comanda não encontrada' }, 404);
+    if (atual.status === 'fechada') return c.json({ error: `A comanda nº ${atual.id} já está fechada. Volte às mesas para continuar.`, code: 'COMANDA_FECHADA' }, 409);
+    return c.json({ error: `A comanda nº ${atual.id} possui um fechamento em andamento. Você pode voltar às mesas enquanto aguarda e atualizar depois.`, code: 'FECHAMENTO_EM_ANDAMENTO' }, 409);
+  }
   try {
     return await fecharComandaReservada(c, { ...env, fechamentoReserva: until });
   } finally {
@@ -833,24 +842,47 @@ async function fecharComandaReservada(c, env) {
     .first();
   if (!com) return c.json({ error: 'Comanda não encontrada' }, 404);
   if (com.comanda_origem_id) return c.json({ error: 'Esta conta usa pagamentos individuais. Baixe cada pessoa na tela Pagamentos Individuais.' }, 409);
-  const existente = await env.DB.prepare("SELECT id FROM vendas WHERE comanda_id=? AND status='concluida' LIMIT 1").bind(com.id).first();
-  if (existente) return c.json({ error: `A comanda já possui a venda #${existente.id}, mas não consta como fechada. Confira o histórico antes de repetir a baixa para não duplicar a cobrança e o estoque.` }, 409);
+  const anteriores = (await env.DB.prepare("SELECT id FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(com.id).all()).results;
   const itens = await env.DB.prepare(
     "SELECT * FROM comanda_itens WHERE comanda_id=? AND status!='cancelado'"
   )
     .bind(com.id)
     .all();
 
-  // Mesa aberta sem itens: fecha sem custos, sem gerar venda.
+  // Encerrar ocupação vazia é diferente de dar baixa financeira. Vendas antigas
+  // permanecem intactas e exigem confirmação explícita, nunca um estorno automático.
   if (!itens.results.length) {
-    const tipoVazio = b.tipo || com.fechamento_tipo || 'unica';
-    await env.DB.batch([
-      env.DB.prepare(`UPDATE comandas SET status='fechada', fechamento_tipo=?, fechada_em=?, baixada_em=? WHERE id=?`)
-        .bind(tipoVazio, now(), now(), com.id),
-      env.DB.prepare("UPDATE mesas SET status='livre', aberta_em=NULL WHERE id=?").bind(com.mesa_id),
-    ]);
-    return c.json({ ok: true, comanda_id: com.id, vendas: [], total: 0, mensagem: 'Mesa fechada sem itens' });
+    if (anteriores.length && b.liberar_vazia !== true) return c.json({ error: `A comanda ${com.id} está vazia, mas já possui a venda #${anteriores[0].id}. Use Liberar mesa vazia para encerrar somente a ocupação, sem alterar as vendas anteriores.` }, 409);
+    const tipoVazio = b.liberar_vazia === true ? 'sem_consumo' : (b.tipo || com.fechamento_tipo || 'unica');
+    const db = env.rawDB;
+    const tenant = estabelecimentoId(env);
+    const timestamp = now();
+    try {
+      await db.batch([
+        db.prepare(`SELECT CASE WHEN EXISTS (SELECT 1 FROM comandas c WHERE c.id=? AND c.estabelecimento_id=?
+          AND c.status IN ('aberta','pre_fechamento') AND c.comanda_origem_id IS NULL AND c.fechamento_bloqueado_ate=?
+          AND NOT EXISTS (SELECT 1 FROM comanda_itens i WHERE i.comanda_id=c.id AND i.estabelecimento_id=? AND i.status!='cancelado')
+          AND NOT EXISTS (SELECT 1 FROM comandas filha WHERE filha.comanda_origem_id=c.id AND filha.estabelecimento_id=?
+            AND filha.status IN ('aberta','pre_fechamento'))
+          AND NOT EXISTS (SELECT 1 FROM comandas outra WHERE outra.mesa_id=c.mesa_id AND outra.estabelecimento_id=?
+            AND outra.id!=c.id AND outra.status IN ('aberta','pre_fechamento'))
+          AND (?=1 OR NOT EXISTS (SELECT 1 FROM vendas v WHERE v.comanda_id=c.id AND v.estabelecimento_id=? AND v.status='concluida')))
+          THEN 1 ELSE abs(-9223372036854775808) END`)
+          .bind(com.id, tenant, env.fechamentoReserva, tenant, tenant, tenant, b.liberar_vazia === true ? 1 : 0, tenant),
+        db.prepare(`UPDATE comandas SET status='fechada',fechamento_tipo=?,fechada_em=?,baixada_em=? WHERE id=? AND estabelecimento_id=?`)
+          .bind(tipoVazio, timestamp, b.liberar_vazia === true ? null : timestamp, com.id, tenant),
+        db.prepare("UPDATE mesas SET status='livre',aberta_em=NULL WHERE id=? AND estabelecimento_id=?").bind(com.mesa_id, tenant),
+      ]);
+    } catch (error) {
+      if (/integer overflow/i.test(error.message)) return c.json({ error: 'A mesa mudou ou possui pagamentos individuais pendentes. Atualize antes de liberar.' }, 409);
+      throw error;
+    }
+    return c.json({ ok: true, comanda_id: com.id, vendas: [], total: 0, mesa_liberada: true,
+      vendas_anteriores: anteriores.map((v) => v.id), mensagem: 'Mesa vazia liberada sem nova venda, pagamento ou movimentação de estoque' });
   }
+
+  if (b.liberar_vazia === true) return c.json({ error: 'A mesa recebeu produtos. Confira os pedidos antes de fechar a conta.' }, 409);
+  if (anteriores.length) return c.json({ error: `A comanda ${com.id} já possui a venda #${anteriores[0].id}, mas não consta como fechada. Isso exige conferência do histórico, não é um fechamento em andamento. Não repita a baixa para evitar duplicar a cobrança e o estoque.` }, 409);
 
   const taxaPct = b.taxa_garcom_pct !== undefined ? num(b.taxa_garcom_pct) : num(com.taxa_garcom_pct);
   if (!Number.isFinite(taxaPct) || taxaPct < 0 || taxaPct > 100) {

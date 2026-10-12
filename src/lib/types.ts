@@ -407,6 +407,7 @@ export interface Comanda {
   individual_valores?: string | null;
   transfer_comanda_id?: number | null;
   transfer_comanda_status?: string | null;
+  vendas_anteriores?: { id: number; numero: string; total: number }[];
 }
 
 export interface ComandaPessoa {

@@ -38,6 +38,20 @@ Aplique `0037_transferencias_mesa.sql` antes de publicar o backend. A migração
 adiciona apenas a auditoria da transferência e proteções contra abertura de
 mesa excluída; não altera os pedidos existentes.
 
+**Liberar mesa vazia** encerra somente a ocupação, após confirmação, mesmo quando
+existem vendas antigas na comanda. A API exige `liberar_vazia: true` nesse caso,
+confere novamente a ausência de produtos e pagamentos individuais pendentes
+dentro da transação e preserva integralmente vendas, pagamentos e estoque.
+O encerramento explícito fica identificado por `fechamento_tipo=sem_consumo`,
+sem preencher `baixada_em`. As vendas anteriores permanecem visíveis para
+conferência, inclusive ao consultar a comanda já encerrada. Não se trata de
+estorno nem de regularização financeira automática.
+
+Erros de fechamento encerram o diálogo e liberam os controles da tela. A ação
+**Voltar às mesas** permite navegar mesmo enquanto uma confirmação está pendente;
+sair da tela não cancela uma solicitação que já chegou ao servidor. Os avisos
+diferenciam comanda fechada, reserva de fechamento ativa e venda anterior.
+
 ## Executar localmente
 
 Requer Node.js 22.13 ou superior e npm. O SQLite é fornecido pelo próprio Node.
