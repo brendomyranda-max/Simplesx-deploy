@@ -13,6 +13,7 @@ import { Button, Card, Modal, Spinner, useToast } from '@/components/ui';
 import { cartaoApi, categoriaApi, produtoApi } from '@/lib/api';
 import type { NfcEvento } from '@/lib/api';
 import { useNfcLeitura } from '@/lib/useNfcBridge';
+import { useWebNfc } from '@/lib/useWebNfc';
 import type { Categoria, Produto } from '@/lib/types';
 import { fmtBRL } from '@/lib/format';
 
@@ -30,6 +31,7 @@ export function LancarCartaoPage() {
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [espera, setEspera] = useState(false);
   const [leituraSolicitada, setLeituraSolicitada] = useState(false);
+  const webNfc = useWebNfc();
   const esperaVersaoRef = useRef(0);
   const esperaVersao = esperaVersaoRef.current;
   const [enviando, setEnviando] = useState(false);
@@ -129,20 +131,20 @@ export function LancarCartaoPage() {
         )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-extrabold text-slate-800">Total {fmtBRL(total)}</p>
-          <Button type="button" disabled={!itens.length} icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(false); setEspera(true); }}>
+          <Button type="button" disabled={!itens.length} icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(!!webNfc.begin()); setEspera(true); }}>
             Aguardar cartão
           </Button>
         </div>
       </Card>
 
-      <Modal open={espera} onClose={() => { if (!enviandoRef.current) { esperaVersaoRef.current++; setEspera(false); } }} title="Aproxime o cartão">
+      <Modal open={espera} onClose={() => { if (!enviandoRef.current) { webNfc.stop(); esperaVersaoRef.current++; setEspera(false); } }} title="Aproxime o cartão">
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
-          <NfcScanButton key={esperaVersao} enabled={!enviando} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { if (esperaVersaoRef.current === esperaVersao) void lancar(reading); }} />
+          <NfcScanButton key={esperaVersao} enabled={!enviando} webScan={webNfc.scan} onWebStart={() => { webNfc.begin(true); setLeituraSolicitada(true); }} onStart={(exclusive = true) => setLeituraSolicitada(exclusive)} onRead={(reading) => { if (esperaVersaoRef.current === esperaVersao) void lancar(reading); }} />
           <p className="text-sm text-slate-600">
-            Aproxime o cartão do celular com o Servidor DoixP aberto e o NFC ligado. Os itens ficam na comanda do sistema.
+            Aproxime o cartão do leitor identificado acima. Os itens ficam na comanda do sistema.
           </p>
-          <p className="text-xs text-slate-400">NTAG215 pode ser usado vazio. O cartão serve apenas como identificação.</p>
+          <p className="text-xs text-slate-400">O cartão NTAG215 serve apenas como identificação. Nenhum pedido é gravado nele.</p>
           {enviando && <Spinner />}
         </div>
       </Modal>

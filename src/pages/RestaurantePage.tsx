@@ -13,6 +13,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, 
 import { useAuth } from '@/store/auth';
 import { mesaApi, funcionarioApi, cartaoApi, type NfcEvento } from '@/lib/api';
 import { useNfcLeitura } from '@/lib/useNfcBridge';
+import { useWebNfc } from '@/lib/useWebNfc';
 import { NfcScanButton } from '@/components/NfcScanButton';
 import type { Mesa, Funcionario } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
@@ -34,6 +35,7 @@ export function RestaurantePage() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [espera, setEspera] = useState<'abrir' | 'fechar' | null>(null);
   const [leituraSolicitada, setLeituraSolicitada] = useState(false);
+  const webNfc = useWebNfc();
   const esperaVersaoRef = useRef(0);
   const esperaVersao = esperaVersaoRef.current;
   useEffect(() => { if (!espera) setLeituraSolicitada(false); }, [espera]);
@@ -164,9 +166,9 @@ export function RestaurantePage() {
         <RestauranteAbas atual="mesas" />
       </div>
       <div className="mb-5 flex flex-wrap gap-2">
-          <Button icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(false); setLendoCartao(false); setEspera('abrir'); }}>Adicionar com cartão</Button>
+          <Button icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(!!webNfc.begin()); setLendoCartao(false); setEspera('abrir'); }}>Adicionar com cartão</Button>
           <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/restaurante/lancar-cartao')}>Lançar para cartão</Button>
-          <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(false); setLendoCartao(false); setEspera('fechar'); }}>Fechamento de cartão</Button>
+          <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(!!webNfc.begin()); setLendoCartao(false); setEspera('fechar'); }}>Fechamento de cartão</Button>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => setNovaMesa(true)}>Nova mesa</Button>
         </div>
 
@@ -301,19 +303,19 @@ export function RestaurantePage() {
 
       <Modal
         open={espera !== null}
-        onClose={() => { if (!lendoCartaoRef.current) { esperaVersaoRef.current++; setEspera(null); } }}
+        onClose={() => { if (!lendoCartaoRef.current) { webNfc.stop(); esperaVersaoRef.current++; setEspera(null); } }}
         title={espera === 'fechar' ? 'Fechamento de cartão' : 'Adicionar com cartão'}
       >
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
-          <NfcScanButton key={esperaVersao} enabled={!lendoCartao} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { if (espera && esperaVersaoRef.current === esperaVersao) void usarCartao(espera, reading); }} />
+          <NfcScanButton key={esperaVersao} enabled={!lendoCartao} webScan={webNfc.scan} onWebStart={() => { webNfc.begin(true); setLeituraSolicitada(true); }} onStart={(exclusive = true) => setLeituraSolicitada(exclusive)} onRead={(reading) => { if (espera && esperaVersaoRef.current === esperaVersao) void usarCartao(espera, reading); }} />
           <p className="text-sm text-slate-600">
             {espera === 'fechar'
               ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'
               : 'Aproxime o cartão. A identificação dele abre a comanda, como uma mesa, para lançar os itens.'}
           </p>
-          <p className="text-xs text-slate-400">O Servidor DoixP precisa estar aberto, com o NFC ligado, neste computador ou no celular.</p>
-          <p className="text-xs text-slate-400">NTAG215 funciona vazio: a conta fica no sistema e o mesmo cartão pode ser reutilizado após o fechamento.</p>
+          <p className="text-xs text-slate-400">Aproxime no leitor identificado acima. No Chrome Android compatível, a leitura acontece aqui mesmo.</p>
+          <p className="text-xs text-slate-400">A conta fica no sistema. O mesmo cartão pode ser reutilizado após o fechamento.</p>
           {lendoCartao && <Spinner />}
         </div>
       </Modal>

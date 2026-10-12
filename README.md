@@ -323,6 +323,25 @@ caso, sem transferir saldo entre cartões.
 
 ### Diagnóstico NFC no Android (1.5.16)
 
+A interface web também lê diretamente o NFC do próprio celular com **Web NFC**
+quando a API estiver disponível (Chrome Android em HTTPS). Ao tocar em
+**Aguardar cartão**, **Adicionar com cartão** ou **Fechamento de cartão**, a leitura
+inicia no mesmo clique, sem abrir o Servidor e sem escolher um leitor. Autorize o
+acesso ao NFC no navegador quando solicitado. A página precisa continuar visível
+e o celular desbloqueado. Usa apenas `serialNumber` normalizado como UID; não abre,
+interpreta nem escreve o texto NDEF. Cartões sem UID/NDEF legível podem precisar
+do leitor nativo. O suporte é detectado pela API, não pelo modelo do aparelho.
+
+O modo **Automático** prioriza a web compatível e depois o leitor integrado da
+tela interna do Servidor. Nos demais casos, tenta os servidores conectados,
+lembrando o último utilizado e pulando leitores ocupados por outras telas.
+O nome do leitor escolhido aparece na espera. **Opções de leitura** permite fixar
+um servidor por terminal quando há vários aparelhos no estabelecimento; essa
+escolha fica salva neste navegador. A reserva continua exclusiva por tela.
+Navegadores sem Web NFC também mantêm a opção de abrir o leitor Android.
+Essa atualização é da web; os servidores oficiais 1.5.19 continuam compatíveis
+e não precisam ser reinstalados. Não há nova migração de banco.
+
 Na versão **1.5.19**, uma tela web no computador, celular ou PDA pode escolher
 o aparelho leitor em **Onde aproximar o cartão**. A lista usa o mesmo pareamento
 dos servidores de impressão. No S21, ative **Usar como leitor para outro aparelho**

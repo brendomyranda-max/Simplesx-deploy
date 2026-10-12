@@ -1,36 +1,66 @@
 import { useEffect, useRef, useState } from 'react';
 import { nfcApi, type NfcEvento, type NfcServidor } from '@/lib/api';
 import { nfcScanLink } from '@/lib/nfcScanLink';
+import { nfcReadingMode, webNfcAvailable, type WebNfcScan } from '@/lib/webNfc';
 import { Button } from '@/components/ui';
 
-/** Vincula a espera desta tela ao celular local ou a um servidor pareado pela internet. */
-export function NfcScanButton({ enabled, onRead, onStart }: {
+/** Prioriza o leitor do próprio navegador, sem seleção obrigatória por pedido. */
+export function NfcScanButton({ enabled, onRead, onStart, webScan = null, onWebStart }: {
   enabled: boolean;
   onRead: (reading: Pick<NfcEvento, 'uid' | 'payload'>) => void;
-  onStart: () => void;
+  onStart: (exclusive?: boolean) => void;
+  webScan?: WebNfcScan | null;
+  onWebStart?: () => void;
 }) {
   const android = /Android/i.test(navigator.userAgent);
+  const integrated = android && (/\bwv\b|DoixPServidor\//i.test(navigator.userAgent) || !!window.__doixpAndroidNfc);
   const callback = useRef(onRead);
   callback.current = onRead;
-  const [attempt, setAttempt] = useState(0);
-  const [link, setLink] = useState('');
-  const [message, setMessage] = useState('Preparando o leitor…');
-  const [retry, setRetry] = useState(false);
-  const [servers, setServers] = useState<NfcServidor[]>([]);
-  const [selected, setSelected] = useState('');
-  const [serverError, setServerError] = useState('');
-  const initialized = useRef(false);
   const start = useRef(onStart);
   start.current = onStart;
-  const source = servers.find((s) => `${s.tipo}:${s.id}` === selected);
+  const [attempt, setAttempt] = useState(0);
+  const [link, setLink] = useState('');
+  const [message, setMessage] = useState('Identificando o leitor disponível…');
+  const [retry, setRetry] = useState(false);
+  const [servers, setServers] = useState<NfcServidor[]>([]);
+  const [selected, setSelected] = useState(nfcReadingMode);
+  const [readerName, setReaderName] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const [localUnavailable, setLocalUnavailable] = useState(false);
+  const useWeb = selected === 'web' || (selected === 'auto' && !localUnavailable && (webScan !== null || webNfcAvailable()));
+  const useIntegrated = !useWeb && integrated && (selected === 'auto' || selected === 'integrado');
+  const signature = servers.map((s) => `${s.tipo}:${s.id}${selected === 'auto' ? `:${s.online}` : ''}`).join('|');
 
   useEffect(() => {
-    if (!enabled || (!selected && !android) || (selected && !source)) return;
+    if (!enabled) return;
+    if (useWeb) {
+      start.current(true);
+      setLink(''); setReaderName('NFC deste celular');
+      if (!webScan) { setMessage('Toque em Ativar NFC para usar este celular.'); setRetry(true); return; }
+      return webScan.subscribe(() => {
+        const state = webScan.state();
+        if (state.unavailable && selected === 'auto') setLocalUnavailable(true);
+        const uid = webScan.take();
+        setMessage(state.message);
+        setRetry(state.phase === 'error' || state.phase === 'closed' || (state.phase === 'read' && !uid));
+        if (uid) callback.current({ uid, payload: '' });
+      });
+    }
+    if (useIntegrated) {
+      start.current(false);
+      setLink(''); setRetry(false); setReaderName('NFC integrado deste aparelho');
+      setMessage('Aproxime o cartão. O leitor deste aparelho já está ativo.');
+      return;
+    }
+    if (!loaded) return;
     let stopped = false;
     let busy = false;
     let finished = false;
     let id: string | undefined;
-    setLink(''); setRetry(false); setMessage('Preparando o leitor…');
+    setLink(''); setRetry(false); setReaderName(''); setMessage('Identificando o leitor disponível…');
+    start.current(true);
     const poll = async () => {
       if (stopped || busy || finished || !id || document.visibilityState !== 'visible') return;
       busy = true;
@@ -49,66 +79,98 @@ export function NfcScanButton({ enabled, onRead, onStart }: {
         if (!stopped) setMessage(error?.error || 'Não foi possível conferir a leitura. Verifique a conexão.');
       } finally { busy = false; }
     };
-    if (selected) start.current();
-    nfcApi.solicitar(source).then((request) => {
+    const prepare = async () => {
+      let preferred = '';
+      try { preferred = localStorage.getItem('doixp-nfc-servidor') || ''; } catch { /* armazenamento indisponível */ }
+      const candidates = selected === 'auto'
+        ? servers.filter((s) => s.online).sort((a, b) => Number(`${b.tipo}:${b.id}` === preferred) - Number(`${a.tipo}:${a.id}` === preferred))
+        : servers.filter((s) => `${s.tipo}:${s.id}` === selected);
+      let source: NfcServidor | undefined;
+      let request;
+      let error: any;
+      for (const candidate of candidates) {
+        if (stopped) return;
+        try { request = await nfcApi.solicitar(candidate); source = candidate; break; }
+        catch (failure: any) { error = failure; if (failure?.status !== 409) throw failure; }
+      }
+      if (!request) {
+        if (error) throw error;
+        if (!android || !['auto', 'nativo'].includes(selected)) throw { error: 'Nenhum leitor conectado disponível. Conecte o servidor ou escolha um leitor nas opções.' };
+        request = await nfcApi.solicitar();
+      }
       id = request.id;
       if (stopped) { void nfcApi.cancelarSolicitacao(id).catch(() => {}); return; }
-      if (!selected) setLink(nfcScanLink(window.location.origin, request.id, request.token));
-      setMessage(selected ? `Aguardando cartão em ${source!.nome}. Mantenha esta tela aberta.` : 'Abra o leitor, aproxime o cartão e aguarde o retorno a esta tela.');
+      if (source) {
+        setReaderName(source.nome);
+        setMessage(`Aproxime o cartão em ${source.nome}. A leitura chegará a esta tela.`);
+        try { localStorage.setItem('doixp-nfc-servidor', `${source.tipo}:${source.id}`); } catch { /* armazenamento indisponível */ }
+      } else {
+        setReaderName('Leitor Android');
+        setLink(nfcScanLink(window.location.origin, request.id, request.token));
+        setMessage('Este navegador não oferece Web NFC. Use Chrome no Android para ler aqui ou abra o leitor abaixo.');
+      }
       void poll();
-    }).catch((error: any) => {
+    };
+    void prepare().catch((error: any) => {
       if (!stopped) { setMessage(error?.error || 'Não foi possível preparar o leitor.'); setRetry(true); }
     });
     const timer = setInterval(poll, 1200);
     window.addEventListener('focus', poll);
     document.addEventListener('visibilitychange', poll);
     return () => {
-      stopped = true;
-      clearInterval(timer);
+      stopped = true; clearInterval(timer);
       window.removeEventListener('focus', poll);
       document.removeEventListener('visibilitychange', poll);
       if (id) void nfcApi.cancelarSolicitacao(id).catch(() => {});
     };
-  }, [android, enabled, attempt, selected, source?.id]);
+  }, [enabled, selected, useWeb, useIntegrated, webScan, attempt, loaded, signature]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || ((useWeb || useIntegrated) && !optionsOpen)) return;
     let stopped = false;
     const load = async () => {
       try {
         const list = await nfcApi.servidores();
-        if (stopped) return;
-        setServers(list); setServerError('');
-        if (!initialized.current) {
-          initialized.current = true;
-          let saved = '';
-          try { saved = localStorage.getItem('doixp-nfc-servidor') || ''; } catch { /* armazenamento indisponível */ }
-          if (list.some((s) => `${s.tipo}:${s.id}` === saved)) setSelected(saved);
-          else if (!android && list.length === 1) setSelected(`${list[0].tipo}:${list[0].id}`);
-        }
+        if (!stopped) { setServers(list); setLoaded(true); setServerError(''); }
       } catch (error: any) {
-        if (!stopped) setServerError(error?.error || 'Não foi possível listar os servidores. Confira a conexão.');
+        if (!stopped) {
+          const message = error?.error || 'Não foi possível conferir os leitores conectados.';
+          setServerError(message);
+          if (!useWeb && !useIntegrated) { setMessage(message); setRetry(true); }
+        }
       }
     };
     void load();
     const timer = setInterval(load, 10_000);
     return () => { stopped = true; clearInterval(timer); };
-  }, [enabled, android]);
+  }, [enabled, useWeb, useIntegrated, attempt, optionsOpen]);
 
   return <div className="flex w-full flex-col items-center gap-2 rounded-xl bg-brand-50 p-4">
-    <label className="w-full text-left text-sm font-semibold text-slate-700">Onde aproximar o cartão
-      <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2" disabled={!enabled} value={selected} onChange={(e) => {
-        setSelected(e.target.value);
-        try { localStorage.setItem('doixp-nfc-servidor', e.target.value); } catch { /* armazenamento indisponível */ }
-      }}>
-        <option value="">{android ? 'Neste celular / PDA' : 'Selecione o servidor NFC'}</option>
-        {servers.map((s) => <option key={`${s.tipo}:${s.id}`} value={`${s.tipo}:${s.id}`}>{s.nome} · {s.tipo === 'android' ? 'Android / PDA' : 'Computador'} · {s.online ? 'conectado' : 'sem conexão recente'}</option>)}
-      </select>
-    </label>
-    {enabled && link && <a href={link} onClick={onStart} className="rounded-xl bg-brand-600 px-5 py-3 text-sm font-bold text-white">Ler cartão neste celular</a>}
-    <p role="status" className="text-sm text-slate-600">{serverError || (!selected && !android ? 'Pareie um servidor nas configurações de impressão e selecione-o aqui.' : message)}</p>
-    {enabled && retry && <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)}>Preparar novamente</Button>}
-    {selected ? <p className="text-xs text-slate-500">No Android, ative NFC e deixe a tela do Servidor aberta e desbloqueada no aparelho leitor. No computador, ative o leitor USB no Servidor e mantenha sua janela em foco. A leitura chega a esta tela pela internet.</p>
-      : android && <p className="text-xs text-slate-500">Se o leitor não abrir, <a className="underline" href="/downloads/gestor-android" target="_blank" rel="noreferrer">atualize o Servidor Android</a> e volte a esta tela.</p>}
+    {readerName && <p className="text-sm font-bold text-brand-700">{readerName}</p>}
+    <p role="status" className="text-sm text-slate-600">{message}</p>
+    {enabled && retry && <Button variant="secondary" onClick={() => {
+      if (useWeb) onWebStart?.(); else setAttempt((n) => n + 1);
+    }}>{useWeb ? 'Ativar NFC' : 'Tentar novamente'}</Button>}
+    {enabled && link && <a href={link} className="rounded-xl bg-brand-600 px-5 py-3 text-sm font-bold text-white">Abrir leitor Android</a>}
+    <details className="w-full text-left text-xs text-slate-500" onToggle={(e) => setOptionsOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer">Opções de leitura</summary>
+      <label className="mt-2 block">Leitor
+        <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm" disabled={!enabled} value={selected} onChange={(e) => {
+          const next = e.target.value;
+          setSelected(next);
+          setLocalUnavailable(false);
+          try { localStorage.setItem('doixp-nfc-modo', next); } catch { /* armazenamento indisponível */ }
+          if (next === 'web' || (next === 'auto' && webNfcAvailable())) onWebStart?.(); else webScan?.close();
+        }}>
+          <option value="auto">Automático</option>
+          {webNfcAvailable() && <option value="web">NFC deste celular pelo navegador</option>}
+          {integrated && <option value="integrado">NFC integrado deste aparelho</option>}
+          {servers.map((s) => <option key={`${s.tipo}:${s.id}`} value={`${s.tipo}:${s.id}`}>{s.nome} · {s.online ? 'conectado' : 'sem conexão recente'}</option>)}
+          {android && <option value="nativo">Leitor do aplicativo Android</option>}
+        </select>
+      </label>
+      {serverError && <p className="mt-2">{serverError}</p>}
+      <p className="mt-2">No navegador compatível, autorize NFC uma vez e mantenha a página aberta e o celular desbloqueado. Para ler em outro aparelho, mantenha o Servidor aberto nele. Um leitor atende uma tela por vez.</p>
+    </details>
   </div>;
 }

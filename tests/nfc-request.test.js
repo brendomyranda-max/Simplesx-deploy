@@ -212,37 +212,59 @@ test('link acionado pelo usuário abre somente o pacote Android esperado com par
   assert.throws(() => nfcScanLink('https://doixp.com', id, 'x;component=evil'));
 });
 
-for (const remote of [false, true]) test(remote
-  ? 'web no computador recebe o cartão do S21 mesmo com o foco na janela do servidor'
-  : 'botão web prepara link real, espera retorno do Android e entrega UID uma vez à ação', async (t) => {
+for (const mode of ['native', 'remote', 'multi', 'web', 'integrated']) test({
+  native: 'navegador sem Web NFC mantém alternativa de leitura pelo aplicativo Android',
+  remote: 'web no computador identifica automaticamente o S21 e recebe sem foco na janela',
+  multi: 'vários servidores conectados: leitor ocupado é preservado e a próxima tela usa outro leitor livre',
+  web: 'Chrome Android lê NFC direto na web e salva o pedido sem pareamento nem abertura de aplicativo',
+  integrated: 'tela interna identifica o leitor integrado automaticamente sem solicitar outro aplicativo',
+}[mode], async (t) => {
+  const remote = mode === 'remote' || mode === 'multi';
+  const web = mode === 'web';
   const f = remote ? await remoteFixture(t) : await fixture(t);
+  if (mode === 'multi') await f.request('s21', 'android', 'sessao-3');
   const effects = [];
   const cleanups = [];
   const states = [];
   let slot = 0;
   let started = false;
   const delivered = [];
+  const apiCalls = [];
+  let order;
+  class Reader extends EventTarget {
+    calls = 0;
+    scan({ signal }) { this.calls++; this.signal = signal; return Promise.resolve(); }
+    read() { this.dispatchEvent(Object.assign(new Event('reading'), { serialNumber: '00:a2:24:b1:c2:d3:80' })); }
+  }
   let created;
   const creation = new Promise((resolve) => { created = resolve; });
   let accepted;
   const acceptance = new Promise((resolve) => { accepted = resolve; });
   let cancelled;
   const cancellation = new Promise((resolve) => { cancelled = resolve; });
-  t.after(() => cleanups.reverse().forEach((fn) => fn()));
+  t.after(() => cleanups.reverse().forEach((fn) => fn?.()));
   const document = Object.assign(new EventTarget(), { visibilityState: 'visible', hasFocus: () => false });
   const globals = {
     window: Object.assign(new EventTarget(), { location: { origin: 'https://doixp.com' } }),
-    document, navigator: { userAgent: remote ? 'Mozilla/5.0 (Windows NT 10.0) Chrome/140.0' : 'Mozilla/5.0 (Linux; Android 15; Samsung S21) Chrome/140.0' },
+    document, navigator: { userAgent: remote ? 'Mozilla/5.0 (Windows NT 10.0) Chrome/140.0' : `Mozilla/5.0 (Linux; Android 15; Samsung S21${mode === 'integrated' ? '; wv' : ''}) Chrome/140.0` },
     localStorage: { getItem: () => null, setItem: () => {} },
-    __scanState: (initial) => { const index = slot++; if (!(index in states)) states[index] = initial; return [states[index], (v) => { states[index] = typeof v === 'function' ? v(states[index]) : v; }]; },
+    __scanState: (initial) => { const index = slot++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], (v) => { states[index] = typeof v === 'function' ? v(states[index]) : v; }]; },
     __scanEffect: (fn) => effects.push(fn),
     __scanApi: {
-      servidores: async () => [{ tipo: 'android', id: 's21', nome: 'S21', online: true }],
-      solicitar: async (source) => { const request = source ? (await f.request(source.id, source.tipo)).data : await f.create(); created(); return request; },
+      servidores: async () => { apiCalls.push('servers'); return remote ? [{ tipo: 'android', id: 's21', nome: 'S21', online: true }, ...(mode === 'multi' ? [{ tipo: 'android', id: 'pda', nome: 'PDA', online: true }] : [])] : []; },
+      solicitar: async (source) => {
+        apiCalls.push(source?.id || 'native');
+        const result = source ? await f.request(source.id, source.tipo) : { status: 200, data: await f.create() };
+        if (result.status >= 400) throw { ...result.data, status: result.status };
+        created(); return result.data;
+      },
       solicitacao: async (id) => (await f.status({ id })).data,
       cancelarSolicitacao: async (id) => { const result = await f.call(`/api/nfc/solicitacoes/${id}`, null, 'sessao-1', 'DELETE'); cancelled(); return result; },
     },
   };
+  globals.window.top = globals.window;
+  globals.window.isSecureContext = true;
+  if (web) globals.window.NDEFReader = Reader;
   for (const [key, value] of Object.entries(globals)) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
     Object.defineProperty(globalThis, key, { configurable: true, value });
@@ -254,43 +276,60 @@ for (const remote of [false, true]) test(remote
   }).outputText.replace('"react/jsx-runtime"', JSON.stringify(runtime))).toString('base64');
   const runtime = 'data:text/javascript;base64,' + Buffer.from('export const jsx = (type,props) => ({type,props}); export const jsxs = jsx;').toString('base64');
   const react = module('export const useRef = (v) => ({current:v}); export const useState = (v) => globalThis.__scanState(v); export const useEffect = (fn) => globalThis.__scanEffect(fn);');
-  const api = module(`export const nfcApi = globalThis.__scanApi; // remote:${remote}`);
+  const api = module(`export const nfcApi = globalThis.__scanApi; // mode:${mode}`);
   const ui = module('export const Button = () => {};');
   const linkModule = module(readFileSync('src/lib/nfcScanLink.ts', 'utf8'));
+  const webNfcModule = module(readFileSync('src/lib/webNfc.ts', 'utf8'));
   const source = readFileSync('src/components/NfcScanButton.tsx', 'utf8')
     .replace("'react'", JSON.stringify(react)).replace("'@/lib/api'", JSON.stringify(api))
-    .replace("'@/components/ui'", JSON.stringify(ui)).replace("'@/lib/nfcScanLink'", JSON.stringify(linkModule));
+    .replace("'@/components/ui'", JSON.stringify(ui)).replace("'@/lib/nfcScanLink'", JSON.stringify(linkModule))
+    .replace("'@/lib/webNfc'", JSON.stringify(webNfcModule));
   const { NfcScanButton } = await import(module(source, true));
-  const props = { enabled: true, onStart: () => { started = true; }, onRead: (reading) => { delivered.push(reading); accepted(); } };
+  const webReader = web ? new Reader() : null;
+  const { createWebNfcScan } = await import(webNfcModule);
+  const webScan = web ? createWebNfcScan(webReader, () => document.visibilityState === 'visible') : null;
+  const product = web && f.DB.prepare("INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (1,'Pedido Web NFC',10,1)").run();
+  const props = { enabled: true, webScan, onStart: (exclusive) => { started = exclusive !== false; }, onRead: (reading) => {
+    delivered.push(reading); accepted();
+    if (web) order = f.call('/api/cartoes/usar', { ...reading, acao: 'lancar', chave: 'pedido-web-direto', itens: [{ produto_id: product.meta.last_row_id, quantidade: 2 }] });
+  } };
   NfcScanButton(props);
-  if (remote) {
-    cleanups.push(effects[1]()); // Lista os servidores vinculados e seleciona o único disponível.
+  if (!web && mode !== 'integrated') {
+    cleanups.push(effects[1]()); // Lista os servidores antes da escolha automática.
     await new Promise(setImmediate);
     effects.length = 0;
     slot = 0;
     NfcScanButton(props);
   }
   cleanups.push(effects.shift()());
-  await creation;
+  if (mode === 'integrated') {
+    assert.equal(started, false, 'O leitor nativo integrado usa a ponte existente');
+    assert.deepEqual(apiCalls, []);
+    return;
+  }
+  if (!web) await creation;
   await new Promise(setImmediate);
   slot = 0;
   const tree = NfcScanButton(props);
   const anchor = tree.props.children.find((node) => node?.type === 'a');
-  if (!remote) {
+  if (!remote && !web) {
     assert.ok(anchor, 'A solicitação deve preparar o link de leitura');
     assert.ok(anchor.props.href.startsWith('intent://nfc/ler?'));
-    anchor.props.onClick();
   } else assert.equal(anchor, undefined, 'Uma tela remota aguarda o servidor, sem tentar abrir um app neste computador');
   assert.equal(started, true);
-  const native = !remote && new URL(anchor.props.href.replace(/^intent:/, 'doixp:').split('#')[0]);
-  const request = remote ? f.DB.prepare('SELECT id FROM nfc_solicitacoes WHERE servidor_id=?').first('s21')
+  if (mode === 'multi') assert.deepEqual(apiCalls, ['servers', 's21', 'pda']);
+  if (web) assert.deepEqual(apiCalls, [], 'A leitura web não consulta nem abre servidores');
+  const native = !remote && !web && new URL(anchor.props.href.replace(/^intent:/, 'doixp:').split('#')[0]);
+  const request = web ? null : remote ? f.DB.prepare('SELECT id FROM nfc_solicitacoes WHERE servidor_id=?').first(mode === 'multi' ? 'pda' : 's21')
     : { id: native.searchParams.get('id'), token: native.searchParams.get('token') };
   document.visibilityState = 'hidden';
-  if (remote) await f.publish(); else await f.read(request);
+  if (web) webReader.read();
+  else if (remote) await f.publish(mode === 'multi' ? 'pda' : 's21'); else await f.read(request);
   document.dispatchEvent(new Event('visibilitychange'));
   await new Promise(setImmediate);
   assert.deepEqual(delivered, []);
   document.visibilityState = 'visible';
+  if (web) webReader.read();
   document.dispatchEvent(new Event('visibilitychange'));
   await acceptance;
   assert.deepEqual(delivered, [{ uid: '00A224B1C2D380', payload: '' }]);
@@ -298,6 +337,12 @@ for (const remote of [false, true]) test(remote
   t.mock.timers.tick(6000);
   await new Promise(setImmediate);
   assert.equal(delivered.length, 1);
+  if (web) {
+    assert.equal((await order).status, 200);
+    assert.equal(f.DB.prepare('SELECT COUNT(*) n FROM comanda_itens').first().n, 1);
+    for (const table of ['devices', 'nfc_solicitacoes', 'nfc_eventos']) assert.equal(f.DB.prepare(`SELECT COUNT(*) n FROM ${table}`).first().n, 0);
+    return;
+  }
   cleanups.pop()();
   await cancellation;
   assert.equal((await f.status(request)).data.estado, 'cancelado');
