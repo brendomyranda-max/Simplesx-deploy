@@ -6,13 +6,17 @@ no Windows ou no Linux.
 A versão 1.5.15 usa a **LogoDoixPAmarelo** no cabeçalho, na bandeja e nos ícones
 do aplicativo e do instalador.
 
-A versão **1.5.16** inclui **Atualização do servidor → Buscar atualizações**.
-Baixe a versão encontrada e use **Atualizar e reiniciar**; as impressões já
+A versão **1.5.20** usa **Atualização do servidor → Atualizar servidor**.
+Um clique busca, baixa e inicia a instalação, inclusive quando o atualizador
+informa a conclusão do download depois de retornar à tela. As impressões já
 recebidas terminam antes do reinício. O token, as impressoras e o diário ficam
 no mesmo diretório, preservando a configuração e evitando reimpressões.
 No Linux, execute o AppImage em uma pasta na qual seu usuário possa gravar.
 Para receber o botão pela primeira vez, execute o instalador Windows por cima da
 versão anterior ou substitua o AppImage, sem apagar as configurações.
+
+Se uma versão antiga apenas baixar e não instalar, execute o instalador oficial
+por cima da instalação existente uma vez para receber o fluxo corrigido.
 
 O empacotamento gera `latest.yml`/`latest-linux.yml` e seus checksums para o feed
 `https://doixp.com/atualizacoes/`. O workflow publica esses arquivos junto dos

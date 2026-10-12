@@ -65,24 +65,15 @@ Cartões **NTAG215** funcionam vazios: o aplicativo já envia o UID físico de
 Não é necessário gravar pedidos nem formatar o cartão. Após pagar e encerrar
 a comanda, o cartão pode ser reutilizado para outro atendimento.
 
-Para usar o mesmo celular, toque em **Abrir DoixP e usar cartões NFC**. Entre na
-conta do estabelecimento e monte o pedido em **Mesas** dentro dessa tela. O leitor
-e a interface web permanecem na mesma Activity, permitindo aproximar o cartão sem
-trocar de aplicativo. O botão liga o leitor e desliga o modo de teste. O topo
-mostra o estado NFC e a última identificação enviada; **Servidor** volta aos ajustes.
-Na versão 1.5.17, o UID chega à tela interna sem passar pela fila de outro
-terminal: `POST /api/nfc/identificar` usa o login web, valida o UID e registra a
-leitura já consumida pelo funcionário. O pareamento para impressão não é exigido
-nesse percurso. A gravação do pedido continua dependendo da ação na tela.
-Se aproximar antes de abrir a ação, a tela avisa e mantém a última leitura por
-até 15 segundos; após esse prazo, aproxime novamente. Leituras repetidas no
-carregamento da página não são entregues duas vezes na mesma sessão da ponte.
+Na versão 1.5.20, o atendimento usa a DoixP web. A opção de abrir o site dentro
+do servidor foi removida. No mesmo celular, use a leitura web compatível ou
+**Ler cartão neste celular**, que abre somente a tela Android de leitura e volta
+ao navegador. Para outro aparelho, mantenha este servidor como leitor pareado.
 
 O Android exige primeiro plano para esse leitor NFC. **Receber impressões** continua
 funcionando em segundo plano, mas não mantém a leitura de UID sobre outro app.
-Mantenha a DoixP aberta dentro do Servidor e o celular desbloqueado. Também é
-possível usar outro aparelho/computador como terminal web e deixar este celular
-no painel do leitor. A sessão web interna exige login próprio, separado do Chrome.
+Para usar outro aparelho/computador como terminal web, deixe este celular no
+painel do leitor, aberto e desbloqueado.
 
 ### Testar NFC e conferir o Samsung S21
 
@@ -142,15 +133,17 @@ isolada por estabelecimento. Não há nova migração de banco.
 
 ### Atualização pelo próprio aplicativo
 
-Na versão **1.5.19**, abra **Atualização do servidor → Atualizar servidor**. O app
-busca, baixa e abre o instalador no mesmo fluxo. Ao autorizar **Permitir desta fonte**,
+Na versão **1.5.20**, abra **Atualização do servidor → Atualizar servidor**. O app
+consulta a publicação mesmo se houver um download antigo, baixa, valida e cria uma
+sessão de instalação que substitui o APK atual. Ao autorizar **Permitir desta fonte**,
 volte ao app: a instalação continua automaticamente, inclusive se o Android recriar
 a tela, pois o download validado é recuperado. Nas versões anteriores, conclua
 **Buscar atualizações → Baixar atualização → Atualizar servidor** para receber essa correção. O app
 baixa o APK oficial, confere SHA-256, tamanho, pacote, versão e assinatura e
 aguarda as impressões antes de abrir o instalador. Autorize **Permitir desta
 fonte** e confirme **Atualizar** quando o Android solicitar. O pareamento e as
-impressoras são preservados; a recepção é retomada ao instalar ou cancelar.
+impressoras são preservados; a recepção é retomada ao instalar ou cancelar. Erros
+do instalador são mostrados na tela. O Android exige a confirmação **Atualizar**.
 
 Para receber este botão pela primeira vez, instale o APK oficial por cima da
 versão antiga, sem desinstalar. A assinatura permanente usada no GitHub precisa
@@ -188,7 +181,7 @@ inicialização real. Se o botão estiver desabilitado por falta de pareamento, 
 motivo aparece nessa seção. **Configurações do app no Android** permite revisar
 notificações e bateria; no S21, selecione **Bateria → Sem restrições** caso o
 Android esteja suspendendo o serviço. Isso mantém a impressão, enquanto o leitor
-NFC continua exigindo a tela interna em primeiro plano.
+O leitor compartilhado continua exigindo o painel do servidor em primeiro plano.
 
 Na versão 1.5.11, o serviço usa o tipo Android `connectedDevice`, adequado às
 conexões USB, Bluetooth e de rede com impressoras. O tipo anterior, `dataSync`,

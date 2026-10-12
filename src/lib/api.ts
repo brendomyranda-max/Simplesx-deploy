@@ -358,7 +358,7 @@ export const onlineApi = {
 
 export const pedidosApi = {
   painel: () => api.get<PainelPedidos>('/pedidos/painel'),
-  cozinha: () => api.get<PainelCozinha>('/pedidos/cozinha'),
+  cozinha: (categoriaId?: number) => api.get<PainelCozinha>(`/pedidos/cozinha${categoriaId!==undefined ? `?categoria_id=${categoriaId}` : ''}`),
   statusOnline: (id: number, status: 'confirmado' | 'cancelado' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'pix_recebido') =>
     api.post<{ ok: boolean; id: number; status: string; etapa: string }>(`/pedidos/online/${id}/status`, { status }),
   etiqueta: (body: { item_id?: number; comanda_id?: number }) =>

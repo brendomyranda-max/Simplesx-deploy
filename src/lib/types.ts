@@ -338,6 +338,7 @@ export interface EstacaoCozinha {
 
 export interface PainelCozinha {
   estacoes: EstacaoCozinha[];
+  categorias?: { id: number; nome: string; categoria_pai_id: number | null; caminho: string }[];
 }
 
 export interface MovimentacaoEstoque {

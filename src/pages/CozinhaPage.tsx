@@ -2,12 +2,12 @@
  * Painel que fica aberto na cozinha e no bar para acompanhar os lançamentos.
  */
 
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChefHat } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestauranteAbas } from '@/components/RestauranteAbas';
-import { Badge, Button, Card, EmptyState, useToast } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, Field, Select, useToast } from '@/components/ui';
 import { comandaApi, pedidosApi } from '@/lib/api';
 import type { LancamentoCozinha, PainelCozinha } from '@/lib/types';
 import { fmtHora } from '@/lib/format';
@@ -20,6 +20,12 @@ function espera(minutos: number) {
 export function CozinhaPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const [params,setParams] = useSearchParams();
+  const categoriaId = params.get('categoria') || '';
+  const filtroAtual = useRef(categoriaId);
+  filtroAtual.current = categoriaId;
+  const requisicao = useRef(0);
+  const ocupadoRef = useRef(false);
   const [painel, setPainel] = useState<PainelCozinha>({ estacoes: [] });
   const [load, setLoad] = useState(true);
   const [erro, setErro] = useState('');
@@ -29,9 +35,12 @@ export function CozinhaPage() {
   const [atualizado, setAtualizado] = useState('');
 
   const carregar = async (silencioso = false) => {
+    if (categoriaId!==filtroAtual.current) return;
+    const versao = ++requisicao.current;
     if (!silencioso) setLoad(true);
     try {
-      const proximo = await pedidosApi.cozinha();
+      const proximo = await pedidosApi.cozinha(categoriaId ? Number(categoriaId) : undefined);
+      if (versao!==requisicao.current) return;
       const ids = proximo.estacoes.flatMap((estacao) => estacao.lancamentos.map((lancamento) => lancamento.id));
       setPainel(proximo);
       setErro('');
@@ -43,26 +52,30 @@ export function CozinhaPage() {
         return new Set(ids);
       });
     } catch (error: any) {
+      if (versao!==requisicao.current) return;
       const mensagem = error?.error || 'Não foi possível atualizar a cozinha';
       if (!silencioso) toast('error', mensagem);
       setErro(mensagem);
+      setPainel(anterior=>({...anterior,estacoes:[]}));
     } finally {
-      setLoad(false);
+      if (versao===requisicao.current) setLoad(false);
     }
   };
 
   useEffect(() => {
+    setVisto(new Set()); setRecentes([]);
     carregar();
     const timer = setInterval(() => carregar(true), 5000);
-    return () => clearInterval(timer);
-  }, []);
+    return () => { clearInterval(timer); requisicao.current++; };
+  }, [categoriaId]);
 
   useEffect(() => {
     const total = painel.estacoes.reduce((soma, estacao) => soma + estacao.lancamentos.length, 0);
     const anterior = document.title;
-    document.title = total ? `Cozinha (${total}) · DoixP` : 'Cozinha · DoixP';
+    const nome = categoriaId ? painel.categorias?.find(cat=>String(cat.id)===categoriaId)?.caminho || 'Preparo' : 'Cozinha';
+    document.title = `${nome}${total ? ` (${total})` : ''} · DoixP`;
     return () => { document.title = anterior; };
-  }, [painel]);
+  }, [painel,categoriaId]);
 
   useEffect(() => {
     if (!recentes.length) return;
@@ -71,6 +84,8 @@ export function CozinhaPage() {
   }, [recentes]);
 
   const marcarPronto = async (lancamento: LancamentoCozinha) => {
+    if (ocupadoRef.current) return;
+    ocupadoRef.current=true;
     setOcupado(lancamento.id);
     try {
       for (const item of lancamento.itens) {
@@ -81,6 +96,7 @@ export function CozinhaPage() {
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível atualizar o lançamento');
     } finally {
+      ocupadoRef.current=false;
       setOcupado('');
     }
   };
@@ -90,10 +106,14 @@ export function CozinhaPage() {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Área da cozinha</h1>
-          <p className="text-sm text-slate-500">Deixe esta tela aberta. Os lançamentos do bar e da cozinha entram aqui sozinhos.</p>
+          <p className="text-sm text-slate-500">Os pedidos entram automaticamente pela categoria do produto. Escolha Bar, Cozinha ou uma subcategoria para acompanhar somente esse preparo.</p>
         </div>
         <RestauranteAbas atual="cozinha" />
       </div>
+
+      <div className="mb-4 max-w-md"><Field label="Acompanhar categoria"><Select value={categoriaId} disabled={!!ocupado} onChange={e=>{const next=new URLSearchParams(params);if(e.target.value)next.set('categoria',e.target.value);else next.delete('categoria');setParams(next);}}>
+        <option value="">Todas as categorias</option>{painel.categorias?.map(cat=><option key={cat.id} value={cat.id}>{cat.caminho}</option>)}
+      </Select></Field><p className="mt-1 text-xs text-slate-500">Inclui as subcategorias. O filtro fica no endereço: deixe uma aba aberta para cada setor.</p></div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${erro ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
@@ -105,7 +125,8 @@ export function CozinhaPage() {
       </div>
 
       {load ? <Card className="p-8 text-center text-sm text-slate-500">Carregando lançamentos…</Card> : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className={`grid gap-4 ${categoriaId ? '' : 'lg:grid-cols-2'}`}>
+          {!painel.estacoes.length && <Card><EmptyState icon={<ChefHat className="h-8 w-8" />} title="Nenhuma categoria de preparo" subtitle="Cadastre categorias como Bar e Cozinha e vincule os produtos a elas." /></Card>}
           {painel.estacoes.map((estacao) => (
             <section key={estacao.id} className="min-w-0">
               <div className="mb-2 flex items-center justify-between">
@@ -113,7 +134,7 @@ export function CozinhaPage() {
                 <Badge color={estacao.lancamentos.length ? 'amber' : 'slate'}>{estacao.lancamentos.length}</Badge>
               </div>
               {estacao.lancamentos.length === 0 ? (
-                <Card><EmptyState icon={<ChefHat className="h-8 w-8" />} title={`Nenhum lançamento ${estacao.id === 'bar' ? 'no bar' : estacao.id === 'cozinha' ? 'na cozinha' : 'neste destino'}`} subtitle="Esta coluna continua aberta." /></Card>
+                <Card><EmptyState icon={<ChefHat className="h-8 w-8" />} title="Nenhum lançamento nesta categoria" subtitle="Esta tela continua acompanhando os próximos pedidos." /></Card>
               ) : (
                 <div className="space-y-3">
                   {estacao.lancamentos.map((lancamento) => (
@@ -129,7 +150,7 @@ export function CozinhaPage() {
                           <p className="mt-1 text-sm text-slate-600">{lancamento.cliente_nome || 'Sem cliente'}{lancamento.garcom_nome ? ` · ${lancamento.garcom_nome}` : ''}</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Button size="sm" onClick={() => marcarPronto(lancamento)} loading={ocupado === lancamento.id}>Pronto</Button>
+                          <Button size="sm" onClick={() => marcarPronto(lancamento)} disabled={!!ocupado} loading={ocupado === lancamento.id}>Pronto</Button>
                           <Button size="sm" variant="secondary" onClick={() => navigate(`/restaurante/comanda/${lancamento.comanda_id}`)}>Abrir</Button>
                         </div>
                       </div>

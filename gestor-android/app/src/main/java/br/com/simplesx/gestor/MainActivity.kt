@@ -70,9 +70,6 @@ import br.com.simplesx.gestor.print.PairedPrinter
 import br.com.simplesx.gestor.print.UsbPrinter
 import br.com.simplesx.gestor.sync.PrintSyncService
 import br.com.simplesx.gestor.update.UpdatePanel
-import br.com.simplesx.gestor.web.DoixPWebPanel
-import br.com.simplesx.gestor.web.doixpAddress
-import br.com.simplesx.gestor.web.NfcWebReading
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,9 +78,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val config = AppConfig(this)
-        if (config.resumeAfterUpdate) {
+        if (config.resumeAfterUpdate && BuildConfig.VERSION_CODE >= config.updateTargetCode) {
             config.serviceEnabled = true
             config.resumeAfterUpdate = false
+            config.updateTargetCode = 0
         }
         if (config.deviceToken.isNotBlank() && config.serviceEnabled) PrintSyncService.start(this)
         setContent { MaterialTheme { GestorScreen(this) } }
@@ -220,11 +218,6 @@ private fun GestorScreen(activity: ComponentActivity) {
         }
     }
 
-    var doixpOpen by rememberSaveable { mutableStateOf(false) }
-    var nfcStatus by remember { mutableStateOf("NFC: aguardando leitor") }
-    var webReading by remember { mutableStateOf<NfcWebReading?>(null) }
-    Box(Modifier.fillMaxSize()) {
-    // Mantém NfcPanel composto sob a tela web: o leitor continua na mesma Activity.
     Scaffold(topBar = {
         TopAppBar(title = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -273,14 +266,7 @@ private fun GestorScreen(activity: ComponentActivity) {
             }
 
             Section("Cartões NFC") {
-                NfcPanel(activity, config, paired, onOpenDoixP = {
-                    runCatching { doixpAddress(config.deployUrl) }.fold({ doixpOpen = true }, { message = it.message.orEmpty() })
-                }, onReadInDoixP = { reading ->
-                    if (doixpOpen) {
-                        webReading = NfcWebReading(reading.uid, System.currentTimeMillis())
-                        true
-                    } else false
-                }, onStatus = { nfcStatus = it })
+                NfcPanel(activity, config, paired)
             }
 
             Section("Impressoras") {
@@ -599,7 +585,7 @@ private fun GestorScreen(activity: ComponentActivity) {
             }
 
             Section("Serviço em segundo plano") {
-                Text("Mantém a recepção de impressões ao sair da tela. Para cartões no mesmo celular, use Abrir DoixP e usar cartões NFC.", style = MaterialTheme.typography.bodySmall)
+                Text("Mantém a recepção de impressões ao sair da tela. Os cartões podem ser usados diretamente pela DoixP web.", style = MaterialTheme.typography.bodySmall)
                 if (!paired) Text("Para ativar a impressão em segundo plano, primeiro pareie em Conexão com a DoixP.", color = MaterialTheme.colorScheme.error)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) { Text("Receber impressões"); Text(if (serviceStarting) "Iniciando…" else if (serviceRunning) "Ativo em segundo plano" else "Parado", style = MaterialTheme.typography.bodySmall) }
@@ -623,8 +609,6 @@ private fun GestorScreen(activity: ComponentActivity) {
             }
             Spacer(Modifier.height(24.dp))
         }
-    }
-    if (doixpOpen) DoixPWebPanel(activity, config.deployUrl, nfcStatus, webReading, onClose = { doixpOpen = false; webReading = null })
     }
 }
 

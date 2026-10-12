@@ -818,15 +818,6 @@ export async function painelPedidosHandler(c, env) {
   });
 }
 
-function destinosDaRota(nome) {
-  const busca = String(nome || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-  const destinos = [];
-  if (busca.includes('cozinha')) destinos.push({ id: 'cozinha', nome: 'Cozinha' });
-  if (/(^|[^a-z0-9])bar([^a-z0-9]|$)/.test(busca)) destinos.push({ id: 'bar', nome: 'Bar' });
-  if (!destinos.length && nome) destinos.push({ id: `rota:${nome}`, nome: String(nome) });
-  return destinos;
-}
-
 function lugarCozinha(row) {
   if (row.mesa_tipo === 'online') return row.tipo_entrega === 'retirada' ? 'Retirada' : 'Entrega';
   if (row.mesa_tipo === 'cartao') return `Cartão ${row.nfc_uid || row.mesa_numero}`;
@@ -834,39 +825,55 @@ function lugarCozinha(row) {
 }
 
 export async function painelCozinhaHandler(c, env) {
+  // O painel acompanha o cadastro dos produtos, independentemente da impressão.
+  const categorias = (await env.DB.prepare('SELECT id,nome,categoria_pai_id FROM categorias ORDER BY nome COLLATE NOCASE,id').all()).results;
+  const porId = new Map(categorias.map(cat=>[num(cat.id),cat]));
+  const caminho = (cat) => {
+    const lista = [], vistos = new Set();
+    while (cat && !vistos.has(cat.id)) {
+      vistos.add(cat.id); lista.unshift(cat); cat = porId.get(num(cat.categoria_pai_id));
+    }
+    return lista;
+  };
+  const caminhos = new Map(categorias.map(cat=>[num(cat.id),caminho(cat)]));
+  const filtro = c.req.query('categoria_id');
+  const categoriaId = filtro ? Number(filtro) : null;
+  if (filtro && (!Number.isSafeInteger(categoriaId) || !porId.has(categoriaId))) return c.json({ error:'Categoria não encontrada' },404);
+  const descendentes = categoriaId ? categorias.filter(cat=>caminhos.get(num(cat.id)).some(pai=>num(pai.id)===categoriaId)).map(cat=>num(cat.id)) : [];
+  const vinculos = (await env.DB.prepare('SELECT pc.produto_id,pc.categoria_id FROM produto_categorias pc JOIN categorias cat ON cat.id=pc.categoria_id').all()).results;
+  const porProduto = new Map();
+  for (const vinculo of vinculos) {
+    const id = num(vinculo.produto_id);
+    if (!porProduto.has(id)) porProduto.set(id,new Set());
+    porProduto.get(id).add(num(vinculo.categoria_id));
+  }
   const rows = await env.DB.prepare(
     `SELECT i.id, i.comanda_id, i.produto_id, i.nome, i.quantidade, i.observacao, i.status,
        i.criado_em, i.enviado_em,
-       c.cliente_nome, c.garcom_nome,
+       COALESCE(p.nome,c.cliente_nome) AS cliente_nome, i.pessoa_id, c.garcom_nome,
        m.numero AS mesa_numero, m.tipo AS mesa_tipo, m.nfc_uid,
-       po.tipo_entrega, po.cliente_nome AS pedido_cliente,
-       (SELECT GROUP_CONCAT(ia.nome, char(31))
-        FROM produto_categorias pc
-        JOIN categorias cat ON cat.id=pc.categoria_id
-        LEFT JOIN categorias pai ON pai.id=cat.categoria_pai_id
-        JOIN impressora_agentes ia ON ia.id=COALESCE(cat.impressora_agente_id, pai.impressora_agente_id)
-          AND ia.ativo=1 AND ia.imprime_pedidos=1
-        WHERE pc.produto_id=i.produto_id) AS rotas
+       po.tipo_entrega, po.cliente_nome AS pedido_cliente
      FROM comanda_itens i
      JOIN comandas c ON c.id=i.comanda_id
      JOIN mesas m ON m.id=c.mesa_id
+     LEFT JOIN comanda_pessoas p ON p.id=i.pessoa_id AND p.comanda_id=c.id
      LEFT JOIN pedidos_online po ON po.comanda_id=c.id
      WHERE c.status IN ('aberta','pre_fechamento')
        AND i.status IN ('novo','enviado')
        AND COALESCE(m.tipo,'normal')!='pagamentos'
+       ${categoriaId ? 'AND EXISTS (SELECT 1 FROM produto_categorias pc WHERE pc.produto_id=i.produto_id AND pc.categoria_id IN (SELECT value FROM json_each(?)))' : ''}
      ORDER BY COALESCE(i.enviado_em, i.criado_em) ASC, i.id ASC
      LIMIT 300`
-  ).all();
+  ).bind(...(categoriaId ? [JSON.stringify(descendentes)] : [])).all();
 
   const grupos = new Map();
   for (const row of rows.results) {
-    const rotas = [...new Set(String(row.rotas || '').split('\u001f').map((nome) => nome.trim()).filter(Boolean))];
-    const destinos = rotas.length
-      ? [...new Map(rotas.flatMap(destinosDaRota).map((destino) => [destino.id, destino])).values()]
-      : [{ id: 'sem-rota', nome: 'Sem destino' }];
+    const raizes = [...new Set([...(porProduto.get(num(row.produto_id)) || [])].map(id=>num(caminhos.get(id)?.[0]?.id)).filter(Boolean))];
+    const destinos = categoriaId ? [{id:`categoria:${categoriaId}`,nome:caminhos.get(categoriaId).map(cat=>cat.nome).join(' › ')}]
+      : raizes.length ? raizes.map(id=>({id:`categoria:${id}`,nome:porId.get(id).nome})) : [{id:'sem-categoria',nome:'Sem categoria'}];
     for (const destino of destinos) {
       const quando = row.enviado_em || row.criado_em || '';
-      const chave = `${destino.id}|${row.comanda_id}|${row.status}|${quando}`;
+      const chave = `${destino.id}|${row.comanda_id}|${row.pessoa_id || ''}|${row.status}|${quando}`;
       if (!grupos.has(chave)) {
         grupos.set(chave, {
           destino,
@@ -897,10 +904,9 @@ export async function painelCozinhaHandler(c, env) {
     }
   }
 
-  const porEstacao = new Map([
-    ['cozinha', { id: 'cozinha', nome: 'Cozinha', lancamentos: [] }],
-    ['bar', { id: 'bar', nome: 'Bar', lancamentos: [] }],
-  ]);
+  const bases = categoriaId ? [{id:`categoria:${categoriaId}`,nome:caminhos.get(categoriaId).map(cat=>cat.nome).join(' › ')}]
+    : categorias.filter(cat=>num(caminhos.get(num(cat.id))[0]?.id)===num(cat.id)).map(cat=>({id:`categoria:${cat.id}`,nome:cat.nome}));
+  const porEstacao = new Map(bases.map(base=>[base.id,{...base,lancamentos:[]}]));
   for (const grupo of grupos.values()) {
     if (!porEstacao.has(grupo.destino.id)) {
       porEstacao.set(grupo.destino.id, { id: grupo.destino.id, nome: grupo.destino.nome, lancamentos: [] });
@@ -911,8 +917,7 @@ export async function painelCozinhaHandler(c, env) {
   for (const estacao of porEstacao.values()) {
     estacao.lancamentos.sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)) || a.comanda_id - b.comanda_id);
   }
-  const estacoes = [...porEstacao.values()].filter((estacao) => estacao.id === 'cozinha' || estacao.id === 'bar' || estacao.lancamentos.length);
-  return c.json({ estacoes });
+  return c.json({ estacoes:[...porEstacao.values()], categorias:categorias.map(cat=>({...cat,caminho:caminhos.get(num(cat.id)).map(pai=>pai.nome).join(' › ')})) });
 }
 
 async function liberarPedidoPix(env, row) {

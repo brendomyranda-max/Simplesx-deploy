@@ -100,14 +100,17 @@ jobs:
           files: artefatos/*
           make_latest: false
           body: |
-            Servidor DoixP 1.5.19 para Windows, Linux e Android.
+            Servidor DoixP 1.5.20 para Windows, Linux e Android.
 
-            - Atualizar servidor busca, baixa e inicia a instalação no mesmo fluxo, preservando a instalação atual.
+            - Atualizar servidor consulta a versão publicada mesmo após um download anterior.
+            - Android usa uma sessão do instalador para substituir o APK, abrir a confirmação e informar o resultado.
+            - Windows/Linux instalam também quando a conclusão do download é notificada depois da resposta do atualizador.
+            - Removido o botão de abrir a DoixP dentro do servidor; o atendimento continua pela web.
             - Preserva pareamento, configurações e histórico de impressão.
             - Ler cartão neste celular: o Chrome/PWA chama uma tela de leitura Android e recebe o UID ao retornar à DoixP.
             - A tela web seleciona o servidor NFC pareado, como nas impressoras, e recebe a leitura pela internet em outro aparelho.
             - Cada leitura fica reservada à tela e ao funcionário solicitantes. Outro terminal não captura o cartão.
-            - A mesma opção funciona na tela interna do servidor. O cartão continua sendo identificado apenas pelo UID.
+            - O cartão continua sendo identificado apenas pelo UID.
             - Termina trabalhos recebidos antes de instalar uma atualização.
 
             Nas versões antigas, conclua Buscar atualizações → Baixar atualização → Atualizar servidor, ou execute o instalador por cima da instalação atual. A partir desta versão, use Atualizar servidor. No Android, autorize a fonte e confirme Atualizar no instalador do sistema. Para leitura em outro aparelho, selecione o servidor em Onde aproximar o cartão e deixe o aparelho leitor com o Servidor aberto e desbloqueado. Requer backend e interface com as migrações 0039 e 0040.

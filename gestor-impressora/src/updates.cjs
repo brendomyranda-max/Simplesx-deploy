@@ -2,6 +2,7 @@
 function createUpdates({ updater, supported, prepareInstall, recoverInstall = async () => {}, notify }) {
   let state = { phase: 'idle', message: 'Atualize para baixar, instalar e reabrir o servidor. As configurações são preservadas.' }
   let busy = false
+  let installation = null
   function change(phase, message, extra = {}) {
     state = { phase, message, ...extra }
     notify(state)
@@ -11,15 +12,35 @@ function createUpdates({ updater, supported, prepareInstall, recoverInstall = as
   updater.autoInstallOnAppQuit = false
   updater.allowDowngrade = false
   updater.disableDifferentialDownload = true
-  async function failed() {
+  async function failed(error) {
     if (state.phase === 'installing') await recoverInstall()
-    return change('error', 'Não foi possível atualizar. Confira a internet e tente novamente.')
+    return change('error', `Não foi possível atualizar. ${error?.message || 'Confira a internet e tente novamente.'}`)
   }
-  updater.on('error', () => { failed().catch(() => change('error', 'Falha na instalação. Reabra o servidor e tente novamente.')) })
+  updater.on('error', (error) => { failed(error).catch(() => change('error', 'Falha na instalação. Reabra o servidor e tente novamente.')) })
   updater.on('update-available', (info) => change('available', `Versão ${info.version} disponível.`, { version: info.version }))
   updater.on('update-not-available', () => change('current', 'O servidor já está atualizado.'))
   updater.on('download-progress', (progress) => change('downloading', `Baixando atualização: ${Math.round(progress.percent)}%`, { percent: progress.percent }))
-  updater.on('update-downloaded', (info) => change('downloaded', `Versão ${info.version} baixada. Preparando a instalação…`, { version: info.version }))
+  updater.on('update-downloaded', (info) => {
+    if (state.phase === 'installing') return
+    change('downloaded', `Versão ${info.version} baixada. Preparando a instalação…`, { version: info.version })
+    // Algumas plataformas notificam depois que downloadUpdate já retornou.
+    // O download concluído deve iniciar a instalação também nesse caso.
+    if (!busy) void installDownloaded()
+  })
+
+  function installDownloaded() {
+    if (installation) return installation
+    if (state.phase !== 'downloaded') return Promise.resolve(state)
+    installation = (async () => {
+      try {
+        change('installing', 'Finalizando impressões em andamento e reiniciando…', { version: state.version })
+        await prepareInstall()
+        updater.quitAndInstall(true, true)
+      } catch (error) { await failed(error) }
+      return state
+    })().finally(() => { installation = null })
+    return installation
+  }
 
   async function action() {
     if (busy || state.phase === 'installing') return state
@@ -34,14 +55,9 @@ function createUpdates({ updater, supported, prepareInstall, recoverInstall = as
         change('downloading', 'Iniciando download…')
         await updater.downloadUpdate()
       }
-      if (state.phase === 'downloaded') {
-        const version = state.version
-        change('installing', 'Finalizando impressões em andamento e reiniciando…', { version })
-        await prepareInstall()
-        updater.quitAndInstall(true, true)
-      }
-    } catch {
-      await failed()
+      if (state.phase === 'downloaded') await installDownloaded()
+    } catch (error) {
+      await failed(error)
     } finally { busy = false }
     return state
   }

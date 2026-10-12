@@ -1,10 +1,8 @@
 package br.com.simplesx.gestor.update
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.core.content.FileProvider
 import br.com.simplesx.gestor.BuildConfig
 import org.json.JSONObject
 import java.io.File
@@ -24,6 +22,7 @@ class AppUpdater(private val context: Context) {
     // Recupera o download validado para continuar a instalação ao voltar.
     fun cachedRelease(): UpdateRelease? = runCatching {
         val release = parseRelease(JSONObject(File(directory, "release.json").readText()))
+        check(release.versionCode > BuildConfig.VERSION_CODE)
         validateApk(File(directory, "servidor-doixp.apk"), release)
         release
     }.getOrNull()
@@ -33,6 +32,8 @@ class AppUpdater(private val context: Context) {
         connectTimeout = 15_000
         readTimeout = 30_000
         setRequestProperty("User-Agent", "ServidorDoixP/${BuildConfig.VERSION_NAME}")
+        useCaches = false
+        setRequestProperty("Cache-Control", "no-cache")
     }
 
     fun check(): UpdateRelease {
@@ -110,13 +111,6 @@ class AppUpdater(private val context: Context) {
         check(currentSigners.isNotEmpty() && newSigners == currentSigners) {
             "A assinatura deste app é diferente da versão oficial. A atualização não pode substituir esta instalação."
         }
-    }
-
-    fun installIntent(file: File): Intent {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", file)
-        @Suppress("DEPRECATION")
-        return Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).putExtra(Intent.EXTRA_RETURN_RESULT, true)
     }
 
     private fun ByteArray.hex() = joinToString("") { "%02x".format(it.toInt() and 0xff) }

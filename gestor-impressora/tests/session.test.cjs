@@ -77,6 +77,13 @@ test('falha de rede ao desconectar mantém a recepção pausada', async (t) => {
   assert.deepEqual(calls, ['/gestor/disconnect'])
 })
 
+test('atualização pode prosseguir após drenar trabalhos mesmo se a liberação remota falhar', async t => {
+  const f = fixture(t, { disconnectError:true })
+  await f.context.desconectar({ tolerarFalhaRemota:true })
+  assert.equal(f.context.config.conectado,false)
+  assert.ok(f.calls.includes('/gestor/disconnect'))
+})
+
 test('falha no ACK não é reportada como erro da impressora e não reimprime no próximo pull', async (t) => {
   let prints = 0, failed = false
   const { context: c, calls } = fixture(t, { job: { id: 1 }, execute: async () => { prints++ }, ackError: () => {

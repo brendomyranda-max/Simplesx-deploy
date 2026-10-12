@@ -447,13 +447,15 @@ function sincronizar() {
   return sincronizacaoAtual
 }
 
-async function desconectar() {
+async function desconectar({ tolerarFalhaRemota = false } = {}) {
   if (!config) return
   await salvarConfig({ ...config, conectado: false })
   // Termina os trabalhos já recebidos antes de liberar a sessão.
   await sincronizacaoAtual
   try {
     await api('/gestor/disconnect', { token: config.token })
+  } catch (error) {
+    if (!tolerarFalhaRemota) throw error
   } finally {
     ultimoContato = null
     sessaoId = crypto.randomUUID()
@@ -661,7 +663,7 @@ const updates = createUpdates({
     reconectarAposAtualizacao = reconectar
     // Impede novas consultas; os trabalhos já recebidos ainda podem imprimir.
     clearInterval(timer)
-    await desconectar()
+    await desconectar({ tolerarFalhaRemota: true })
     instalandoAtualizacao = true
     await Promise.allSettled([...filasImpressao.values()])
     await salvarConfig({ ...config, conectado: reconectar })

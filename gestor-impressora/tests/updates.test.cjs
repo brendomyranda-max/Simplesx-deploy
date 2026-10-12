@@ -83,3 +83,15 @@ test('falha de download não instala; permite tentar novamente e concluir', asyn
   assert.equal((await updates.action()).phase, 'installing')
   assert.deepEqual(calls, ['check', 'check', 'download', 'drain', 'install'])
 })
+
+test('evento de download tardio inicia instalação sem exigir um segundo clique', async () => {
+  const { updates, updater, calls } = setup()
+  updater.downloadUpdate = async () => { calls.push('download') }
+  assert.equal((await updates.action()).phase, 'downloading')
+  updater.emit('update-downloaded', { version: '1.5.20' })
+  await new Promise(setImmediate)
+  assert.deepEqual(calls, ['check','download','drain','install'])
+  updater.emit('update-downloaded', { version: '1.5.20' })
+  await updates.action()
+  assert.equal(calls.filter(c=>c==='install').length,1)
+})

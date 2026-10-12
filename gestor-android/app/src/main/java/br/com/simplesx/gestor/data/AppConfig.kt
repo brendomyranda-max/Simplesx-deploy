@@ -57,6 +57,9 @@ class AppConfig(context: Context) {
     var resumeAfterUpdate: Boolean
         get() = prefs.getBoolean("resume_after_update", false)
         set(value) { prefs.edit().putBoolean("resume_after_update", value).commit() }
+    var updateTargetCode: Int
+        get() = prefs.getInt("update_target_code", 0)
+        set(value) { prefs.edit().putInt("update_target_code", value).commit() }
     var lastStatus: String
         get() = prefs.getString("last_status", "Parado")!!
         set(value) = prefs.edit().putString("last_status", value).apply()

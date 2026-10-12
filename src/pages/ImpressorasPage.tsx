@@ -344,7 +344,7 @@ export function ImpressorasPage() {
         <div className="flex flex-wrap items-center gap-3">
           <img src="/brand/LogoDoixPAmarelo.png" alt="Servidor DoixP" className="h-11 w-11 shrink-0 rounded-xl object-contain" />
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.19</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.20</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
           {INSTALADORES.map((item) => (
@@ -375,7 +375,7 @@ export function ImpressorasPage() {
             <p className="mt-1 text-sm text-slate-500">
               A ativação fica no aplicativo Servidor DoixP, no mesmo aparelho das impressoras. No Windows e Linux,
               ative a leitura de cartões, configure o prefixo do leitor USB e clique em Salvar e conectar.
-              No Android, use Abrir DoixP e usar cartões NFC no Servidor para atender e ler o cartão no mesmo celular.
+              No Android, atenda pela DoixP web. Use a leitura NFC do navegador ou Ler cartão neste celular para abrir somente o leitor e voltar ao pedido.
               Entre na mesma conta do pareamento. O Android pausa o leitor quando você troca para outro aplicativo.
             </p>
             <p className="mt-2 text-sm text-slate-500">
