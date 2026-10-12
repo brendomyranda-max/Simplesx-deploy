@@ -88,7 +88,7 @@ npm run server
 ```
 
 Em outro terminal, execute `npm run dev` e abra `http://localhost:5173`.
-O cadastro pelo acesso tem taxa única de R$ 50,00 e está aguardando a configuração
+O cadastro pelo acesso tem taxa única de R$ 150,00 e está aguardando a configuração
 do recebimento. Para preparar um ambiente administrativamente, use a CLI descrita
 em **Criar um estabelecimento**. A instalação começa sem usuários, senhas
 ou dados de clientes. O `.env.example` contém somente chaves públicas de teste
@@ -161,16 +161,20 @@ O token completo nunca pode ser listado porque apenas seu hash é armazenado.
 Apagar um token encerra as sessões, mas preserva os dados do estabelecimento.
 Renovar substitui o token, encerra as sessões e também preserva todos os dados.
 
-## NFC-e multiempresa
+## Notas fiscais — Em breve
+
+O módulo aparece como **Em breve** e permanece indisponível. As rotas fiscais e
+a emissão manual estão bloqueadas, e a emissão automática está desligada, mesmo
+se houver configurações antigas ativas. As vendas e os comprovantes comuns
+continuam funcionando. Os dados fiscais existentes são preservados.
 
 O módulo **NFC-e** usa o mesmo isolamento por `estabelecimento_id` dos tokens.
 Cada estabelecimento mantém configuração do emitente, série, numeração, regras
 tributárias dos produtos, documentos e eventos próprios dentro do D1.
 
-Para testar, selecione o provedor `simulador`, ambiente `homologacao`, complete
-os dados do emitente e o cadastro fiscal dos produtos. O documento resultante é
-marcado como simulado e não tem validade fiscal. Produção permanece bloqueada
-até que um adaptador de provedor e suas credenciais sejam configurados no Worker.
+A implementação preservada usa o provedor `simulador` em `homologacao`, sem
+validade fiscal. A liberação futura exige reativar a disponibilidade do módulo;
+produção também exige um adaptador de provedor e suas credenciais no Worker.
 
 Antes do deploy, aplique a migration fiscal:
 

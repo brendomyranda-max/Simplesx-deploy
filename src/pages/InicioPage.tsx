@@ -47,7 +47,7 @@ const AREAS: AreaCard[] = [
   {
     key: 'vendas',
     titulo: 'Vendas',
-    descricao: 'PDV, histórico de vendas, NFC-e e atendimento do restaurante.',
+    descricao: 'PDV, histórico de vendas e atendimento do restaurante. Notas fiscais em breve.',
     icon: <ScanBarcode className="h-7 w-7" />,
     to: '/pdv',
     corIcone: 'text-emerald-600 bg-emerald-50',

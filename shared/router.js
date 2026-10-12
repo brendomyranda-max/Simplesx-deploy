@@ -325,6 +325,9 @@ export async function handle(c, env) {
       env = { ...env, rawDB: env.DB, DB: new TenantDb(env.DB, user.estabelecimento_id), estabelecimentoId: user.estabelecimento_id };
     }
     try {
+      if (!fiscal.FISCAL_DISPONIVEL && (route.p.startsWith('/api/fiscal/') || route.p==='/api/vendas/:id/nfce')) {
+        return fiscal.fiscalEmBreveHandler(c);
+      }
       return await route.h(c, env);
     } catch (e) {
       const status = e && e.status ? e.status : 500;

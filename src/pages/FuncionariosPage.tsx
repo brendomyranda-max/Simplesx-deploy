@@ -14,7 +14,7 @@ const PERFIS = ['caixa', 'garcom', 'gerente', 'cozinha', 'admin'];
 
 const AREAS_ACESSO = [
   { key: 'tudo', label: 'Tudo', desc: 'Todas as áreas do sistema' },
-  { key: 'vendas', label: 'Vendas', desc: 'PDV, vendas, NFC-e e restaurante' },
+  { key: 'vendas', label: 'Vendas', desc: 'PDV, vendas e restaurante. Notas fiscais em breve.' },
   { key: 'gestao', label: 'Gestão', desc: 'Financeiro, caixa e perdas' },
   { key: 'estoque', label: 'Estoque', desc: 'Produtos, entradas, categorias e validades' },
   { key: 'configuracoes', label: 'Configurações', desc: 'Funcionários, impressoras e empresa' },

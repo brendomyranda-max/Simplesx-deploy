@@ -5,6 +5,13 @@
 
 import { estabelecimentoId, httpError, now, num } from './util.js';
 
+export const FISCAL_DISPONIVEL = false;
+const MENSAGEM_EM_BREVE = 'Notas fiscais estarão disponíveis em breve. A emissão ainda não está liberada.';
+
+export function fiscalEmBreveHandler(c) {
+  return c.json({ error:MENSAGEM_EM_BREVE, code:'FISCAL_EM_BREVE', disponivel:false },501);
+}
+
 const soDigitos = (v) => String(v || '').replace(/\D/g, '');
 const dinheiro = (v) => Math.round((num(v) + Number.EPSILON) * 100) / 100;
 const texto = (v) => String(v ?? '').trim();
@@ -151,6 +158,10 @@ export async function putProdutoFiscalHandler(c, env) {
 }
 
 export async function emitirNfceVenda(env, vendaId, { automatico = false } = {}) {
+  if (!FISCAL_DISPONIVEL) {
+    if (automatico) return null;
+    throw httpError(501,MENSAGEM_EM_BREVE);
+  }
   const existente = await env.DB.prepare('SELECT * FROM documentos_fiscais WHERE venda_id=?').bind(vendaId).first();
   if (existente) return existente;
   const config = await env.DB.prepare('SELECT * FROM fiscal_config WHERE estabelecimento_id=?').bind(estabelecimentoId(env)).first();

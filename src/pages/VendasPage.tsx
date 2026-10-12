@@ -76,17 +76,6 @@ export function VendasPage() {
     finally { setCancelamentoSaving(false); }
   };
 
-  const emitirNfce = async (v: Venda) => {
-    setDetalheLoad(true);
-    try {
-      const doc = await vendaApi.emitirNfce(v.id);
-      toast('success', doc.status === 'simulada' ? `NFC-e ${doc.serie}/${doc.numero} simulada` : `NFC-e ${doc.serie}/${doc.numero} emitida`);
-      setDetalhe(null);
-      navigate('/fiscal');
-    } catch (e: any) { toast('error', e?.error || 'Não foi possível emitir a NFC-e'); }
-    finally { setDetalheLoad(false); }
-  };
-
   const filtradas = busca
     ? vendas.filter((v) => v.numero.toLowerCase().includes(busca.toLowerCase()) || (v.responsavel || '').toLowerCase().includes(busca.toLowerCase()))
     : vendas;
@@ -255,8 +244,8 @@ export function VendasPage() {
 
                 {['concluida', 'aguardando_fechamento'].includes(detalhe.status) && (
                   <div className="flex justify-end gap-2">
-                    <Button icon={<FileCheck2 className="h-4 w-4" />} onClick={() => emitirNfce(detalhe)}>
-                      Emitir NFC-e
+                    <Button disabled variant="secondary" icon={<FileCheck2 className="h-4 w-4" />}>
+                      Nota fiscal · Em breve
                     </Button>
                     {detalhe.tipo === 'pdv' && (
                       <Button variant="secondary" icon={<RotateCcw className="h-4 w-4" />} onClick={() => navigate(`/pdv?reabrir=${detalhe.id}`)}>

@@ -18,12 +18,13 @@ test('cadastro público bloqueia conta gratuita e dados de pagamento forjados, i
   t.after(() => DB.close());
   const env = { DB, TURNSTILE_SECRET_KEY: 'teste' };
   // Nem um formulário antigo nem declarações de pagamento do navegador liberam acesso.
-  const requests = [body, { ...body, pago: true, status: 'PAID', valor: 50 }, { ...body, valor_centavos: 0 }, {}];
+  const requests = [body, { ...body, pago: true, status: 'PAID', valor: 150 }, { ...body, valor_centavos: 0 }, {}];
   const responses = await Promise.all(requests.map((data) => handle(context(data), env)));
   for (const result of responses) {
     assert.equal(result.status, 402);
     assert.equal(result.data.code, 'PAGAMENTO_CADASTRO_INDISPONIVEL');
-    assert.equal(result.data.cadastro.valor_centavos, 5000);
+    assert.equal(result.data.cadastro.valor_centavos, 15000);
+    assert.match(result.data.error,/R\$ 150,00/);
     assert.equal(result.data.cadastro.pagamento_disponivel, false);
     assert.equal(result.headers['set-cookie'], undefined);
   }
@@ -32,14 +33,14 @@ test('cadastro público bloqueia conta gratuita e dados de pagamento forjados, i
   }
 });
 
-test('condições públicas informam taxa única de R$ 50 sem expor credenciais', async () => {
+test('condições públicas informam taxa única de R$ 150 sem expor credenciais', async () => {
   const result = await authConfigHandler(context(), {
     TURNSTILE_SITE_KEY: 'site-publico', TURNSTILE_SECRET_KEY: 'segredo', PAGBANK_API_TOKEN: 'segredo-pagamento',
   });
   assert.equal(result.status, 200);
   assert.deepEqual(result.data, {
     turnstile_site_key: 'site-publico',
-    cadastro: { valor_centavos: 5000, moeda: 'BRL', periodicidade: 'unico', pagamento_disponivel: false },
+    cadastro: { valor_centavos: 15000, moeda: 'BRL', periodicidade: 'unico', pagamento_disponivel: false },
   });
 });
 
