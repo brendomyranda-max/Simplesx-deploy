@@ -47,6 +47,30 @@ sem preencher `baixada_em`. As vendas anteriores permanecem visíveis para
 conferência, inclusive ao consultar a comanda já encerrada. Não se trata de
 estorno nem de regularização financeira automática.
 
+Se uma comanda antiga ainda aberta receber **novos pedidos depois de todas as
+vendas anteriores**, ela pode fechar normalmente cobrando somente esses pedidos
+ativos. A API compara as datas de criação de todos os itens e vendas e revalida
+os conjuntos na transação; datas ausentes ou itens anteriores mantêm o bloqueio
+contra cobrança duplicada. Vendas antigas, seus pagamentos e suas movimentações
+não são refeitos nem estornados. O aviso e a confirmação esclarecem que o
+histórico financeiro anterior continua pendente de conferência. O atalho NFC
+de fechamento também respeita o fluxo de liberação de mesa vazia.
+
+**Cancelar tudo e liberar mesa** é uma opção exclusiva do Gestor para encerrar
+comandas abertas ou pré-fechadas sem cobrança. Exige motivo e confirmação;
+marca pedidos ativos como cancelados, preserva perdas existentes e registra
+o estado anterior, responsável e vendas vinculadas na auditoria. Cancelamentos
+fora da tolerância seguem a regra de registro de perda sem nova movimentação;
+itens que possam ter sido vendidos antes não recebem outra perda. Vendas,
+pagamentos, caixa e estoque não são estornados nem apagados. O encerramento
+fica identificado por `fechamento_tipo=cancelada`, sem `baixada_em`.
+
+O cancelamento é atômico e idempotente: uma confirmação desatualizada, fechamento
+em andamento, outra comanda ativa na mesa ou pagamentos individuais pendentes
+impedem a operação inteira. Repetir a mesma solicitação após timeout não repete
+cancelamentos nem perdas. Aplique somente `0038_cancelamentos_comanda.sql`
+antes de publicar essa opção; a migração cria apenas a tabela de auditoria.
+
 Erros de fechamento encerram o diálogo e liberam os controles da tela. A ação
 **Voltar às mesas** permite navegar mesmo enquanto uma confirmação está pendente;
 sair da tela não cancela uma solicitação que já chegou ao servidor. Os avisos

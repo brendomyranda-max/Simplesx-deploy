@@ -32,7 +32,7 @@ export async function transferirParaPagamentos(env, com, taxaPct, b) {
   const novaId = '(SELECT MAX(id) FROM comandas)';
   const pessoasNumeradas = `(SELECT id,ROW_NUMBER() OVER (ORDER BY id)-1 AS indice
     FROM comanda_pessoas WHERE comanda_id=${novaId})`;
-  const statements = [];
+  const statements = [...(env.fechamentoValidacoes || [])];
   if (env.fechamentoReserva) statements.push(env.DB.prepare(`SELECT CASE WHEN EXISTS
     (SELECT 1 FROM comandas WHERE id=? AND status='aberta' AND fechamento_bloqueado_ate=?)
     THEN 1 ELSE abs(-9223372036854775808) END`).bind(com.id, env.fechamentoReserva));

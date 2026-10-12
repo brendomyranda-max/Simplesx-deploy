@@ -69,7 +69,7 @@ export async function criarVendaRestaurante(env, o, concluir = []) {
   // O lote é uma transação: nenhuma venda de outra requisição se intercala.
   // MAX(id) sempre identifica a venda que a primeira gravação acabou de criar.
   const vendaId = '(SELECT MAX(id) FROM vendas)';
-  const statements = [];
+  const statements = [...(env.fechamentoValidacoes || [])];
   if (env.fechamentoReserva) {
     // SQLite só permite RAISE em triggers. Um erro deliberado de overflow
     // aborta o batch inteiro se a reserva de fechamento tiver sido perdida.

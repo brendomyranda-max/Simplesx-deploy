@@ -11,6 +11,7 @@ const TABELAS = [
   'estoque_movimentacoes', 'lotes', 'validade_controles', 'mesas', 'comandas',
   'comanda_pessoas', 'comanda_itens', 'vendas', 'venda_itens', 'pagamentos',
   'comanda_item_transferencias', 'comanda_mesa_transferencias',
+  'comanda_cancelamentos',
   'comanda_lancamentos', 'pedido_impressoes',
   'lojas_online', 'lojas_categorias', 'cardapio_online_categorias', 'cardapio_online_produtos', 'cardapio_online_opcoes',
   'pedidos_online', 'pedidos_online_itens',

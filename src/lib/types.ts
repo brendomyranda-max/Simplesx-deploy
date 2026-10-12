@@ -407,7 +407,8 @@ export interface Comanda {
   individual_valores?: string | null;
   transfer_comanda_id?: number | null;
   transfer_comanda_status?: string | null;
-  vendas_anteriores?: { id: number; numero: string; total: number }[];
+  vendas_anteriores?: { id: number; numero: string; total: number; criado_em: string }[];
+  pode_fechar_pedidos_novos?: boolean;
 }
 
 export interface ComandaPessoa {

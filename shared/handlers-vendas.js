@@ -30,6 +30,7 @@ import { saveOrderItems } from './restaurant-orders.js';
 import { dispatchOrders } from './order-printing.js';
 import { criarVendaRestaurante } from './restaurant-sale.js';
 import { transferirParaPagamentos } from './restaurant-payments.js';
+import { somentePedidosPosteriores, validarHistoricoFechamento } from './restaurant-close-history.js';
 
 // ============================ VALIDADE ============================
 
@@ -682,9 +683,11 @@ async function getComandaFull(env, id) {
   )
     .bind(id)
     .first();
-  const vendasAnteriores = (['aberta', 'pre_fechamento'].includes(c.status) || c.fechamento_tipo === 'sem_consumo') && !c.comanda_origem_id
-    ? (await env.DB.prepare("SELECT id,numero,total FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(id).all()).results
+  const vendasRegistradas = !c.comanda_origem_id
+    ? (await env.DB.prepare("SELECT id,numero,total,criado_em FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(id).all()).results
     : [];
+  const ativa = ['aberta', 'pre_fechamento'].includes(c.status);
+  const vendasAnteriores = ativa || ['sem_consumo','cancelada','individual'].includes(c.fechamento_tipo) ? vendasRegistradas : vendasRegistradas.slice(0, -1);
   return {
     ...c,
     mesa: mesa || null,
@@ -694,6 +697,7 @@ async function getComandaFull(env, id) {
     transfer_comanda_id: transfer?.id ?? null,
     transfer_comanda_status: transfer?.status ?? null,
     vendas_anteriores: vendasAnteriores,
+    pode_fechar_pedidos_novos: ativa && somentePedidosPosteriores(ativos, vendasAnteriores),
   };
 }
 
@@ -842,7 +846,7 @@ async function fecharComandaReservada(c, env) {
     .first();
   if (!com) return c.json({ error: 'Comanda não encontrada' }, 404);
   if (com.comanda_origem_id) return c.json({ error: 'Esta conta usa pagamentos individuais. Baixe cada pessoa na tela Pagamentos Individuais.' }, 409);
-  const anteriores = (await env.DB.prepare("SELECT id FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(com.id).all()).results;
+  const anteriores = (await env.DB.prepare("SELECT id,criado_em FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(com.id).all()).results;
   const itens = await env.DB.prepare(
     "SELECT * FROM comanda_itens WHERE comanda_id=? AND status!='cancelado'"
   )
@@ -882,7 +886,10 @@ async function fecharComandaReservada(c, env) {
   }
 
   if (b.liberar_vazia === true) return c.json({ error: 'A mesa recebeu produtos. Confira os pedidos antes de fechar a conta.' }, 409);
-  if (anteriores.length) return c.json({ error: `A comanda ${com.id} já possui a venda #${anteriores[0].id}, mas não consta como fechada. Isso exige conferência do histórico, não é um fechamento em andamento. Não repita a baixa para evitar duplicar a cobrança e o estoque.` }, 409);
+  if (anteriores.length) {
+    if (!somentePedidosPosteriores(itens.results, anteriores)) return c.json({ error: `A comanda ${com.id} já possui a venda #${anteriores[0].id} e contém produtos que podem ter sido cobrados antes. Isso exige conferência do histórico, não é um fechamento em andamento. Uma nova baixa só é permitida quando todos os pedidos ativos foram lançados depois da última venda.`, code: 'ITENS_COM_VENDA_ANTERIOR' }, 409);
+    env = { ...env, fechamentoValidacoes: [validarHistoricoFechamento(env, com.id, itens.results, anteriores)] };
+  }
 
   const taxaPct = b.taxa_garcom_pct !== undefined ? num(b.taxa_garcom_pct) : num(com.taxa_garcom_pct);
   if (!Number.isFinite(taxaPct) || taxaPct < 0 || taxaPct > 100) {
@@ -910,11 +917,17 @@ async function fecharComandaReservada(c, env) {
   // Pré-fechamento (1ª etapa): imprime a conta e bloqueia novos pedidos,
   // mas NÃO baixa no sistema. A mesa continua reservada e dá para reabrir.
   if (com.status === 'aberta' && b.pre_fechar === true) {
-    await env.DB.prepare(
+    const preFechamento = env.DB.prepare(
       "UPDATE comandas SET status='pre_fechamento', fechamento_tipo=?, taxa_garcom_pct=?, pre_fechamento_em=? WHERE id=?"
     )
-      .bind(tipo, taxaPct, now(), com.id)
-      .run();
+      .bind(tipo, taxaPct, now(), com.id);
+    if (env.fechamentoValidacoes?.length) {
+      try { await env.DB.batch([...env.fechamentoValidacoes, preFechamento]); }
+      catch (error) {
+        if (/integer overflow/i.test(error.message)) return c.json({ error: 'Os pedidos ou o histórico de vendas mudaram. Atualize a comanda antes de fechar.' }, 409);
+        throw error;
+      }
+    } else await preFechamento.run();
     const subtotal = itens.results.reduce((s, i) => s + num(i.quantidade) * num(i.preco_unitario), 0);
     return c.json({
       ok: true,

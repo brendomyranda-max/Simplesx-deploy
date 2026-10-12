@@ -27,6 +27,7 @@ import { TransferItemModal } from '@/components/TransferItemModal';
 import { TransferTableModal } from '@/components/TransferTableModal';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Toggle, useConfirm, useToast } from '@/components/ui';
 import { comandaApi, produtoApi, impressoraApi, configApi, categoriaApi, authApi, retryOrder, type OrderSubmission, type TableTransferSubmission } from '@/lib/api';
+import { useAuth } from '@/store/auth';
 import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
@@ -42,6 +43,7 @@ export function ComandaPage() {
   const fecharAutomatico = useRef(searchParams.get('fechar') === '1');
   const toast = useToast();
   const confirm = useConfirm();
+  const podeGerenciar = useAuth((s) => s.can('gestor'));
 
   const [comanda, setComanda] = useState<Comanda | null>(null);
   const [load, setLoad] = useState(true);
@@ -57,6 +59,9 @@ export function ComandaPage() {
   const [fechar, setFechar] = useState(false);
   const [baixar, setBaixar] = useState(false);
   const [liberarVazia, setLiberarVazia] = useState(false);
+  const [cancelamento, setCancelamento] = useState<{ comandaId: number; chave: string; itens: ComandaItem[] } | null>(null);
+  const [motivoCancelamento, setMotivoCancelamento] = useState('Cancelamento total solicitado pelo gestor');
+  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [tipo, setTipo] = useState<'unica' | 'divisao' | 'individual'>('unica');
   const [taxaEditada, setTaxaEditada] = useState<EdicaoTaxaServico | null>(null);
   const taxa = taxaServicoAtual(comandaId, comanda?.taxa_garcom_pct, taxaEditada);
@@ -114,7 +119,7 @@ export function ComandaPage() {
   useEffect(() => {
     setTaxaEditada(null);
     setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setTransferenciaMesa(null); setArrastando(null);
-    setFechar(false); setBaixar(false); setLiberarVazia(false);
+    setFechar(false); setBaixar(false); setLiberarVazia(false); setCancelamento(null);
     loadComanda();
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
       setProdutos(ps); setCategorias(cs);
@@ -125,11 +130,6 @@ export function ComandaPage() {
   }, [comandaId]);
 
   useEffect(() => { authApi.me().then((user) => setActorId(user.id)).catch(() => {}); }, []);
-  useEffect(() => {
-    if (!comanda || !fecharAutomatico.current) return;
-    fecharAutomatico.current = false;
-    setFechar(true);
-  }, [comanda]);
   useEffect(() => {
     if (!storageKey) return;
     try {
@@ -148,6 +148,10 @@ export function ComandaPage() {
     !['aberta', 'pre_fechamento'].includes(comanda?.transfer_comanda_status || '') &&
     ['aberta', 'pre_fechamento'].includes(comanda?.status || '');
   const vendasAnteriores = comanda?.vendas_anteriores || [];
+  const podeCancelarTudo = podeGerenciar && !comanda?.comanda_origem_id &&
+    ['aberta','pre_fechamento'].includes(comanda?.status || '') &&
+    ['normal','cartao'].includes(comanda?.mesa?.tipo || 'normal') &&
+    !['aberta','pre_fechamento'].includes(comanda?.transfer_comanda_status || '');
   const podeTransferir = (item: ComandaItem) => !locked && !transferindo && ['novo', 'enviado', 'entregue'].includes(item.status);
 
   const transferirItem = async (item: ComandaItem, mesaId: number, destinoId: number | null, pessoaId: number | null) => {
@@ -487,6 +491,7 @@ export function ComandaPage() {
   }, [fechar, taxa, comandaId]);
 
   const abrirFechamento = () => {
+    if (!comanda || comanda.status === 'fechada') return;
     if (transferenciaRef.current || finalizandoRef.current) return;
     if (adicionandoRef.current || pendingRef.current || enviandoRef.current) {
       toast('info', 'Aguarde a confirmação do pedido e do envio antes de fechar a conta.');
@@ -496,6 +501,13 @@ export function ComandaPage() {
     iniciaValores();
     setFechar(true);
   };
+
+  useEffect(() => {
+    if (!comanda || !fecharAutomatico.current) return;
+    fecharAutomatico.current = false;
+    // O atalho NFC usa o mesmo fluxo dos botões, inclusive para mesa vazia.
+    abrirFechamento();
+  }, [comanda]);
 
   const totalAplicado = Object.values(valoresIndiv).reduce((s, v) => s + (Number(v) || 0), 0);
   const dif = totalComTaxa - totalAplicado;
@@ -527,6 +539,34 @@ export function ComandaPage() {
       navigate('/restaurante');
     } catch (err: any) {
       falhaFechamento(err, 'Não foi possível liberar a mesa vazia');
+    } finally { finalizandoRef.current = false; setFinalizando(false); }
+  };
+
+  const abrirCancelamento = () => {
+    if (!comanda || !podeCancelarTudo || finalizandoRef.current || transferenciaRef.current) return;
+    if (adicionandoRef.current || pendingRef.current || enviandoRef.current) {
+      toast('info', 'Aguarde a confirmação dos pedidos antes de cancelar a comanda.'); return;
+    }
+    setFechar(false); setBaixar(false); setLiberarVazia(false);
+    setCancelamento({ comandaId, chave: crypto.randomUUID(), itens: [...ativos] });
+    setMotivoCancelamento('Cancelamento total solicitado pelo gestor');
+    setConfirmarCancelamento(false);
+  };
+
+  const cancelarTudo = async () => {
+    if (!cancelamento || !confirmarCancelamento || motivoCancelamento.trim().length < 3 || !iniciarFechamento()) return;
+    try {
+      const r = await comandaApi.cancelar(cancelamento.comandaId, {
+        chave: cancelamento.chave, confirmar: true, motivo: motivoCancelamento.trim(),
+        itens: cancelamento.itens.map(({ id, versao }) => ({ id, versao })),
+      });
+      setCancelamento(null);
+      toast('success', r.vendas_anteriores.length ? 'Pedidos cancelados e mesa liberada. Vendas antigas preservadas, sem estorno.' : 'Pedidos cancelados e mesa liberada, sem cobrança.');
+      navigate('/restaurante');
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível cancelar a comanda');
+      if (err?.status >= 400 && err?.status < 500) setCancelamento(null);
+      void loadComanda();
     } finally { finalizandoRef.current = false; setFinalizando(false); }
   };
 
@@ -657,6 +697,17 @@ export function ComandaPage() {
     ativos.filter((i) => (pessoaId === null ? i.pessoa_id === null : i.pessoa_id === pessoaId));
 
   const preFechada = comanda.status === 'pre_fechamento';
+  const avisoHistorico = comanda.status === 'fechada'
+    ? comanda.fechamento_tipo === 'cancelada'
+      ? 'Os pedidos foram cancelados e a mesa foi liberada, sem estornar as vendas anteriores. O histórico financeiro continua pendente de conferência.'
+      : comanda.fechamento_tipo === 'sem_consumo'
+        ? 'A ocupação da mesa foi encerrada sem nova baixa. As vendas anteriores continuam no histórico para conferência.'
+        : 'A conta atual foi baixada e a mesa foi liberada. As vendas anteriores continuam no histórico para conferência.'
+    : mesaVazia
+      ? 'Como não há produtos ativos, você pode liberar apenas a mesa, preservando os registros anteriores.'
+      : comanda.pode_fechar_pedidos_novos
+        ? 'Os produtos ativos foram lançados depois da última venda. Você pode fechar a conta normalmente: somente esses novos pedidos serão cobrados, sem repetir as vendas antigas.'
+        : 'Uma nova baixa está bloqueada: há produtos que podem ter sido cobrados antes. O histórico precisa de conferência para evitar cobrança e estoque duplicados.';
 
   return (
     <AnimatedPage>
@@ -705,6 +756,7 @@ export function ComandaPage() {
               Baixar conta
             </Button>
           ) : null}
+          {podeCancelarTudo && <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} disabled={finalizando || transferindo || adicionando || enviandoCozinha || !!pendente} onClick={abrirCancelamento}>Cancelar tudo e liberar mesa</Button>}
         </div>
       </div>
 
@@ -716,9 +768,11 @@ export function ComandaPage() {
       {vendasAnteriores.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <p className="font-semibold">Comanda nº {comanda.id}: vendas {vendasAnteriores.map((v) => `#${v.id}`).join(', ')} já registradas.</p>
         <p className="mt-1">Esses números são de vendas, não de comandas. O histórico precisa de conferência; isso não significa que há um fechamento em andamento.</p>
-        <p className="mt-1">{comanda.status === 'fechada' ? 'A ocupação da mesa foi encerrada sem nova baixa. As vendas anteriores continuam no histórico para conferência.' : mesaVazia ? 'Como não há produtos ativos, você pode liberar apenas a mesa, preservando os registros anteriores.' : 'Uma nova baixa está bloqueada para evitar duplicar a cobrança e o estoque.'}</p>
+        <p className="mt-1">{avisoHistorico}</p>
         <Button variant="ghost" size="sm" className="mt-2" onClick={() => navigate('/restaurante')}>Voltar às mesas</Button>
       </div>}
+
+      {comanda.status === 'fechada' && comanda.fechamento_tipo === 'cancelada' && <div role="status" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Comanda cancelada pelo Gestor. A mesa foi liberada sem nova cobrança. Os pedidos continuam no histórico como cancelados.</div>}
 
       {preFechada && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-50 px-4 py-3">
@@ -1000,6 +1054,7 @@ export function ComandaPage() {
                 Baixar conta
               </Button>
             ) : null}
+            {podeCancelarTudo && <Button variant="danger" className="mt-2 w-full" icon={<Trash2 className="h-4 w-4" />} disabled={finalizando || transferindo || adicionando || enviandoCozinha || !!pendente} onClick={abrirCancelamento}>Cancelar tudo e liberar mesa</Button>}
           </Card>
         </div>
       </div>
@@ -1017,6 +1072,25 @@ export function ComandaPage() {
         onClose={() => setTransferencia(null)} onTransfer={transferirItem} />}
       {transferenciaMesa && <TransferTableModal source={transferenciaMesa} busy={transferindo} onClose={() => setTransferenciaMesa(null)} onTransfer={transferirMesa} />}
 
+      <Modal open={!!cancelamento} onClose={() => { if (!finalizandoRef.current) setCancelamento(null); }} title="Cancelar tudo e liberar mesa">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-700">Isso encerra a comanda nº {cancelamento?.comandaId} e cancela todos os seus pedidos ativos. A mesa ficará livre, sem nova cobrança ou movimentação de estoque.</p>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">Use somente se deseja cancelar os pedidos, não para registrar um pagamento recebido. Vendas e pagamentos já registrados não serão apagados, cancelados ou estornados. Perdas anteriores e o histórico dos pedidos serão preservados.</div>
+          <Field label="Motivo do cancelamento">
+            <Input aria-label="Motivo do cancelamento total" value={motivoCancelamento} maxLength={300} disabled={finalizando} onChange={(e) => setMotivoCancelamento(e.target.value)} />
+          </Field>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" aria-label="Confirmo cancelar os pedidos sem estornar vendas" className="mt-1" checked={confirmarCancelamento} disabled={finalizando} onChange={(e) => setConfirmarCancelamento(e.target.checked)} />
+            <span>Confirmo cancelar os pedidos e liberar a mesa, sem estornar vendas antigas.</span>
+          </label>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => navigate('/restaurante')}>Voltar às mesas</Button>
+            <Button variant="secondary" disabled={finalizando} onClick={() => setCancelamento(null)}>Manter comanda</Button>
+            <Button variant="danger" loading={finalizando} disabled={!confirmarCancelamento || motivoCancelamento.trim().length < 3} onClick={cancelarTudo}>Confirmar cancelamento</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={liberarVazia} onClose={() => { if (!finalizandoRef.current) setLiberarVazia(false); }} title="Liberar mesa vazia">
         <div className="space-y-4">
           <p className="text-sm text-slate-700">A comanda nº {comanda.id} não tem produtos ativos. Esta ação encerra somente a ocupação e deixa a mesa disponível novamente.</p>
@@ -1033,6 +1107,9 @@ export function ComandaPage() {
       {/* Fechamento */}
       <Modal open={fechar} onClose={() => { if (!finalizandoRef.current) setFechar(false); }} title="Fechamento da comanda" width="max-w-2xl">
         <div className="space-y-4">
+          {comanda.pode_fechar_pedidos_novos && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Esta baixa inclui somente os novos pedidos listados abaixo. As vendas anteriores {vendasAnteriores.map((v) => `#${v.id}`).join(', ')} ficam preservadas e não serão cobradas novamente. A conferência do histórico continua pendente.
+          </div>}
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">1. Tipo de pagamento</p>
             <div className="grid grid-cols-3 gap-2">
@@ -1193,6 +1270,7 @@ export function ComandaPage() {
       {/* Baixar conta pré-fechada */}
       <Modal open={baixar} onClose={() => { if (!finalizandoRef.current) setBaixar(false); }} title="Baixar conta paga" width="max-w-md">
         <div className="space-y-4">
+          {comanda.pode_fechar_pedidos_novos && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Somente os novos pedidos serão baixados. As vendas antigas não serão cobradas novamente e continuam preservadas para conferência.</p>}
           <div className="rounded-xl bg-slate-50 p-3 text-center">
             <p className="text-xs text-slate-400">Total da conta</p>
             <p className="text-2xl font-extrabold text-brand-600">{fmtBRL(totalComTaxa)}</p>

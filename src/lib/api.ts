@@ -54,6 +54,13 @@ export interface TableTransferSubmission {
   itens: { id: number; versao: number }[];
 }
 
+export interface CommandCancellation {
+  chave: string;
+  confirmar: true;
+  motivo: string;
+  itens: { id: number; versao: number }[];
+}
+
 // Somente operações protegidas no servidor podem repetir automaticamente.
 export async function retryOrder<T>(send: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
@@ -295,6 +302,8 @@ export const comandaApi = {
   fechar: (id: number, b: { tipo: 'unica' | 'divisao' | 'individual'; taxa_garcom_pct?: number; forma?: string; pagamentos?: { forma: string; valor: number }[]; responsavel?: string; pessoas_valores?: { pessoa_id: number | null; valor: number }[]; pre_fechar?: boolean; liberar_vazia?: boolean }) =>
     api.post<{ ok: boolean; comanda_id: number; vendas: { id: number; numero: string; total: number }[]; total: number; pre_fechamento?: boolean; comanda_pagamentos_id?: number; pessoas?: number; mensagem?: string; mesa_liberada?: boolean; vendas_anteriores?: number[] }>(`/comandas/${id}/fechar`, b),
   reabrir: (id: number) => api.post<{ ok: boolean }>(`/comandas/${id}/reabrir`),
+  cancelar: (id: number, b: CommandCancellation) => retryOrder(() =>
+    api.post<{ ok: boolean; comanda_id: number; mesa_liberada: boolean; itens_cancelados: number; vendas_anteriores: number[]; repetido: boolean }>(`/comandas/${id}/cancelar`, b)),
   baixarPessoa: (id: number, b: { pessoa_id: number; forma?: string; responsavel?: string }) =>
     api.post<{ ok: boolean; venda: { id: number; numero: string; total: number }; fechou: boolean; comanda: Comanda }>(`/comandas/${id}/baixar-pessoa`, b),
 };
