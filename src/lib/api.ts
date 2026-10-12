@@ -46,6 +46,14 @@ export interface OrderSubmission {
   itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string; acrescimos?: number[] }[];
 }
 
+export interface TableTransferSubmission {
+  chave: string;
+  mesa_destino_id: number;
+  comanda_destino_id: number | null;
+  liberar_origem: boolean;
+  itens: { id: number; versao: number }[];
+}
+
 // Somente operações protegidas no servidor podem repetir automaticamente.
 export async function retryOrder<T>(send: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
@@ -280,6 +288,8 @@ export const comandaApi = {
     api.put<Comanda['itens'][0]>(`/comandas/${id}/itens/${itemId}`, b),
   transferirItem: (id: number, itemId: number, b: { mesa_destino_id: number; comanda_destino_id: number | null; pessoa_destino_id: number | null; versao: number }) =>
     api.post<{ ok: boolean; transferencia_id: string; comanda_destino_id: number; abriu_comanda: number }>(`/comandas/${id}/itens/${itemId}/transferir`, b),
+  transferirMesa: (id: number, b: TableTransferSubmission) => retryOrder(() =>
+    api.post<{ ok: boolean; transferencia_id: string; comanda_destino_id: number; abriu_comanda: number; liberou_origem: number; itens_count: number; repetido: boolean }>(`/comandas/${id}/transferir-mesa`, b)),
   itemStatus: (id: number, itemId: number, status: string, responsavel?: string) =>
     api.post<{ ok: boolean }>(`/comandas/${id}/itens/${itemId}/status`, { status, responsavel }),
   fechar: (id: number, b: { tipo: 'unica' | 'divisao' | 'individual'; taxa_garcom_pct?: number; forma?: string; pagamentos?: { forma: string; valor: number }[]; responsavel?: string; pessoas_valores?: { pessoa_id: number | null; valor: number }[]; pre_fechar?: boolean }) =>

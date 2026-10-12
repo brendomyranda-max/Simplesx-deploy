@@ -19,6 +19,7 @@ import {
   criarPerda,
   gerarNumeroVenda,
   httpError,
+  estabelecimentoId,
   calcularBaixasProduto,
   acrescimosDoProduto,
 } from './util.js';
@@ -568,17 +569,26 @@ export async function listMesasHandler(c, env) {
 
 export async function createMesaHandler(c, env) {
   const b = await c.req.json();
-  if (!b.numero) return c.json({ error: 'Número obrigatório' }, 400);
-  const r = await env.DB.prepare(
-    'INSERT INTO mesas (numero, nome, capacidade, setor, status, ativo, criado_em) VALUES (?,?,?,?,?,1,?)'
-  )
-    .bind(num(b.numero), b.nome || `Mesa ${b.numero}`, num(b.capacidade) || 4, b.setor || null, b.status || 'livre', now())
-    .run();
-  return c.json({ id: r.meta.last_row_id, ...b }, 201);
+  const numero = Number(b.numero);
+  const capacidade = Number(b.capacidade ?? 4);
+  if (!Number.isSafeInteger(numero) || numero <= 0 || !Number.isSafeInteger(capacidade) || capacidade < 1 || capacidade > 1000) {
+    return c.json({ error: 'Informe um número de mesa e uma capacidade válidos' }, 400);
+  }
+  // Reutiliza o número excluído, preservando o ID vinculado ao histórico.
+  const r = await env.rawDB.prepare(`INSERT INTO mesas (estabelecimento_id,numero,nome,capacidade,setor,status,ativo,criado_em)
+    VALUES (?,?,?,?,?,'livre',1,?) ON CONFLICT(estabelecimento_id,numero) DO UPDATE SET
+      nome=excluded.nome,capacidade=excluded.capacidade,setor=excluded.setor,ativo=1
+    WHERE mesas.ativo=0 AND mesas.status='livre' AND mesas.tipo='normal'
+      AND NOT EXISTS (SELECT 1 FROM comandas c WHERE c.mesa_id=mesas.id AND c.estabelecimento_id=mesas.estabelecimento_id
+        AND c.status IN ('aberta','pre_fechamento')) RETURNING *`)
+    .bind(estabelecimentoId(env), numero, b.nome || `Mesa ${numero}`, capacidade, b.setor || null, now()).first();
+  if (!r) return c.json({ error: 'Já existe uma mesa ativa com este número' }, 409);
+  return c.json(r, 201);
 }
 
 export async function updateMesaHandler(c, env) {
   const b = await c.req.json();
+  if (b.ativo === false || b.ativo === 0) return deleteMesaHandler(c, env);
   await env.DB.prepare('UPDATE mesas SET numero=?, nome=?, capacidade=?, setor=?, ativo=? WHERE id=?')
     .bind(num(b.numero), b.nome, num(b.capacidade) || 4, b.setor || null, b.ativo === false ? 0 : 1, c.params.id)
     .run();
@@ -586,7 +596,14 @@ export async function updateMesaHandler(c, env) {
 }
 
 export async function deleteMesaHandler(c, env) {
-  await env.DB.prepare('UPDATE mesas SET ativo=0 WHERE id=?').bind(c.params.id).run();
+  const mesa = await env.DB.prepare('SELECT id,ativo,tipo FROM mesas WHERE id=?').bind(c.params.id).first();
+  if (!mesa) return c.json({ error: 'Mesa não encontrada' }, 404);
+  if (mesa.tipo !== 'normal') return c.json({ error: 'Somente mesas do salão podem ser excluídas aqui' }, 400);
+  if (!mesa.ativo) return c.json({ ok: true });
+  const result = await env.rawDB.prepare(`UPDATE mesas SET ativo=0 WHERE id=? AND estabelecimento_id=? AND status='livre'
+    AND NOT EXISTS (SELECT 1 FROM comandas c WHERE c.mesa_id=mesas.id AND c.estabelecimento_id=mesas.estabelecimento_id
+      AND c.status IN ('aberta','pre_fechamento'))`).bind(mesa.id, estabelecimentoId(env)).run();
+  if (!result.meta.changes) return c.json({ error: 'Libere a mesa e finalize ou transfira sua comanda antes de excluir' }, 409);
   return c.json({ ok: true });
 }
 
@@ -595,14 +612,16 @@ export async function deleteMesaHandler(c, env) {
 export async function abrirComandaHandler(c, env) {
   const b = await c.req.json();
   const mesa = await env.DB.prepare('SELECT * FROM mesas WHERE id=?').bind(c.params.id).first();
-  if (!mesa) return c.json({ error: 'Mesa não encontrada' }, 404);
+  if (!mesa || !mesa.ativo) return c.json({ error: 'Mesa não encontrada ou excluída' }, 404);
   const ocupada = await env.DB.prepare("SELECT COUNT(*) c FROM comandas WHERE mesa_id=? AND status='aberta'")
     .bind(c.params.id)
     .first();
   if (num(ocupada.c) > 0) return c.json({ error: 'Mesa já está ocupada' }, 400);
 
   const taxa = b.taxa_garcom_pct ?? (await getConfigValue(env, 'taxa_garcom_pct', '0'));
-  const r = await env.DB.prepare(
+  let r;
+  try {
+    r = await env.DB.prepare(
     `INSERT INTO comandas (mesa_id, cliente_nome, garcom_nome, status, taxa_garcom_pct, fechamento_tipo, pessoas_count, criado_em)
      VALUES (?,?,?,?,?,?,?,?)`
   )
@@ -617,6 +636,10 @@ export async function abrirComandaHandler(c, env) {
       now()
     )
     .run();
+  } catch (error) {
+    if (String(error?.message).includes('mesa_inativa')) return c.json({ error: 'A mesa foi excluída em outra tela. Atualize a lista de mesas.' }, 409);
+    throw error;
+  }
   const comandaId = r.meta.last_row_id;
   const CORES = ['#6366f1', '#16a34a', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444'];
   const qtd = num(b.pessoas_count) || 1;

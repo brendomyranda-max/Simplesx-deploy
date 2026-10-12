@@ -12,6 +12,7 @@ import { cadastroHandler } from './signup-policy.js';
 import * as gestor from './handlers-gestor.js';
 import * as devices from './handlers-devices.js';
 import { transferirItemHandler } from './handlers-transferencias.js';
+import { transferirMesaHandler } from './restaurant-table-transfer.js';
 import { addOrderItemsHandler } from './restaurant-orders.js';
 import * as fiscal from './handlers-fiscal.js';
 import * as online from './handlers-online.js';
@@ -134,6 +135,7 @@ const routes = [
   { m: 'POST', p: '/api/comandas/:id/itens/lote', h: addOrderItemsHandler },
   { m: 'PUT', p: '/api/comandas/:id/itens/:item_id', h: ven.updateItemComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/itens/:item_id/transferir', h: transferirItemHandler },
+  { m: 'POST', p: '/api/comandas/:id/transferir-mesa', h: transferirMesaHandler, mod: 'restaurante' },
   { m: 'POST', p: '/api/comandas/:id/itens/:item_id/status', h: ven.updateItemStatusHandler },
   { m: 'POST', p: '/api/comandas/:id/fechar', h: ven.fecharComandaHandler },
   { m: 'POST', p: '/api/comandas/:id/reabrir', h: ven.reabrirComandaHandler },

@@ -24,8 +24,9 @@ import {
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestaurantCatalog } from '@/components/RestaurantCatalog';
 import { TransferItemModal } from '@/components/TransferItemModal';
+import { TransferTableModal } from '@/components/TransferTableModal';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Toggle, useConfirm, useToast } from '@/components/ui';
-import { comandaApi, produtoApi, impressoraApi, configApi, categoriaApi, authApi, retryOrder, type OrderSubmission } from '@/lib/api';
+import { comandaApi, produtoApi, impressoraApi, configApi, categoriaApi, authApi, retryOrder, type OrderSubmission, type TableTransferSubmission } from '@/lib/api';
 import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
@@ -68,6 +69,7 @@ export function ComandaPage() {
   const [editandoItem, setEditandoItem] = useState<ComandaItem | null>(null);
   const [acoesItem, setAcoesItem] = useState<ComandaItem | null>(null);
   const [transferencia, setTransferencia] = useState<{ item: ComandaItem; mode: 'pessoa' | 'mesa' } | null>(null);
+  const [transferenciaMesa, setTransferenciaMesa] = useState<Comanda | null>(null);
   const [transferindo, setTransferindo] = useState(false);
   const [arrastando, setArrastando] = useState<ComandaItem | null>(null);
   const [sobrePessoa, setSobrePessoa] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export function ComandaPage() {
 
   useEffect(() => {
     setTaxaEditada(null);
-    setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setArrastando(null);
+    setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setTransferenciaMesa(null); setArrastando(null);
     loadComanda();
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
       setProdutos(ps); setCategorias(cs);
@@ -161,6 +163,30 @@ export function ComandaPage() {
     } finally { transferenciaRef.current = false; setTransferindo(false); }
   };
 
+  const abrirTransferenciaMesa = () => {
+    if (!comanda || locked || transferenciaRef.current || finalizandoRef.current) return;
+    if (adicionandoRef.current || enviandoRef.current || pendingRef.current) {
+      toast('info', 'Aguarde a confirmação dos pedidos e do envio antes de transferir.'); return;
+    }
+    setTransferenciaMesa(comanda);
+  };
+
+  const transferirMesa = async (body: TableTransferSubmission) => {
+    if (transferenciaRef.current || finalizandoRef.current || adicionandoRef.current || enviandoRef.current || pendingRef.current) return false;
+    transferenciaRef.current = true; setTransferindo(true);
+    try {
+      const result = await comandaApi.transferirMesa(comandaId, body);
+      setTransferenciaMesa(null);
+      toast('success', `${result.itens_count} pedidos transferidos.${result.liberou_origem ? ' Mesa de origem liberada.' : ' A mesa de origem continua aberta.'}`);
+      navigate(`/restaurante/comanda/${result.comanda_destino_id}`);
+      return true;
+    } catch (e: any) {
+      toast('error', e?.error || 'Não foi possível confirmar a transferência');
+      if (e?.status > 0 && e.status < 500) { setTransferenciaMesa(null); await loadComanda(); }
+      return false;
+    } finally { transferenciaRef.current = false; setTransferindo(false); }
+  };
+
   const destinoPessoa = (pessoaId: number | null) => ({
     onDragOver: (e: React.DragEvent) => {
       if (!arrastando || !podeTransferir(arrastando) || arrastando.pessoa_id === pessoaId) return;
@@ -186,6 +212,7 @@ export function ComandaPage() {
   };
 
   const abrirAdicionar = (p: Produto) => {
+    if (transferenciaRef.current || finalizandoRef.current || transferenciaMesa) return;
     if (pendingRef.current || adicionandoRef.current) { toast('error', 'Confirme o lançamento pendente antes de adicionar outro.'); return; }
     setEditandoItem(null);
     setAddProduto(p);
@@ -624,6 +651,9 @@ export function ComandaPage() {
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {!locked && !comanda.comanda_origem_id && (comanda.mesa?.tipo || 'normal') === 'normal' && <Button variant="secondary" icon={<ArrowRightLeft className="h-4 w-4" />}
+            disabled={transferindo || finalizando || adicionando || enviandoCozinha || !!pendente || !itens.some((i) => ['novo','enviado','entregue'].includes(i.status))}
+            onClick={abrirTransferenciaMesa}>Transferir todos</Button>}
           <Select className="w-40" value={setor} onChange={(e) => setSetor(e.target.value)} disabled={locked}>
             {setores.map((s) => (
               <option key={s} value={s}>{s}</option>
@@ -950,6 +980,7 @@ export function ComandaPage() {
       </Modal>
       {transferencia && <TransferItemModal item={transferencia.item} source={comanda} initialMode={transferencia.mode} busy={transferindo}
         onClose={() => setTransferencia(null)} onTransfer={transferirItem} />}
+      {transferenciaMesa && <TransferTableModal source={transferenciaMesa} busy={transferindo} onClose={() => setTransferenciaMesa(null)} onTransfer={transferirMesa} />}
 
       {/* Fechamento */}
       <Modal open={fechar} onClose={() => { if (!finalizandoRef.current) setFechar(false); }} title="Fechamento da comanda" width="max-w-2xl">

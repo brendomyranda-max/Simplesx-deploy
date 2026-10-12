@@ -10,6 +10,34 @@ agente local é o **Servidor DoixP**.
 Consulte [MARCA.md](./MARCA.md) para a compatibilidade da atualização com as
 instalações, os dados e os endereços existentes.
 
+## Transferência e exclusão de mesas
+
+Na comanda de uma mesa do salão, **Transferir todos** move todos os lançamentos
+ativos para uma mesa livre ou aberta, preservando os mesmos IDs, quantidades,
+valores, observações e status. A separação por pessoa acompanha os produtos, sem
+misturar pessoas com nomes iguais que já estejam no destino. A conta geral
+continua geral. Cancelamentos e perdas permanecem na origem.
+
+Por padrão, a origem continua aberta. **Liberar mesa de origem após transferir**
+encerra a comanda vazia e libera a mesa, sem venda, pagamento, baixa de estoque
+ou nova impressão. Essa opção não está disponível se houver perdas a conferir.
+O destino já aberto mantém sua taxa; um destino livre recebe a taxa da origem.
+
+A transferência é atômica, auditada e idempotente. Mudanças na lista de produtos,
+fechamento em andamento, pessoas já pagas ou vendas antigas pendentes de revisão
+bloqueiam a operação inteira. Reenviar a mesma intenção após timeout não duplica
+produtos, pessoas ou comandas. A quantidade de consultas não cresce por produto.
+
+Na lista de mesas, o ícone de lixeira permite ao usuário com módulo Gestor
+**excluir uma mesa livre** após confirmação. É uma exclusão lógica: comandas,
+pedidos e vendas antigas são preservados. Mesas ocupadas, com conta aberta ou
+pré-fechada e mesas especiais não podem ser excluídas. Criar novamente uma mesa
+com um número excluído reativa seu cadastro sem apagar o histórico.
+
+Aplique `0037_transferencias_mesa.sql` antes de publicar o backend. A migração
+adiciona apenas a auditoria da transferência e proteções contra abertura de
+mesa excluída; não altera os pedidos existentes.
+
 ## Executar localmente
 
 Requer Node.js 22.13 ou superior e npm. O SQLite é fornecido pelo próprio Node.

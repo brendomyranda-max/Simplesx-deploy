@@ -3,13 +3,14 @@
  * Responsabilidade: Implementa a tela RestaurantePage.tsx e coordena seus dados e ações.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UtensilsCrossed, Users, Plus, Pencil, Trash2, ArrowRight, Nfc, Wallet } from 'lucide-react';
+import { UtensilsCrossed, Users, Plus, Trash2, ArrowRight, Nfc, Wallet } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestauranteAbas } from '@/components/RestauranteAbas';
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useConfirm, useToast } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useToast } from '@/components/ui';
+import { useAuth } from '@/store/auth';
 import { mesaApi, funcionarioApi, cartaoApi, type NfcEvento } from '@/lib/api';
 import { NFC_EVENTO } from '@/lib/useNfcBridge';
 import type { Mesa, Funcionario } from '@/lib/types';
@@ -18,7 +19,7 @@ import { fmtBRL, fmtHora } from '@/lib/format';
 export function RestaurantePage() {
   const toast = useToast();
   const navigate = useNavigate();
-  const confirm = useConfirm();
+  const podeGerenciar = useAuth((s) => s.can('gestor'));
   const [data, setData] = useState<{ mesas: Mesa[]; comandas: any[] }>({ mesas: [], comandas: [] });
   const [load, setLoad] = useState(true);
   const [abrir, setAbrir] = useState<Mesa | null>(null);
@@ -32,6 +33,9 @@ export function RestaurantePage() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [espera, setEspera] = useState<'abrir' | 'fechar' | null>(null);
   const [lendoCartao, setLendoCartao] = useState(false);
+  const [excluir, setExcluir] = useState<Mesa | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const excluindoRef = useRef(false);
 
   useEffect(() => {
     const fixo = localStorage.getItem('simplesx_garcom_fixo') || '';
@@ -131,6 +135,20 @@ export function RestaurantePage() {
     }
   };
 
+  const excluirMesa = async () => {
+    if (!excluir || excluindoRef.current) return;
+    excluindoRef.current = true; setExcluindo(true);
+    try {
+      await mesaApi.remove(excluir.id);
+      setExcluir(null);
+      toast('success', 'Mesa excluída da lista. O histórico foi preservado.');
+      await loadData();
+    } catch (err: any) {
+      toast('error', err?.error || 'Não foi possível excluir a mesa');
+      setExcluir(null); await loadData();
+    } finally { excluindoRef.current = false; setExcluindo(false); }
+  };
+
   if (load) return <Spinner />;
 
   return (
@@ -192,19 +210,26 @@ export function RestaurantePage() {
                           ? (m.nfc_uid || m.nome)
                           : isPagamentos ? <UtensilsCrossed className="inline h-6 w-6 text-brand-500" /> : m.numero}
                       </span>
-                      {ocupada ? (
-                        preFechada ? (
-                          <Badge color="amber">Pré-fechada</Badge>
+                      <div className="flex items-center gap-1">
+                        {ocupada ? (
+                          preFechada ? (
+                            <Badge color="amber">Pré-fechada</Badge>
+                          ) : (
+                            <Badge color="green">
+                              <Users className="mr-1 h-3 w-3" /> {com.pessoas_count}
+                            </Badge>
+                          )
+                        ) : isPagamentos ? (
+                          <Badge color="purple">Individuais</Badge>
                         ) : (
-                          <Badge color="green">
-                            <Users className="mr-1 h-3 w-3" /> {com.pessoas_count}
-                          </Badge>
-                        )
-                      ) : isPagamentos ? (
-                        <Badge color="purple">Individuais</Badge>
-                      ) : (
-                        <Badge color="slate">Livre</Badge>
-                      )}
+                          <Badge color="slate">Livre</Badge>
+                        )}
+                        {podeGerenciar && (m.tipo || 'normal') === 'normal' && <button type="button"
+                          aria-label={`Excluir mesa ${m.numero}`} title={com || m.status !== 'livre' ? 'Finalize ou transfira a comanda e libere a mesa antes de excluir' : `Excluir mesa ${m.numero}`}
+                          disabled={!!com || m.status !== 'livre' || excluindo}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                          onClick={(e) => { e.stopPropagation(); setExcluir(m); }}><Trash2 className="h-4 w-4" /></button>}
+                      </div>
                     </div>
                     {isPagamentos ? (
                       <p className="text-sm font-bold text-brand-700">{m.nome}</p>
@@ -239,6 +264,14 @@ export function RestaurantePage() {
             })}
         </div>
       )}
+
+      <Modal open={!!excluir} onClose={() => { if (!excluindoRef.current) setExcluir(null); }} title={`Excluir mesa ${excluir?.numero || ''}`}>
+        <p className="text-sm text-slate-600">Deseja excluir {excluir?.nome || `a mesa ${excluir?.numero}`} da lista? O histórico de pedidos, comandas e vendas será preservado. Apenas mesas livres podem ser excluídas.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" disabled={excluindo} onClick={() => setExcluir(null)}>Cancelar</Button>
+          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} loading={excluindo} onClick={() => void excluirMesa()}>Excluir mesa</Button>
+        </div>
+      </Modal>
 
       <Modal open={!!abrir} onClose={() => setAbrir(null)} title={`Abrir mesa ${abrir?.numero || ''}`}>
         <form onSubmit={abrirMesa} className="space-y-4">
