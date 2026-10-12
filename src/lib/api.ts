@@ -259,10 +259,33 @@ export interface CartaoUso {
   mesa_numero: number;
   comanda_id: number;
   comanda_status: string;
+  atendimento_id?: string;
+  pessoa_id?: number;
+  cliente_nome?: string;
   cozinha: { itens: number; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] } | null;
 }
 
+export interface CartaoAtendimento {
+  id: string;
+  cartao: string;
+  cliente_nome: string;
+  cliente_atual?: string;
+  mesa_id: number;
+  mesa_numero: number;
+  comanda_id: number;
+  pessoa_id: number;
+  comanda_status: string;
+  subtotal: number;
+  taxa_garcom_pct: number;
+  criado_em: string;
+  encerrado_em?: string | null;
+}
+
 export const cartaoApi = {
+  list: () => api.get<CartaoAtendimento[]>('/cartoes'),
+  consultar: (b: { uid: string; payload?: string }) => api.post<{ cartao: string; atendimento: CartaoAtendimento | null }>('/cartoes/consultar', b),
+  cadastrar: (b: { uid: string; payload?: string; cliente_nome: string; mesa_id: number; chave: string; garcom_nome?: string }) => api.post<CartaoAtendimento>('/cartoes/cadastrar', b),
+  fechar: (id: string, b: { forma: string; total: number }) => api.post<{ ok: boolean; total?: number; venda_id: number | null; sem_consumo?: boolean; repetido?: boolean }>(`/cartoes/${id}/fechar`, b),
   usar: (b: {
     acao: 'abrir' | 'lancar' | 'fechar';
     uid: string;

@@ -412,6 +412,8 @@ export interface Comanda {
 }
 
 export interface ComandaPessoa {
+  cartao_atendimento_id?: string | null;
+  nfc_cartao?: string | null;
   id: number;
   comanda_id: number;
   nome: string | null;

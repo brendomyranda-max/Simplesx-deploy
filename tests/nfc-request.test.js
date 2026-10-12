@@ -28,6 +28,12 @@ async function fixture(t) {
   return { DB, call, create, read, status };
 }
 
+async function cadastrar(f, uid) {
+  const mesa = f.DB.prepare("INSERT INTO mesas (estabelecimento_id,numero,nome,tipo) VALUES (1,1,'Mesa 1','normal')").run().meta.last_row_id;
+  const r = await f.call('/api/cartoes/cadastrar', { uid, cliente_nome:'Cliente NFC',mesa_id:mesa,chave:crypto.randomUUID() });
+  assert.equal(r.status,201);
+}
+
 async function remoteFixture(t) {
   const f = await fixture(t);
   const now = new Date().toISOString();
@@ -68,6 +74,7 @@ test('S21 → web de outro aparelho → pedido salvo uma vez; outro servidor/tel
   assert.equal(result.uid, '00112233');
   assert.equal((await f.received('s21', event)).data.recebido_pelo_terminal, true);
   assert.equal((await f.status(a, 'sessao-3')).status, 404);
+  await cadastrar(f, result.uid);
   const product = f.DB.prepare("INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (1,'Cartão pela internet',12,1)").run();
   const body = { ...result, acao: 'lancar', chave: 'pedido-remoto-unico', itens: [{ produto_id: product.meta.last_row_id, quantidade: 2 }] };
   assert.equal((await f.call('/api/cartoes/usar', body)).status, 200);
@@ -142,13 +149,14 @@ test('navegador → solicitação → leitor sem pareamento → retorno → pedi
   }
   const result = (await f.status(r)).data;
   assert.deepEqual(result, { estado: 'lido', uid: '00A224B1C2D380', payload: '' });
+  await cadastrar(f, result.uid);
   const produto = f.DB.prepare("INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (1,'NFC navegador',15,1)").run();
   const body = { ...result, acao: 'lancar', chave: 'pedido-navegador', itens: [{ produto_id: produto.meta.last_row_id, quantidade: 2 }] };
   const pedido = await f.call('/api/cartoes/usar', body);
   assert.equal(pedido.status, 200);
   assert.equal((await f.call('/api/cartoes/usar', body)).status, 200);
   assert.equal(f.DB.prepare('SELECT COUNT(*) n FROM comanda_itens').first().n, 1);
-  assert.equal(f.DB.prepare('SELECT estabelecimento_id,nfc_uid FROM mesas').first().nfc_uid, result.uid);
+  assert.equal(f.DB.prepare('SELECT estabelecimento_id,cartao FROM cartao_atendimentos').first().cartao, result.uid);
 });
 
 test('resultado pertence à solicitação e ao funcionário; outra loja e outro funcionário não recebem o UID', async (t) => {
@@ -288,6 +296,7 @@ for (const mode of ['native', 'remote', 'multi', 'web', 'integrated']) test({
   const webReader = web ? new Reader() : null;
   const { createWebNfcScan } = await import(webNfcModule);
   const webScan = web ? createWebNfcScan(webReader, () => document.visibilityState === 'visible') : null;
+  if (web) await cadastrar(f, '00A224B1C2D380');
   const product = web && f.DB.prepare("INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (1,'Pedido Web NFC',10,1)").run();
   const props = { enabled: true, webScan, onStart: (exclusive) => { started = exclusive !== false; }, onRead: (reading) => {
     delivered.push(reading); accepted();

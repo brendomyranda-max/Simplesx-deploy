@@ -26,6 +26,9 @@ export async function transferirMesaHandler(c, env) {
       abriu_comanda: saved.abriu_comanda, liberou_origem: saved.liberou_origem, itens_count: saved.itens_count, repetido });
   const saved = await previous();
   if (saved) return reply(saved, true);
+  if (await env.DB.prepare('SELECT id FROM cartao_atendimentos WHERE comanda_id=? AND encerrado_em IS NULL LIMIT 1').bind(sourceId).first()) {
+    return c.json({ error: 'Esta mesa possui cartões em atendimento. Encerre essas contas na Recepção antes de transferir a mesa inteira.' }, 409);
+  }
   const source = await env.DB.prepare('SELECT id,mesa_id FROM comandas WHERE id=?').bind(sourceId).first();
   if (!source) return c.json({ error: 'Comanda de origem não encontrada' }, 404);
   if (source.mesa_id === mesaId) return c.json({ error: 'Selecione outra mesa' }, 400);
@@ -51,6 +54,7 @@ export async function transferirMesaHandler(c, env) {
       FROM comandas origem JOIN mesas m ON m.id=? AND m.estabelecimento_id=origem.estabelecimento_id
       JOIN mesas mo ON mo.id=origem.mesa_id AND mo.estabelecimento_id=origem.estabelecimento_id
       WHERE origem.id=? AND origem.estabelecimento_id=? AND origem.status='aberta' AND origem.comanda_origem_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM cartao_atendimentos a WHERE a.comanda_id=origem.id AND a.estabelecimento_id=origem.estabelecimento_id AND a.encerrado_em IS NULL)
         AND mo.ativo=1 AND mo.tipo='normal' AND m.ativo=1 AND m.tipo='normal' AND m.id!=mo.id
         AND NOT EXISTS (SELECT 1 FROM comandas outra WHERE outra.mesa_id=mo.id AND outra.estabelecimento_id=?
           AND outra.id!=origem.id AND outra.status IN ('aberta','pre_fechamento'))

@@ -291,6 +291,8 @@ test('abertura que vence a exclusão concorrente impede desativar a mesa', async
 test('recusa origem ou destino com duas comandas ativas sem mover nenhum produto', async (t) => {
   for (const mesaId of [1,2]) {
     const f = fixture(t);
+    // Simula duplicação legada anterior à restrição de abertura da Recepção.
+    f.db.db.exec('DROP TRIGGER comanda_salao_unica_insert');
     f.db.prepare("INSERT INTO comandas (estabelecimento_id,mesa_id,status) VALUES (1,?,'aberta')").bind(mesaId).run();
     assert.equal((await f.move(f.body({ liberar_origem: true }))).status, 409);
     assert.equal(f.db.prepare('SELECT COUNT(*) n FROM comanda_item_transferencias').first().n, 0);

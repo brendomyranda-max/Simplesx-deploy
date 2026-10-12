@@ -17,6 +17,7 @@ import { Dashboard } from '@/pages/Dashboard';
 import { PdvPage } from '@/pages/PdvPage';
 import { VendasPage } from '@/pages/VendasPage';
 import { RestaurantePage } from '@/pages/RestaurantePage';
+import { RecepcaoPage } from '@/pages/RecepcaoPage';
 import { DeliveryPage } from '@/pages/DeliveryPage';
 import { CozinhaPage } from '@/pages/CozinhaPage';
 import { LancarCartaoPage } from '@/pages/LancarCartaoPage';
@@ -181,6 +182,10 @@ function ProtectedApp({
               <RestaurantePage />
             </Require>
           }
+        />
+        <Route
+          path="/restaurante/recepcao"
+          element={<Require mod="restaurante" area="vendas"><RecepcaoPage /></Require>}
         />
         <Route
           path="/restaurante/lancar-cartao"

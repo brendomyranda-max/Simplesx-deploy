@@ -275,20 +275,23 @@ servidor mantém sua própria preferência de NFC.
 ### Comandas com cartão NTAG215
 
 O NTAG215 é compatível com o leitor NFC do celular Android e pode ser usado
-vazio, sem formatar ou gravar o cartão. Cada cartão identifica uma mesa virtual
-pelo UID físico de 7 bytes; pedidos, valores e pagamentos ficam no sistema.
+vazio, sem gravar nome ou mesa no cartão. Cada cartão identifica uma comanda
+individual pelo UID físico de 7 bytes; cliente, mesa, pedidos e pagamentos ficam no sistema.
 O texto NDEF não define a conta: cartões diferentes com o mesmo texto têm contas
 separadas. UIDs em hexadecimal com espaços, dois-pontos ou hífens são reconhecidos
 como o mesmo cartão, preservando os zeros iniciais.
 
 1. No celular já pareado, ligue o NFC do Android e **Cartões NFC** no Servidor DoixP.
-2. Na tela **Mesas**, use **Adicionar com cartão** e aproxime o cartão do celular
-   para abrir ou consultar a comanda. Para enviar um pedido pronto, use
+2. Em **Vendas → Recepção**, use **Cadastrar ou consultar cartão**, aproxime o cartão
+   e informe nome do cliente e mesa. Para enviar um pedido pronto, use
    **Lançar para cartão → Aguardar cartão** antes da aproximação.
-3. Use **Fechamento de cartão**, aproxime o mesmo cartão e finalize o pagamento
-   pela comanda. A aproximação apenas localiza a conta; o pagamento é confirmado
-   na tela. Após fechar, o mesmo cartão abre uma nova comanda com o histórico
-   anterior preservado.
+3. Use **Fechar comanda** na Recepção, ou **Fechamento de cartão** em Mesas, e
+   confirme o pagamento individual. Os demais clientes continuam na mesa.
+   Após fechar, cadastre o mesmo cartão para o próximo cliente; o histórico anterior é preservado.
+
+O cartão permanece vinculado à pessoa e à mesa até fechar a conta. Não é possível
+reatribuir um cartão em atendimento. Contas antigas de mesas virtuais precisam
+ser encerradas em Mesas antes do novo cadastro. Consulte o [guia da Recepção](docs/recepcao-nfc.md).
 
 No mesmo celular, use **Servidor DoixP → Cartões NFC → Abrir DoixP e usar cartões
 NFC**. Entre na conta do estabelecimento, abra **Mesas** e monte o pedido. A tela

@@ -165,7 +165,10 @@ test('não cancela pagamento individual, pessoa paga, mesa duplicada, conta fech
     "UPDATE mesas SET tipo='online' WHERE id=2",
     "UPDATE mesas SET ativo=0 WHERE id=2",
   ]) {
-    const f = fixture(t); f.db.prepare(sql).run(); const before = all(f.db);
+    const f = fixture(t);
+    // Simula duplicação legada anterior à restrição de abertura da Recepção.
+    f.db.db.exec('DROP TRIGGER comanda_salao_unica_insert');
+    f.db.prepare(sql).run(); const before = all(f.db);
     assert.equal((await f.cancel()).status,409);
     assert.deepEqual(all(f.db),before);
   }

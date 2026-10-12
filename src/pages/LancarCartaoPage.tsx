@@ -75,7 +75,8 @@ export function LancarCartaoPage() {
       const falha = resultado.cozinha?.sem_rota?.[0] || resultado.cozinha?.falhas?.[0]?.erro;
       if (falha) toast('error', `Pedido salvo na comanda do cartão ${resultado.cartao}. A cozinha não recebeu: ${falha}`);
       else toast('success', `Pedido do cartão ${resultado.cartao} enviado à cozinha`);
-      navigate(`/restaurante/comanda/${resultado.comanda_id}`);
+      webNfc.stop();
+      navigate(`/restaurante/comanda/${resultado.comanda_id}${resultado.pessoa_id ? `?pessoa=${resultado.pessoa_id}` : ''}`);
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível lançar no cartão');
       enviandoRef.current = false;
@@ -95,6 +96,7 @@ export function LancarCartaoPage() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Lançar para cartão</h1>
           <p className="text-sm text-slate-500">Adicione os itens. Depois aproxime o cartão para identificar a comanda e enviar à cozinha.</p>
+          <p className="text-xs text-slate-500">Cadastre o cliente e a mesa na Recepção antes do primeiro pedido.</p>
         </div>
         <Button variant="secondary" icon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate('/restaurante')}>Mesas</Button>
       </div>

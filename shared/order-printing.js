@@ -18,11 +18,13 @@ export async function dispatchOrders(c, env, body) {
     throw httpError(400, 'Selecione os itens do pedido');
   }
   const selected = body.itens_ids ? new Set(body.itens_ids) : null;
-  const rows = await env.DB.prepare(`SELECT i.*,
+  const rows = await env.DB.prepare(`SELECT i.*,p.nome AS pessoa_nome,a.cartao AS pessoa_cartao,
     (SELECT GROUP_CONCAT(DISTINCT COALESCE(cat.impressora_agente_id,pai.impressora_agente_id))
       FROM produto_categorias pc JOIN categorias cat ON cat.id=pc.categoria_id
       LEFT JOIN categorias pai ON pai.id=cat.categoria_pai_id WHERE pc.produto_id=i.produto_id) AS impressora_ids
-    FROM comanda_itens i WHERE i.comanda_id=? AND i.status='novo' ORDER BY i.id`).bind(comandaId).all();
+    FROM comanda_itens i LEFT JOIN comanda_pessoas p ON p.id=i.pessoa_id AND p.comanda_id=i.comanda_id
+    LEFT JOIN cartao_atendimentos a ON a.pessoa_id=p.id AND a.encerrado_em IS NULL
+    WHERE i.comanda_id=? AND i.status='novo' ORDER BY i.id`).bind(comandaId).all();
   const items = rows.results.filter((i) => !selected || selected.has(i.id));
   const routes = (await env.DB.prepare('SELECT * FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1').all()).results;
   const config = await getConfig(env);
@@ -51,6 +53,7 @@ export async function dispatchOrders(c, env, body) {
       const group = routeItems.filter((item) => JSON.stringify([item.funcionario_id, item.responsavel || command.garcom_nome || 'Não informado']) === waiter);
       const batchId = crypto.randomUUID();
       const snapshots = JSON.stringify(group.map((item) => ({ id: item.id, versao: item.versao, texto: ascii([
+        ...(item.pessoa_cartao ? [`CLIENTE: ${item.pessoa_nome}  CARTAO: ${item.pessoa_cartao}`] : []),
         `#${item.id}  ${num(item.quantidade)}x ${item.nome}`,
         ...String(item.observacao || '').split('\n').filter(Boolean).map((line) => `  (${line})`),
       ].join('\n')) })));

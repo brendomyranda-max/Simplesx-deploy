@@ -11,6 +11,7 @@ import test from 'node:test';
 import SqliteDb from '../server/sqlite-db.js';
 import { deviceNfcStatusHandler, publishDeviceNfcHandler, testDeviceNfcHandler } from '../shared/handlers-devices.js';
 import { usarCartaoHandler } from '../shared/cartao-nfc.js';
+import { cadastrarCartaoHandler } from '../shared/recepcao.js';
 import { consumirNfcHandler, listarNfcHandler, publicarNfcGestorHandler } from '../shared/nfc.js';
 import { TenantDb } from '../shared/tenant-db.js';
 import { sha256 } from '../shared/util.js';
@@ -164,13 +165,16 @@ test('NTAG215 vazio percorre a ponte Android até a comanda e normaliza o UID se
     const consumida = await consumirNfcHandler(requisicao(null, {
       params: { id: String(pendentes[0].id) },
     }), f.envB);
+    const mesaId = f.rawDB.prepare("INSERT INTO mesas (estabelecimento_id,numero,nome,tipo) VALUES (?,1,'Mesa 1','normal')").bind(f.lojaB).run().meta.last_row_id;
+    assert.equal((await cadastrarCartaoHandler(requisicao({ ...consumida.data, cliente_nome:'Cliente NFC',mesa_id:mesaId,chave:crypto.randomUUID() }), f.envB)).status,201);
     const aberta = await usarCartaoHandler(requisicao({ acao: 'abrir', ...consumida.data }), f.envB);
     assert.equal(aberta.status, 200);
     assert.equal(aberta.data.cartao, '04A224B1C2D380');
     const mesa = f.rawDB.prepare('SELECT estabelecimento_id, nfc_uid, tipo FROM mesas WHERE id=?').first(aberta.data.mesa_id);
     assert.equal(mesa.estabelecimento_id, f.lojaB);
-    assert.equal(mesa.nfc_uid, '04A224B1C2D380');
-    assert.equal(mesa.tipo, 'cartao');
+    assert.equal(mesa.nfc_uid, null);
+    assert.equal(mesa.tipo, 'normal');
+    assert.equal(f.rawDB.prepare('SELECT cartao FROM cartao_atendimentos WHERE pessoa_id=?').first(aberta.data.pessoa_id).cartao,'04A224B1C2D380');
     const produto = f.rawDB.prepare('INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (?,?,?,1)')
       .bind(f.lojaB, 'Pedido NFC', 12).run();
     const pedido = await usarCartaoHandler(requisicao({

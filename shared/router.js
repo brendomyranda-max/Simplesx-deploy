@@ -19,6 +19,7 @@ import * as fiscal from './handlers-fiscal.js';
 import * as online from './handlers-online.js';
 import { TenantDb } from './tenant-db.js';
 import { usarCartaoHandler } from './cartao-nfc.js';
+import { listarCartoesHandler, consultarCartaoHandler, cadastrarCartaoHandler, fecharCartaoHandler } from './recepcao.js';
 import { consumirNfcHandler, identificarNfcLocalHandler, listarNfcHandler, publicarNfcGestorHandler } from './nfc.js';
 import { criarSolicitacaoNfcHandler, consultarSolicitacaoNfcHandler, cancelarSolicitacaoNfcHandler, responderSolicitacaoNfcHandler, listarServidoresNfcHandler } from './nfc-solicitacoes.js';
 
@@ -127,6 +128,10 @@ const routes = [
   { m: 'PUT', p: '/api/mesas/:id', h: ven.updateMesaHandler, mod: 'gestor' },
   { m: 'DELETE', p: '/api/mesas/:id', h: ven.deleteMesaHandler, mod: 'gestor' },
   { m: 'POST', p: '/api/cartoes/usar', h: usarCartaoHandler },
+  { m: 'GET', p: '/api/cartoes', h: listarCartoesHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/cartoes/consultar', h: consultarCartaoHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/cartoes/cadastrar', h: cadastrarCartaoHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/cartoes/:id/fechar', h: fecharCartaoHandler, mod: 'restaurante' },
 
   // comandas
   { m: 'GET', p: '/api/comandas/:id', h: ven.getComandaHandler },

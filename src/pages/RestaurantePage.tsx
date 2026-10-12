@@ -76,7 +76,7 @@ export function RestaurantePage() {
     return () => clearInterval(iv);
   }, []);
 
-  const mesasSalao = data.mesas.filter((m) => m.ativo && m.tipo !== 'online');
+  const mesasSalao = data.mesas.filter((m) => m.ativo && m.tipo !== 'online' && (m.tipo !== 'cartao' || data.comandas.some(c=>c.mesa_id===m.id)));
   const comandaDaMesa = (mesaId: number) => data.comandas.find((c) => c.mesa_id === mesaId);
   const abertas = data.comandas.filter((c) => c.status === 'aberta' && mesasSalao.some((m) => m.id === c.mesa_id)).length;
 
@@ -109,12 +109,13 @@ export function RestaurantePage() {
         garcom_nome: garcom || undefined,
       });
       setEspera(null);
+      webNfc.stop();
       if (acao === 'fechar') {
         toast('success', `Fechamento do cartão ${resultado.cartao}`);
-        navigate(`/restaurante/comanda/${resultado.comanda_id}?fechar=1`);
+        navigate(resultado.atendimento_id ? `/restaurante/recepcao?atendimento=${resultado.atendimento_id}&fechar=1` : `/restaurante/comanda/${resultado.comanda_id}?fechar=1`);
       } else {
         toast('success', `Cartão ${resultado.cartao} aberto`);
-        navigate(`/restaurante/comanda/${resultado.comanda_id}`);
+        navigate(`/restaurante/comanda/${resultado.comanda_id}${resultado.pessoa_id ? `?pessoa=${resultado.pessoa_id}` : ''}`);
       }
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível ler o cartão');
@@ -166,7 +167,8 @@ export function RestaurantePage() {
         <RestauranteAbas atual="mesas" />
       </div>
       <div className="mb-5 flex flex-wrap gap-2">
-          <Button icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(!!webNfc.begin()); setLendoCartao(false); setEspera('abrir'); }}>Adicionar com cartão</Button>
+          <Button icon={<Users className="h-4 w-4" />} onClick={() => navigate('/restaurante/recepcao')}>Recepção · cadastrar cartão</Button>
+          <Button variant="secondary" icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(!!webNfc.begin()); setLendoCartao(false); setEspera('abrir'); }}>Consultar cartão</Button>
           <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/restaurante/lancar-cartao')}>Lançar para cartão</Button>
           <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(!!webNfc.begin()); setLendoCartao(false); setEspera('fechar'); }}>Fechamento de cartão</Button>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => setNovaMesa(true)}>Nova mesa</Button>
@@ -304,15 +306,15 @@ export function RestaurantePage() {
       <Modal
         open={espera !== null}
         onClose={() => { if (!lendoCartaoRef.current) { webNfc.stop(); esperaVersaoRef.current++; setEspera(null); } }}
-        title={espera === 'fechar' ? 'Fechamento de cartão' : 'Adicionar com cartão'}
+        title={espera === 'fechar' ? 'Fechamento de cartão' : 'Consultar cartão'}
       >
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
           <NfcScanButton key={esperaVersao} enabled={!lendoCartao} webScan={webNfc.scan} onWebStart={() => { webNfc.begin(true); setLeituraSolicitada(true); }} onStart={(exclusive = true) => setLeituraSolicitada(exclusive)} onRead={(reading) => { if (espera && esperaVersaoRef.current === esperaVersao) void usarCartao(espera, reading); }} />
           <p className="text-sm text-slate-600">
             {espera === 'fechar'
-              ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'
-              : 'Aproxime o cartão. A identificação dele abre a comanda, como uma mesa, para lançar os itens.'}
+              ? 'Aproxime o cartão para fechar a conta individual do cliente.'
+              : 'Aproxime o cartão para abrir os pedidos do cliente na mesa cadastrada na Recepção.'}
           </p>
           <p className="text-xs text-slate-400">Aproxime no leitor identificado acima. No Chrome Android compatível, a leitura acontece aqui mesmo.</p>
           <p className="text-xs text-slate-400">A conta fica no sistema. O mesmo cartão pode ser reutilizado após o fechamento.</p>

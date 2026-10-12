@@ -64,6 +64,8 @@ test('rota autenticada percorre UID nativo → cartão → pedido salvo na próp
   const uid = '04A224B1C2D380';
   const leitura = await f.call('/api/nfc/identificar', { uid });
   assert.equal(leitura.status, 200);
+  const mesa = f.DB.prepare("INSERT INTO mesas (estabelecimento_id,numero,nome,tipo) VALUES (1,1,'Mesa 1','normal')").run().meta.last_row_id;
+  assert.equal((await f.call('/api/cartoes/cadastrar', { ...leitura.data, cliente_nome:'Cliente S21',mesa_id:mesa,chave:crypto.randomUUID() })).status,201);
   const aberto = await f.call('/api/cartoes/usar', { ...leitura.data, acao: 'abrir' });
   assert.equal(aberto.status, 200);
   const body = { ...leitura.data, acao: 'lancar', chave: 'pedido-local-unico', itens: [{ produto_id: produto.meta.last_row_id, quantidade: 2 }] };
@@ -73,5 +75,5 @@ test('rota autenticada percorre UID nativo → cartão → pedido salvo na próp
   assert.equal((await f.call('/api/cartoes/usar', body)).status, 200);
   const rows = f.DB.prepare('SELECT estabelecimento_id,quantidade,nome FROM comanda_itens WHERE comanda_id=?').all(aberto.data.comanda_id).results;
   assert.deepEqual(rows, [{ estabelecimento_id: 1, quantidade: 2, nome: 'Pedido do S21' }]);
-  assert.equal(f.DB.prepare('SELECT estabelecimento_id,nfc_uid FROM mesas WHERE id=?').first(aberto.data.mesa_id).nfc_uid, uid);
+  assert.equal(f.DB.prepare('SELECT cartao FROM cartao_atendimentos WHERE pessoa_id=?').first(aberto.data.pessoa_id).cartao, uid);
 });

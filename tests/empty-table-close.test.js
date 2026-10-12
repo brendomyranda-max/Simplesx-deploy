@@ -104,6 +104,8 @@ test('não libera origem enquanto existir comanda de pagamentos individuais pend
 
 test('não libera mesa com duas comandas ativas ou reserva pertencente a outro fechamento', async (t) => {
   const f = fixture(t);
+  // Simula duplicação legada anterior à restrição de abertura da Recepção.
+  f.db.db.exec('DROP TRIGGER comanda_salao_unica_insert');
   f.db.prepare("INSERT INTO comandas (estabelecimento_id,mesa_id,status) VALUES (1,1,'aberta')").run();
   assert.equal((await f.close({ liberar_vazia:true })).status,409);
   f.db.prepare("UPDATE comandas SET fechamento_bloqueado_ate='2999-01-01' WHERE id=9").run();

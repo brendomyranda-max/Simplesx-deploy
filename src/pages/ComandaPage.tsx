@@ -118,7 +118,7 @@ export function ComandaPage() {
 
   useEffect(() => {
     setTaxaEditada(null);
-    setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setTransferenciaMesa(null); setArrastando(null);
+    setPessoaSel(Number(searchParams.get('pessoa')) > 0 ? Number(searchParams.get('pessoa')) : 'geral'); setAcoesItem(null); setTransferencia(null); setTransferenciaMesa(null); setArrastando(null);
     setFechar(false); setBaixar(false); setLiberarVazia(false); setCancelamento(null);
     loadComanda();
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
@@ -139,16 +139,21 @@ export function ComandaPage() {
   }, [storageKey]);
 
   const pessoas = comanda?.pessoas || [];
+  const pessoaCartao = pessoas.find(p=>p.id===pessoaSel && p.cartao_atendimento_id);
   const itens = comanda?.itens || [];
   const ativos = itens.filter((i) => i.status !== 'cancelado');
-  const itensNovos = ativos.filter((i) => i.status === 'novo');
+  const itensExibidos = pessoaCartao ? itens.filter(i=>i.pessoa_id===pessoaCartao.id) : itens;
+  const ativosExibidos = itensExibidos.filter(i=>i.status!=='cancelado');
+  const subtotalExibido = ativosExibidos.reduce((s,i)=>s+Number(i.quantidade)*Number(i.preco_unitario),0);
+  const taxaExibida = pessoaCartao ? Number(comanda?.taxa_garcom_pct || 0) : Number(taxa || 0);
+  const itensNovos = ativosExibidos.filter((i) => i.status === 'novo');
   const subtotal = useMemo(() => ativos.reduce((s, i) => s + Number(i.quantidade) * Number(i.preco_unitario), 0), [ativos]);
   const locked = comanda?.status !== 'aberta';
   const mesaVazia = ativos.length === 0 && !comanda?.comanda_origem_id &&
     !['aberta', 'pre_fechamento'].includes(comanda?.transfer_comanda_status || '') &&
     ['aberta', 'pre_fechamento'].includes(comanda?.status || '');
   const vendasAnteriores = comanda?.vendas_anteriores || [];
-  const podeCancelarTudo = podeGerenciar && !comanda?.comanda_origem_id &&
+  const podeCancelarTudo = podeGerenciar && !pessoaCartao && !comanda?.comanda_origem_id &&
     ['aberta','pre_fechamento'].includes(comanda?.status || '') &&
     ['normal','cartao'].includes(comanda?.mesa?.tipo || 'normal') &&
     !['aberta','pre_fechamento'].includes(comanda?.transfer_comanda_status || '');
@@ -396,6 +401,11 @@ export function ComandaPage() {
   };
 
   const imprimirComanda = async () => {
+    if (pessoaCartao) {
+      try { const r = await impressoraApi.imprimirPessoa(comandaId,pessoaCartao.id); setImprimir({ impressao:r.impressao, setor:'Conta individual' }); }
+      catch (e: any) { toast('error',e?.error || 'Erro ao imprimir conta individual'); }
+      return;
+    }
     if (!locked) { await enviarCozinha(); return; }
     try {
       const r = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
@@ -427,6 +437,7 @@ export function ComandaPage() {
   };
 
   const enviarCozinha = async (selectedIds?: number[]) => {
+    if (!selectedIds && pessoaCartao) selectedIds = itensNovos.map(i=>i.id);
     if (enviandoRef.current || adicionandoRef.current || pendingRef.current) return;
     const ids = selectedIds || itensNovos.map((item) => item.id);
     if (!ids.length) { toast('info', 'Nenhum pedido novo para enviar'); return; }
@@ -497,6 +508,7 @@ export function ComandaPage() {
       toast('info', 'Aguarde a confirmação do pedido e do envio antes de fechar a conta.');
       return;
     }
+    if (pessoaCartao) { navigate(`/restaurante/recepcao?atendimento=${pessoaCartao.cartao_atendimento_id}&fechar=1`); return; }
     if (mesaVazia) { setLiberarVazia(true); return; }
     iniciaValores();
     setFechar(true);
@@ -692,6 +704,9 @@ export function ComandaPage() {
 
   if (load) return <Spinner label="Carregando comanda..." />;
   if (!comanda) return <div className="py-20 text-center text-slate-400">Comanda não encontrada</div>;
+  if (Number(searchParams.get('pessoa'))>0 && !pessoas.some(p=>p.id===Number(searchParams.get('pessoa')))) {
+    return <AnimatedPage><Card className="space-y-4 p-5"><p className="font-bold">Este atendimento foi encerrado ou não está mais nesta mesa.</p><p className="text-sm text-slate-500">Consulte o cartão na Recepção para continuar com o atendimento atual.</p><Button onClick={()=>navigate('/restaurante/recepcao')}>Voltar à Recepção</Button></Card></AnimatedPage>;
+  }
 
   const itensDaPessoa = (pessoaId: number | null) =>
     ativos.filter((i) => (pessoaId === null ? i.pessoa_id === null : i.pessoa_id === pessoaId));
@@ -726,7 +741,7 @@ export function ComandaPage() {
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {!locked && !comanda.comanda_origem_id && (comanda.mesa?.tipo || 'normal') === 'normal' && <Button variant="secondary" icon={<ArrowRightLeft className="h-4 w-4" />}
+          {!locked && !pessoaCartao && !comanda.comanda_origem_id && (comanda.mesa?.tipo || 'normal') === 'normal' && <Button variant="secondary" icon={<ArrowRightLeft className="h-4 w-4" />}
             disabled={transferindo || finalizando || adicionando || enviandoCozinha || !!pendente || !itens.some((i) => ['novo','enviado','entregue'].includes(i.status))}
             onClick={abrirTransferenciaMesa}>Transferir todos</Button>}
           <Select className="w-40" value={setor} onChange={(e) => setSetor(e.target.value)} disabled={locked}>
@@ -737,7 +752,9 @@ export function ComandaPage() {
           <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={imprimirComanda}>
             Imprimir
           </Button>
-          {mesaVazia ? (
+          {pessoaCartao ? (
+            <Button variant="success" icon={<HandCoins className="h-4 w-4" />} onClick={()=>navigate(`/restaurante/recepcao?atendimento=${pessoaCartao.cartao_atendimento_id}&fechar=1`)}>Fechar comanda individual</Button>
+          ) : mesaVazia ? (
             <Button variant="secondary" icon={<CheckCheck className="h-4 w-4" />} onClick={abrirFechamento}>Liberar mesa vazia</Button>
           ) : !locked ? (
             <Button variant="success" icon={<HandCoins className="h-4 w-4" />} onClick={abrirFechamento}>
@@ -759,6 +776,11 @@ export function ComandaPage() {
           {podeCancelarTudo && <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} disabled={finalizando || transferindo || adicionando || enviandoCozinha || !!pendente} onClick={abrirCancelamento}>Cancelar tudo e liberar mesa</Button>}
         </div>
       </div>
+
+      {pessoaCartao && <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
+        <div><p className="font-bold">Comanda individual · {pessoaCartao.nome}</p><p className="text-sm text-slate-500">Os novos pedidos serão lançados para esta pessoa na mesa {comanda.mesa?.numero}.</p></div>
+        <Button onClick={()=>navigate(`/restaurante/recepcao?atendimento=${pessoaCartao.cartao_atendimento_id}&fechar=1`)}>Fechar comanda individual</Button>
+      </Card>}
 
       {pendente && <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
         <p className="text-sm text-amber-900">{adicionando ? 'Confirmando lançamento…' : 'Lançamento aguardando confirmação. Tente novamente para concluir sem duplicar.'}</p>
@@ -905,7 +927,7 @@ export function ComandaPage() {
           {/* Itens */}
           <Card className="p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-bold text-slate-700">Itens ({ativos.length})</h2>
+              <h2 className="text-sm font-bold text-slate-700">{pessoaCartao ? `Pedidos de ${pessoaCartao.nome}` : 'Itens'} ({ativosExibidos.length})</h2>
               {!locked && itensNovos.length > 0 && (
                 <Button size="sm" variant="secondary" icon={<Send className="h-3.5 w-3.5" />} loading={enviandoCozinha} onClick={() => void enviarCozinha()}>
                   Enviar
@@ -913,11 +935,11 @@ export function ComandaPage() {
               )}
             </div>
             {!locked && ativos.length > 0 && <p className="mb-3 text-xs text-slate-500">Clique em um pedido para alterar ou transferir. No computador, arraste para a pessoa desejada.</p>}
-            {ativos.length === 0 ? (
+            {ativosExibidos.length === 0 ? (
               <EmptyState icon={<Plus className="h-6 w-6" />} title="Nenhum item na comanda" subtitle="Adicione produtos ao lado" />
             ) : (
               <div className="space-y-2">
-                {itens.map((item) => {
+                {itensExibidos.map((item) => {
                   const pessoa = nomePessoaDe(item.pessoa_id);
                   return (
                     <div key={item.id} className={`rounded-xl bg-slate-50 px-3 py-2 ${arrastando?.id === item.id ? 'opacity-50' : ''}`}
@@ -992,28 +1014,28 @@ export function ComandaPage() {
         {/* Resumo */}
         <div>
           <Card className="md:sticky md:top-4 p-4">
-            <h2 className="mb-3 text-sm font-bold text-slate-700">Resumo</h2>
+            <h2 className="mb-3 text-sm font-bold text-slate-700">{pessoaCartao ? `Conta de ${pessoaCartao.nome}` : 'Resumo da mesa'}</h2>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-slate-500">
                 <span>Subtotal</span>
-                <span className="font-semibold text-slate-800">{fmtBRL(subtotal)}</span>
+                <span className="font-semibold text-slate-800">{fmtBRL(subtotalExibido)}</span>
               </div>
               <div className="flex justify-between text-slate-500">
-                <span>Taxa de serviço ({Number(taxa || 0)}%)</span>
-                <span className="font-semibold text-slate-800">{fmtBRL(subtotal * (Number(taxa || 0) / 100))}</span>
+                <span>Taxa de serviço ({taxaExibida}%)</span>
+                <span className="font-semibold text-slate-800">{fmtBRL(subtotalExibido * taxaExibida / 100)}</span>
               </div>
               <div className="flex justify-between border-t border-slate-100 pt-2">
                 <span className="font-bold text-slate-700">Total</span>
-                <span className="text-lg font-extrabold text-brand-600">{fmtBRL(totalComTaxa)}</span>
+                <span className="text-lg font-extrabold text-brand-600">{fmtBRL(subtotalExibido * (1+taxaExibida/100))}</span>
               </div>
-              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-2.5">
+              {!pessoaCartao && <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-2.5">
                 <span className="text-xs font-semibold text-slate-500">Taxa %</span>
                 <Input aria-label="Taxa de serviço (%)" type="number" min="0" max="100" step="0.1" className="!w-20 !py-1 text-right" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
-              </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setTaxa('0')}>Sem taxa de serviço</Button>
+              </div>}
+              {!pessoaCartao && <Button type="button" variant="ghost" size="sm" onClick={() => setTaxa('0')}>Sem taxa de serviço</Button>}
             </div>
 
-            {!locked && (
+            {!locked && !pessoaCartao && (
               <div className="mt-4 border-t border-slate-100 pt-3">
                 <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Por pessoa</h3>
                 <div className="space-y-2">
@@ -1033,7 +1055,9 @@ export function ComandaPage() {
               </div>
             )}
 
-            {mesaVazia ? (
+            {pessoaCartao ? (
+              <Button className="mt-4 w-full" size="lg" onClick={abrirFechamento}>Fechar comanda individual</Button>
+            ) : mesaVazia ? (
               <Button variant="secondary" className="mt-4 w-full" size="lg" icon={<CheckCheck className="h-5 w-5" />} onClick={abrirFechamento}>Liberar mesa vazia</Button>
             ) : !locked ? (
               <Button variant="success" className="mt-4 w-full" size="lg" icon={<HandCoins className="h-5 w-5" />} onClick={abrirFechamento}>

@@ -128,6 +128,7 @@ export function AppShell({
       items: [
         { to: '/pdv', label: 'PDV Mercado', icon: <ScanBarcode className="h-5 w-5" /> },
         { to: '/vendas', label: 'Vendas', icon: <ReceiptText className="h-5 w-5" /> },
+        ...(isRest ? [{ to: '/restaurante/recepcao', label: 'Recepção', icon: <Users className="h-5 w-5" /> }] : []),
         { to: '/fiscal', label: 'NFC-e', icon: <FileCheck2 className="h-5 w-5" /> },
       ],
     },

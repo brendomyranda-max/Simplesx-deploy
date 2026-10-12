@@ -639,6 +639,7 @@ export async function abrirComandaHandler(c, env) {
     .run();
   } catch (error) {
     if (String(error?.message).includes('mesa_inativa')) return c.json({ error: 'A mesa foi excluída em outra tela. Atualize a lista de mesas.' }, 409);
+    if (String(error?.message).includes('mesa_ja_ocupada')) return c.json({ error: 'A mesa já possui uma conta ativa. Abra a comanda existente.' }, 409);
     throw error;
   }
   const comandaId = r.meta.last_row_id;
@@ -663,7 +664,9 @@ export async function abrirComandaHandler(c, env) {
 async function getComandaFull(env, id) {
   const c = await env.DB.prepare('SELECT * FROM comandas WHERE id=?').bind(id).first();
   if (!c) return null;
-  const pessoas = await env.DB.prepare('SELECT * FROM comanda_pessoas WHERE comanda_id=? ORDER BY id').bind(id).all();
+  const pessoas = await env.DB.prepare(`SELECT p.*,a.id AS cartao_atendimento_id,a.cartao AS nfc_cartao
+    FROM comanda_pessoas p LEFT JOIN cartao_atendimentos a ON a.pessoa_id=p.id AND a.encerrado_em IS NULL
+    WHERE p.comanda_id=? ORDER BY p.id`).bind(id).all();
   const itens = await env.DB.prepare(
     `SELECT i.*, p.nome AS produto_nome, p.unidade FROM comanda_itens i
      LEFT JOIN produtos p ON p.id=i.produto_id WHERE i.comanda_id=? ORDER BY i.id`
@@ -679,7 +682,7 @@ async function getComandaFull(env, id) {
   const ativos = itens.results.filter((i) => i.status !== 'cancelado');
   const subtotal = ativos.reduce((s, i) => s + num(i.quantidade) * num(i.preco_unitario), 0);
   const transfer = await env.DB.prepare(
-    'SELECT id, status FROM comandas WHERE comanda_origem_id=? ORDER BY id DESC LIMIT 1'
+    "SELECT id, status FROM comandas WHERE comanda_origem_id=? AND fechamento_tipo='individual' ORDER BY id DESC LIMIT 1"
   )
     .bind(id)
     .first();
@@ -720,6 +723,8 @@ export async function addPessoaHandler(c, env) {
 }
 
 export async function removePessoaHandler(c, env) {
+  const cartao = await env.DB.prepare('SELECT id FROM cartao_atendimentos WHERE pessoa_id=? AND encerrado_em IS NULL').bind(c.params.pid).first();
+  if (cartao) return c.json({ error: 'Esta pessoa tem um cartão em atendimento. Feche sua conta na Recepção antes de remover.' }, 409);
   await env.DB.prepare('DELETE FROM comanda_pessoas WHERE id=?').bind(c.params.pid).run();
   await env.DB.prepare('UPDATE comanda_itens SET pessoa_id=NULL WHERE pessoa_id=?').bind(c.params.pid).run();
   return c.json({ ok: true });
@@ -773,8 +778,8 @@ export async function updateItemComandaHandler(c, env) {
   }
   const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=?, preco_unitario=? WHERE id=? AND comanda_id=? AND versao=?
     AND status='novo' AND NOT EXISTS (SELECT 1 FROM pedido_impressoes WHERE item_id=comanda_itens.id)
-    AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
-    .bind(observacao || null, preco, item.id, item.comanda_id, item.versao, item.comanda_id)
+    AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta' AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?))`)
+    .bind(observacao || null, preco, item.id, item.comanda_id, item.versao, item.comanda_id, now())
     .run();
   if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
   return c.json({ ...item, observacao: observacao || null, preco_unitario: preco, versao: item.versao + 1 });
@@ -791,8 +796,8 @@ export async function updateItemStatusHandler(c, env) {
   if (!validos.includes(novoStatus)) return c.json({ error: 'Status inválido' }, 400);
 
   const updated = await env.DB.prepare(`UPDATE comanda_itens SET status=?, enviado_em=? WHERE id=? AND comanda_id=? AND versao=?
-    AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta')`)
-    .bind(novoStatus, novoStatus === 'enviado' ? now() : item.enviado_em, item.id, item.comanda_id, item.versao, item.comanda_id)
+    AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta' AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?))`)
+    .bind(novoStatus, novoStatus === 'enviado' ? now() : item.enviado_em, item.id, item.comanda_id, item.versao, item.comanda_id, now())
     .run();
   if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
 
@@ -846,6 +851,9 @@ async function fecharComandaReservada(c, env) {
     .first();
   if (!com) return c.json({ error: 'Comanda não encontrada' }, 404);
   if (com.comanda_origem_id) return c.json({ error: 'Esta conta usa pagamentos individuais. Baixe cada pessoa na tela Pagamentos Individuais.' }, 409);
+  if (b.tipo === 'individual' && await env.DB.prepare('SELECT id FROM cartao_atendimentos WHERE comanda_id=? AND encerrado_em IS NULL LIMIT 1').bind(com.id).first()) {
+    return c.json({ error: 'Feche os cartões individualmente na Recepção. Cada cliente pode sair sem encerrar a mesa inteira.' }, 409);
+  }
   const anteriores = (await env.DB.prepare("SELECT id,criado_em FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(com.id).all()).results;
   const itens = await env.DB.prepare(
     "SELECT * FROM comanda_itens WHERE comanda_id=? AND status!='cancelado'"
