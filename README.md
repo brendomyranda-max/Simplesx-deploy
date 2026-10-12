@@ -153,6 +153,25 @@ Antes de publicar o backend, aplique `0022_transferencias_pedidos.sql` usando
 `npm run db:migrate`. A migração adiciona o histórico, a versão dos itens e a
 reserva temporária durante o fechamento, preservando os pedidos existentes.
 
+## Taxa de serviço, despesas e CMV
+
+No fechamento ou na baixa da comanda, informe **0** na taxa de serviço ou use
+**Sem taxa de serviço**. A atualização automática dos pedidos preserva o valor
+editado. A taxa zero também funciona no pré-fechamento e na divisão por pessoa.
+
+Em **Financeiro → Despesas → Nova despesa**, informe nome e valor. Categoria,
+data e forma de pagamento são opcionais. Despesa, lançamento e saída de caixa
+são salvos juntos; os lançamentos com data sem horário entram nos totais do período.
+O cartão **Despesas** do painel abre diretamente essa aba.
+
+Em **Relatórios → CMV por produto**, ou no cartão **CMV** do painel, consulte
+custo atual, preço, lucro bruto unitário, margem e CMV percentual. A lista aceita
+busca por nome/código, filtro por categoria e subcategorias e ordenação por lucro,
+margem, categoria ou nome. Margem é `(preço − custo) / preço`; não é markup.
+Os valores são do cadastro atual, não do período de vendas, e não descontam
+despesas, impostos ou descontos. Produtos sem preço não recebem margem fictícia;
+custos zerados são destacados para conferência. Não há nova migração de banco.
+
 ## Gestor Local v2
 
 Na versão **1.5.15**, o Servidor DoixP usa a **LogoDoixPAmarelo** no Android,

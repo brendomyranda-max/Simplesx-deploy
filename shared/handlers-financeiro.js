@@ -58,31 +58,28 @@ export async function listDespesasHandler(c, env) {
 
 export async function createDespesaHandler(c, env) {
   const b = await c.req.json();
-  if (!b.descricao || !num(b.valor)) return c.json({ error: 'Descrição e valor obrigatórios' }, 400);
-  const r = await env.DB.prepare(
-    'INSERT INTO despesas (descricao, categoria, valor, data, forma_pagamento, funcionario, criado_em) VALUES (?,?,?,?,?,?,?)'
-  )
-    .bind(b.descricao, b.categoria || null, num(b.valor), b.data || hoje(), b.forma_pagamento || null, b.funcionario || null, now())
-    .run();
-  await registrarLancamento(env, {
-    data: b.data || hoje(),
-    tipo: 'despesa',
-    categoria: b.categoria || 'Despesa',
-    descricao: b.descricao,
-    valor: num(b.valor),
-    metodo: b.forma_pagamento || null,
-    ref_tipo: 'despesa',
-    ref_id: r.meta.last_row_id,
-  });
-  await registrarCaixa(env, {
-    data: now(),
-    tipo: 'saida',
-    valor: num(b.valor),
-    metodo: b.forma_pagamento || null,
-    observacao: b.descricao,
-    funcionario: b.funcionario || null,
-  });
-  return c.json({ id: r.meta.last_row_id, ...b }, 201);
+  const descricao = typeof b.descricao === 'string' ? b.descricao.trim() : '';
+  const valor = num(b.valor);
+  if (!descricao || descricao.length > 200) return c.json({ error: 'Informe o nome da despesa, com até 200 caracteres' }, 400);
+  if (!Number.isFinite(valor) || valor <= 0) return c.json({ error: 'Informe um valor de despesa maior que zero' }, 400);
+  const data = b.data || hoje();
+  const dataValidada = new Date(`${data}T12:00:00Z`);
+  if (typeof data !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(data) || !Number.isFinite(dataValidada.getTime()) || dataValidada.toISOString().slice(0, 10) !== data) {
+    return c.json({ error: 'Data da despesa inválida' }, 400);
+  }
+  const agora = now();
+  // O batch é transacional: a despesa não pode ficar sem lançamento ou caixa.
+  // last_insert_rowid() referencia a despesa inserida na instrução anterior.
+  const [r] = await env.DB.batch([
+    env.DB.prepare('INSERT INTO despesas (descricao, categoria, valor, data, forma_pagamento, funcionario, criado_em) VALUES (?,?,?,?,?,?,?)')
+      .bind(descricao, b.categoria || null, valor, data, b.forma_pagamento || null, b.funcionario || null, agora),
+    env.DB.prepare(`INSERT INTO lancamentos (data, tipo, categoria, descricao, valor, metodo, ref_tipo, ref_id, criado_em)
+      VALUES (?,?,?,?,?,?,?,last_insert_rowid(),?)`)
+      .bind(data, 'despesa', b.categoria || 'Despesa', descricao, valor, b.forma_pagamento || null, 'despesa', agora),
+    env.DB.prepare('INSERT INTO caixa (data, tipo, valor, metodo, observacao, funcionario, criado_em) VALUES (?,?,?,?,?,?,?)')
+      .bind(agora, 'saida', valor, b.forma_pagamento || null, descricao, b.funcionario || null, agora),
+  ]);
+  return c.json({ ...b, id: r.meta.last_row_id, descricao, valor, data }, 201);
 }
 
 // ============================ CONTAS A PAGAR ============================
@@ -181,12 +178,12 @@ export async function listLancamentosHandler(c, env) {
   const where = [];
   const params = [];
   if (de) {
-    where.push('data >= ?');
-    params.push(`${de}T00:00:00`);
+    where.push('substr(data, 1, 10) >= ?');
+    params.push(de);
   }
   if (ate) {
-    where.push('data <= ?');
-    params.push(`${ate}T23:59:59`);
+    where.push('substr(data, 1, 10) <= ?');
+    params.push(ate);
   }
   if (tipo) {
     where.push('tipo=?');
@@ -355,6 +352,39 @@ export async function createFechamentoCaixaHandler(c, env) {
 
 // ============================ RELATÓRIOS ============================
 
+export async function cmvProdutosHandler(c, env) {
+  const [produtos, categorias, vinculos] = await Promise.all([
+    env.DB.prepare(`SELECT id, nome, codigo_interno, unidade, tipo, custo, preco FROM produtos
+      WHERE ativo=1 AND (tipo!='insumo' OR (preco>0 AND (exibir_restaurante=1 OR exibir_mercado=1)))
+      ORDER BY nome`).all(),
+    env.DB.prepare('SELECT id, nome, cor, ativo, categoria_pai_id FROM categorias ORDER BY nome').all(),
+    env.DB.prepare('SELECT produto_id, categoria_id FROM produto_categorias').all(),
+  ]);
+  const categoriasPorId = new Map(categorias.results.map((categoria) => [categoria.id, categoria]));
+  const porProduto = new Map();
+  for (const vinculo of vinculos.results) {
+    const categoria = categoriasPorId.get(vinculo.categoria_id);
+    if (!categoria) continue;
+    if (!porProduto.has(vinculo.produto_id)) porProduto.set(vinculo.produto_id, []);
+    porProduto.get(vinculo.produto_id).push(categoria);
+  }
+  return c.json({
+    categorias: categorias.results,
+    produtos: produtos.results.map((produto) => {
+      const custo = num(produto.custo);
+      const preco = produto.preco === null ? null : num(produto.preco);
+      const comPreco = preco !== null && preco > 0;
+      return {
+        ...produto, custo, preco,
+        lucro_unitario: comPreco ? Number((preco - custo).toFixed(2)) : null,
+        margem_pct: comPreco ? Number(((preco - custo) / preco * 100).toFixed(4)) : null,
+        cmv_pct: comPreco ? Number((custo / preco * 100).toFixed(4)) : null,
+        categorias: porProduto.get(produto.id) || [],
+      };
+    }),
+  });
+}
+
 export async function resumoRelatorioHandler(c, env) {
   const de = c.req.query('de') || `${hoje()}T00:00:00`;
   const ate = c.req.query('ate') || `${hoje()}T23:59:59`;
@@ -371,14 +401,14 @@ export async function resumoRelatorioHandler(c, env) {
     .bind(`${de}T00:00:00`, `${ate}T23:59:59`)
     .first();
   const despesas = await env.DB.prepare(
-    "SELECT COALESCE(SUM(valor),0) s FROM lancamentos WHERE tipo='despesa' AND data BETWEEN ? AND ?"
+    "SELECT COALESCE(SUM(valor),0) s FROM lancamentos WHERE tipo='despesa' AND substr(data, 1, 10) BETWEEN ? AND ?"
   )
-    .bind(`${de}T00:00:00`, `${ate}T23:59:59`)
+    .bind(de.slice(0, 10), ate.slice(0, 10))
     .first();
   const outrasReceitas = await env.DB.prepare(
-    "SELECT COALESCE(SUM(valor),0) s FROM lancamentos WHERE tipo='receita' AND data BETWEEN ? AND ? AND (categoria IS NULL OR categoria!='Venda')"
+    "SELECT COALESCE(SUM(valor),0) s FROM lancamentos WHERE tipo='receita' AND substr(data, 1, 10) BETWEEN ? AND ? AND (categoria IS NULL OR categoria!='Venda')"
   )
-    .bind(`${de}T00:00:00`, `${ate}T23:59:59`)
+    .bind(de.slice(0, 10), ate.slice(0, 10))
     .first();
   const perdas = await env.DB.prepare(
     "SELECT COALESCE(SUM(quantidade * valor_unitario),0) s FROM perdas WHERE criado_em BETWEEN ? AND ?"

@@ -590,6 +590,25 @@ export interface ResumoRelatorio {
   ticket_medio: number;
 }
 
+export interface ProdutoCmv {
+  id: number;
+  nome: string;
+  codigo_interno: string | null;
+  unidade: string;
+  tipo: ProdutoTipo;
+  custo: number;
+  preco: number | null;
+  lucro_unitario: number | null;
+  margem_pct: number | null;
+  cmv_pct: number | null;
+  categorias: Categoria[];
+}
+
+export interface RelatorioCmv {
+  produtos: ProdutoCmv[];
+  categorias: Categoria[];
+}
+
 export interface EstadoSistema {
   produtos: number;
   estoque_baixo: number;

@@ -3,7 +3,8 @@
  * Responsabilidade: Implementa a tela FinanceiroPage.tsx e coordena seus dados e ações.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Wallet, Plus, ArrowUpCircle, ArrowDownCircle, CheckCircle2, Clock } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
@@ -13,7 +14,8 @@ import { fmtBRL, fmtData, fmtDataCurta, hojeLocal } from '@/lib/format';
 
 export function FinanceiroPage() {
   const toast = useToast();
-  const [tab, setTab] = useState<'lancamentos' | 'despesas' | 'pagar' | 'receber' | 'caixa'>('lancamentos');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<'lancamentos' | 'despesas' | 'pagar' | 'receber' | 'caixa'>(searchParams.get('aba') === 'despesas' ? 'despesas' : 'lancamentos');
   const [de, setDe] = useState(hojeLocal());
   const [ate, setAte] = useState(hojeLocal());
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
@@ -23,6 +25,8 @@ export function FinanceiroPage() {
   const [caixa, setCaixa] = useState<CaixaMov[]>([]);
   const [load, setLoad] = useState(true);
   const [modal, setModal] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const salvandoRef = useRef(false);
   const [form, setForm] = useState<any>({});
 
   const loadAll = async () => {
@@ -53,12 +57,19 @@ export function FinanceiroPage() {
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (salvandoRef.current) return;
+    const descricao = String(form.descricao || '').trim();
+    const valor = Number(form.valor);
+    if (!descricao) return toast('error', tab === 'despesas' ? 'Informe o nome da despesa' : 'Informe a descrição');
+    if (!Number.isFinite(valor) || valor <= 0) return toast('error', 'Informe um valor maior que zero');
+    salvandoRef.current = true;
+    setSalvando(true);
     try {
       if (tab === 'despesas') {
         await financeiroApi.criarDespesa({
-          descricao: form.descricao,
+          descricao,
           categoria: form.categoria,
-          valor: Number(form.valor),
+          valor,
           data: form.data || hojeLocal(),
           forma_pagamento: form.metodo,
         });
@@ -74,9 +85,12 @@ export function FinanceiroPage() {
         toast('success', 'Movimento de caixa registrado');
       }
       setModal(false);
-      loadAll();
+      await loadAll();
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao salvar');
+    } finally {
+      salvandoRef.current = false;
+      setSalvando(false);
     }
   };
 
@@ -94,6 +108,7 @@ export function FinanceiroPage() {
   };
 
   const somaLanc = (tipo: string) => lancamentos.filter((l) => l.tipo === tipo).reduce((s, l) => s + l.valor, 0);
+  const novaAcao = { lancamentos: 'Novo lançamento', despesas: 'Nova despesa', pagar: 'Nova conta a pagar', receber: 'Nova conta a receber', caixa: 'Novo movimento de caixa' }[tab];
 
   if (load) return <Spinner />;
 
@@ -104,7 +119,7 @@ export function FinanceiroPage() {
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Financeiro</h1>
           <p className="text-sm text-slate-500">Lançamentos, contas e caixa</p>
         </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={abrir}>Novo lançamento</Button>
+        <Button icon={<Plus className="h-4 w-4" />} onClick={abrir}>{novaAcao}</Button>
       </div>
 
       <Tabs
@@ -168,8 +183,9 @@ export function FinanceiroPage() {
       )}
 
       {tab === 'despesas' && (
-        <div className="mt-4">
-          <DespesasList itens={despesas} onPagar={() => {}} />
+        <div className="mt-4 space-y-3">
+          <p className="text-sm text-slate-500">Use Nova despesa para informar o nome e o valor. Categoria, data e forma de pagamento são opcionais.</p>
+          <DespesasList itens={despesas} />
         </div>
       )}
 
@@ -231,7 +247,7 @@ export function FinanceiroPage() {
         </div>
       )}
 
-      <Modal open={modal} onClose={() => setModal(false)} title={`Novo ${tab === 'lancamentos' ? 'movimento' : tab}`}>
+      <Modal open={modal} onClose={() => { if (!salvandoRef.current) setModal(false); }} title={novaAcao}>
         <form onSubmit={salvar} className="space-y-4">
           {(tab === 'lancamentos' || tab === 'caixa') && (
             <Field label="Tipo">
@@ -241,8 +257,8 @@ export function FinanceiroPage() {
               </Select>
             </Field>
           )}
-          <Field label="Descrição *">
-            <Input value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} autoFocus />
+          <Field label={tab === 'despesas' ? 'Nome da despesa *' : 'Descrição *'}>
+            <Input aria-label={tab === 'despesas' ? 'Nome da despesa' : 'Descrição'} required maxLength={200} placeholder={tab === 'despesas' ? 'Ex.: aluguel, energia, gás, manutenção' : undefined} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} autoFocus />
           </Field>
           {tab === 'despesas' && (
             <Field label="Categoria">
@@ -255,7 +271,7 @@ export function FinanceiroPage() {
             </Field>
           )}
           <Field label="Valor (R$) *">
-            <Input type="number" step="0.01" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} />
+            <Input aria-label="Valor em reais" type="number" min="0.01" step="0.01" required value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} />
           </Field>
           <Field label="Data">
             <Input type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} />
@@ -273,8 +289,8 @@ export function FinanceiroPage() {
             </Field>
           )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setModal(false)}>Cancelar</Button>
-            <Button type="submit">Salvar</Button>
+            <Button type="button" variant="secondary" disabled={salvando} onClick={() => setModal(false)}>Cancelar</Button>
+            <Button type="submit" loading={salvando}>{tab === 'despesas' ? 'Registrar despesa' : 'Salvar'}</Button>
           </div>
         </form>
       </Modal>
@@ -282,7 +298,7 @@ export function FinanceiroPage() {
   );
 }
 
-function DespesasList({ itens }: { itens: Lancamento[]; onPagar: () => void }) {
+function DespesasList({ itens }: { itens: Lancamento[] }) {
   const soma = itens.reduce((s, i) => s + i.valor, 0);
   return (
     <div className="space-y-3">

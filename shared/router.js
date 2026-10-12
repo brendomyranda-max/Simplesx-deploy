@@ -199,6 +199,7 @@ const routes = [
   { m: 'POST', p: '/api/fechamento-caixa', h: fin.createFechamentoCaixaHandler, mod: 'gestor' },
 
   // relatórios
+  { m: 'GET', p: '/api/relatorios/cmv-produtos', h: fin.cmvProdutosHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/relatorios/resumo', h: fin.resumoRelatorioHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/relatorios/mais-vendidos', h: fin.maisVendidosHandler, mod: 'gestor' },
   { m: 'GET', p: '/api/relatorios/estoque-baixo', h: fin.estoqueBaixoHandler, mod: 'gestor' },

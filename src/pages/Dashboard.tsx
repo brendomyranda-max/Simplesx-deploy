@@ -95,8 +95,12 @@ export function Dashboard() {
         {resumo && (
           <>
             <StatCard label="Lucro líquido" value={fmtBRL(resumo.lucro_liquido)} icon={<Wallet className="h-5 w-5" />} color="green" sub={`${resumo.margem_pct.toFixed(1)}% margem`} />
-            <StatCard label="CMV" value={`${resumo.cmv_pct.toFixed(1)}%`} icon={<Boxes className="h-5 w-5" />} color="blue" sub={fmtBRL(resumo.cmv)} />
-            <StatCard label="Despesas" value={fmtBRL(resumo.despesas)} icon={<Wallet className="h-5 w-5" />} color="red" />
+            <Link to="/relatorios?aba=cmv" className="block rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600" aria-label="Ver CMV por produto">
+              <StatCard label="CMV" value={`${resumo.cmv_pct.toFixed(1)}%`} icon={<Boxes className="h-5 w-5" />} color="blue" sub={`${fmtBRL(resumo.cmv)} · Ver produtos`} />
+            </Link>
+            <Link to="/financeiro?aba=despesas" className="block rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600" aria-label="Ver e cadastrar despesas">
+              <StatCard label="Despesas" value={fmtBRL(resumo.despesas)} icon={<Wallet className="h-5 w-5" />} color="red" sub="Ver e cadastrar despesas" />
+            </Link>
             <StatCard label="Perdas" value={fmtBRL(resumo.perdas)} icon={<Trash2 className="h-5 w-5" />} color="amber" sub={`${estado?.perdas_hoje || 0} hoje`} />
           </>
         )}

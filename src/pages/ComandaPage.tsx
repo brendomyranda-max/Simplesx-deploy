@@ -29,6 +29,7 @@ import { comandaApi, produtoApi, impressoraApi, configApi, categoriaApi, authApi
 import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
+import { taxaServicoAtual, type EdicaoTaxaServico } from '@/lib/taxa-servico';
 
 const CORES = ['#0a0a0a', '#262626', '#404040', '#525252', '#737373', '#a3a3a3'];
 
@@ -55,7 +56,9 @@ export function ComandaPage() {
   const [fechar, setFechar] = useState(false);
   const [baixar, setBaixar] = useState(false);
   const [tipo, setTipo] = useState<'unica' | 'divisao' | 'individual'>('unica');
-  const [taxa, setTaxa] = useState('');
+  const [taxaEditada, setTaxaEditada] = useState<EdicaoTaxaServico | null>(null);
+  const taxa = taxaServicoAtual(comandaId, comanda?.taxa_garcom_pct, taxaEditada);
+  const setTaxa = (valor: string) => setTaxaEditada({ comandaId, valor });
   const [forma, setForma] = useState('dinheiro');
   const [finalizando, setFinalizando] = useState(false);
   const [enviandoCozinha, setEnviandoCozinha] = useState(false);
@@ -96,7 +99,6 @@ export function ComandaPage() {
       const c = await comandaApi.get(comandaId);
       if (sequence !== loadSequence.current) return;
       setComanda(c);
-      if (!taxa) setTaxa(String(c.taxa_garcom_pct || 0));
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar comanda');
     } finally {
@@ -106,6 +108,7 @@ export function ComandaPage() {
   };
 
   useEffect(() => {
+    setTaxaEditada(null);
     setPessoaSel('geral'); setAcoesItem(null); setTransferencia(null); setArrastando(null);
     loadComanda();
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
@@ -444,6 +447,10 @@ export function ComandaPage() {
     if (subG > 0) v['geral'] = comTaxa(subG).toFixed(2);
     setValoresIndiv(v);
   };
+
+  useEffect(() => {
+    if (fechar) iniciaValores();
+  }, [fechar, taxa, comandaId]);
 
   const abrirFechamento = () => {
     if (transferenciaRef.current) return;
@@ -850,7 +857,7 @@ export function ComandaPage() {
                 <span className="font-semibold text-slate-800">{fmtBRL(subtotal)}</span>
               </div>
               <div className="flex justify-between text-slate-500">
-                <span>Taxa do garçom ({Number(taxa || 0)}%)</span>
+                <span>Taxa de serviço ({Number(taxa || 0)}%)</span>
                 <span className="font-semibold text-slate-800">{fmtBRL(subtotal * (Number(taxa || 0) / 100))}</span>
               </div>
               <div className="flex justify-between border-t border-slate-100 pt-2">
@@ -859,8 +866,9 @@ export function ComandaPage() {
               </div>
               <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-2.5">
                 <span className="text-xs font-semibold text-slate-500">Taxa %</span>
-                <Input type="number" step="0.1" className="!w-20 !py-1 text-right" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
+                <Input aria-label="Taxa de serviço (%)" type="number" min="0" max="100" step="0.1" className="!w-20 !py-1 text-right" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
               </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setTaxa('0')}>Sem taxa de serviço</Button>
             </div>
 
             {!locked && (
@@ -943,8 +951,9 @@ export function ComandaPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Taxa do garçom (%)">
-              <Input type="number" step="0.1" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
+            <Field label="Taxa de serviço (%)" hint="Informe 0 quando o cliente não pagar a taxa.">
+              <Input aria-label="Taxa de serviço no fechamento (%)" type="number" min="0" max="100" step="0.1" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
+              <Button type="button" variant="ghost" size="sm" onClick={() => setTaxa('0')}>Sem taxa de serviço</Button>
             </Field>
             <Field label="Forma de pagamento">
               <Select value={forma} onChange={(e) => setForma(e.target.value)}>
@@ -1081,8 +1090,9 @@ export function ComandaPage() {
             <p className="text-2xl font-extrabold text-brand-600">{fmtBRL(totalComTaxa)}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Taxa do garçom (%)">
-              <Input type="number" step="0.1" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
+            <Field label="Taxa de serviço (%)" hint="Informe 0 quando o cliente não pagar a taxa.">
+              <Input aria-label="Taxa de serviço na baixa (%)" type="number" min="0" max="100" step="0.1" value={taxa} onChange={(e) => setTaxa(e.target.value)} />
+              <Button type="button" variant="ghost" size="sm" onClick={() => setTaxa('0')}>Sem taxa de serviço</Button>
             </Field>
             <Field label="Forma de pagamento">
               <Select value={forma} onChange={(e) => setForma(e.target.value)}>

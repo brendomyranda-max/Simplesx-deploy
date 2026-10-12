@@ -826,6 +826,9 @@ async function fecharComandaReservada(c, env) {
   }
 
   const taxaPct = b.taxa_garcom_pct !== undefined ? num(b.taxa_garcom_pct) : num(com.taxa_garcom_pct);
+  if (!Number.isFinite(taxaPct) || taxaPct < 0 || taxaPct > 100) {
+    return c.json({ error: 'Taxa de serviço deve ser um percentual entre 0 e 100' }, 400);
+  }
   const tipo = b.tipo || com.fechamento_tipo || 'unica';
   const responsavel = b.responsavel || com.garcom_nome || null;
 

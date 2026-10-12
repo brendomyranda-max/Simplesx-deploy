@@ -21,6 +21,7 @@ import type {
   Conta,
   Funcionario,
   ResumoRelatorio,
+  RelatorioCmv,
   EstadoSistema,
   ConfigEmpresa,
   OnlineCatalogProduct,
@@ -420,6 +421,7 @@ export const fechamentoCaixaApi = {
 };
 
 export const relatorioApi = {
+  cmvProdutos: () => api.get<RelatorioCmv>('/relatorios/cmv-produtos'),
   resumo: (de?: string, ate?: string) => api.get<ResumoRelatorio>(`/relatorios/resumo?de=${de || ''}&ate=${ate || ''}`),
   maisVendidos: (de?: string, ate?: string) =>
     api.get<{ produto_id: number; nome: string; qtd: number; total: number }[]>(`/relatorios/mais-vendidos?de=${de || ''}&ate=${ate || ''}`),

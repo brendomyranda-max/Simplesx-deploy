@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   BarChart3,
   TrendingUp,
@@ -17,6 +18,7 @@ import {
   UserSquare2,
 } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { CmvProdutos } from '@/components/CmvProdutos';
 import { Badge, Button, Card, EmptyState, Field, Input, Spinner, StatCard, Tabs, useToast } from '@/components/ui';
 import { relatorioApi } from '@/lib/api';
 import type { ResumoRelatorio, Produto, ValidadeControle } from '@/lib/types';
@@ -24,7 +26,8 @@ import { fmtBRL, fmtNum, diasAte, hojeLocal, addDiasLocal } from '@/lib/format';
 
 export function RelatoriosPage() {
   const toast = useToast();
-  const [tab, setTab] = useState<'resumo' | 'vendas' | 'categoria' | 'funcionario' | 'estoque' | 'vencimentos' | 'perdas'>('resumo');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<'resumo' | 'cmv' | 'vendas' | 'categoria' | 'funcionario' | 'estoque' | 'vencimentos' | 'perdas'>(searchParams.get('aba') === 'cmv' ? 'cmv' : 'resumo');
   const [de, setDe] = useState(addDiasLocal(-30));
   const [ate, setAte] = useState(hojeLocal());
   const [resumo, setResumo] = useState<ResumoRelatorio | null>(null);
@@ -78,10 +81,10 @@ export function RelatoriosPage() {
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Relatórios</h1>
           <p className="text-sm text-slate-500">Visão de desempenho do negócio</p>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
+        {tab !== 'cmv' && <div className="flex flex-wrap items-end gap-2">
           <Field label="De"><Input type="date" value={de} onChange={(e) => setDe(e.target.value)} /></Field>
           <Field label="Até"><Input type="date" value={ate} onChange={(e) => setAte(e.target.value)} /></Field>
-        </div>
+        </div>}
       </div>
 
       <Tabs
@@ -89,6 +92,7 @@ export function RelatoriosPage() {
         onChange={(v) => setTab(v as any)}
         tabs={[
           { value: 'resumo', label: 'Resumo' },
+          { value: 'cmv', label: 'CMV por produto' },
           { value: 'vendas', label: 'Mais vendidos' },
           { value: 'categoria', label: 'Lucro por categoria' },
           { value: 'funcionario', label: 'Vendas por vendedor' },
@@ -98,7 +102,7 @@ export function RelatoriosPage() {
         ]}
       />
 
-      {load ? (
+      {tab === 'cmv' ? <CmvProdutos /> : load ? (
         <Spinner />
       ) : (
         <>
