@@ -1,0 +1,14 @@
+{
+  "nome": "DoixP",
+  "url": "https://doixp.com/",
+  "titulo": "DoixP — Sistema de gestão para restaurantes e mercados",
+  "descricao": "DoixP é um sistema de gestão para restaurantes e mercados, com PDV, mesas e comandas, pedidos online, estoque, validade e controle financeiro.",
+  "chamada": "Gestão de restaurantes e mercados em um só lugar.",
+  "apresentacao": "O DoixP conecta o atendimento, as vendas e a gestão do seu estabelecimento. Organize a operação do balcão à cozinha, com as informações do negócio na mesma plataforma.",
+  "recursos": [
+    "PDV, mesas e comandas",
+    "Delivery e pedidos online",
+    "Estoque, lotes e validade",
+    "Financeiro e relatórios"
+  ]
+}

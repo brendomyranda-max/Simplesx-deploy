@@ -45,6 +45,10 @@ O projeto Pages e o banco usados nos comandos são `simplesx-projeto-beta` e
 `simplesx-db`; são identificadores técnicos existentes. Associe `doixp.com` ao
 projeto Pages para disponibilizar o domínio público sem renomeá-los.
 
+Para preparar a presença da marca na pesquisa e confirmar o domínio no Google
+Search Console, consulte [SEO.md](./SEO.md). A confirmação na conta do
+proprietário e a solicitação de indexação são etapas externas ao deploy.
+
 Consulte [SEGURANCA.md](./SEGURANCA.md) para a relação de variáveis, assinatura
 Android e cuidados ao publicar um repositório que já teve dados no histórico.
 

@@ -1,6 +1,6 @@
 /** Logotipo oficial da DoixP, reutilizado em todos os pontos de entrada. */
 
-import type { ImgHTMLAttributes } from 'react';
+import React, { type ImgHTMLAttributes } from 'react';
 
 type BrandLogoProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'>;
 

@@ -10,7 +10,7 @@ import { useAuth } from '@/store/auth';
 import { authApi, type SignupPolicy } from '@/lib/api';
 import { Button, Field, Input, useToast } from '@/components/ui';
 import { Investimento } from '@/components/Investimento';
-import { BrandLogo } from '@/components/BrandLogo';
+import { PublicBrandIntro } from '@/components/PublicBrandIntro';
 import { Turnstile } from '@/components/Turnstile';
 import { useNavigate } from 'react-router-dom';
 
@@ -59,12 +59,13 @@ export function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-brand-950 to-slate-900 p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md">
-        <div className="mb-6 flex flex-col items-center">
-          <BrandLogo className="mb-4 h-20 w-20 rounded-2xl shadow-2xl shadow-black/40" />
-          <h1 className="text-2xl font-extrabold text-white">DoixP</h1>
-          <p className="mt-1 text-sm text-slate-400">Acesso seguro ao seu estabelecimento</p>
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-brand-950 to-slate-900 p-4 sm:p-8">
+      <div className="grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+      <PublicBrandIntro />
+      <motion.section aria-labelledby="doixp-acesso" initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="mx-auto w-full max-w-md">
+        <div className="mb-6 text-center">
+          <h2 id="doixp-acesso" className="text-xl font-extrabold text-white">Acesse seu estabelecimento</h2>
+          <p className="mt-1 text-sm text-slate-400">Entre com sua conta DoixP</p>
         </div>
         <div className="card p-6">
           <div className="mb-5 grid grid-cols-2 gap-2">
@@ -110,7 +111,8 @@ export function Login() {
         </div>
         <Investimento />
         <p className="mt-4 text-center text-xs text-slate-500">O CNPJ não substitui sua senha e não concede acesso sozinho.</p>
-      </motion.div>
-    </div>
+      </motion.section>
+      </div>
+    </main>
   );
 }

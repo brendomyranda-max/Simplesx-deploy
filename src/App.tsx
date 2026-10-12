@@ -11,6 +11,7 @@ import { AppShell } from '@/components/AppShell';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { NfcBridge } from '@/components/NfcBridge';
 import { Login } from '@/pages/Login';
+import { PublicBrandIntro } from '@/components/PublicBrandIntro';
 import { InicioPage } from '@/pages/InicioPage';
 import { Dashboard } from '@/pages/Dashboard';
 import { PdvPage } from '@/pages/PdvPage';
@@ -283,7 +284,7 @@ function SessionApp() {
     return () => window.removeEventListener('simplexsa:logout', onLogout);
   }, [navigate, clearSession]);
 
-  if (iniciando) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Verificando sessão…</div>;
+  if (iniciando) return <main className="min-h-screen bg-slate-950 p-6 sm:p-10"><div className="mx-auto max-w-4xl"><PublicBrandIntro /><p role="status" className="mt-8 text-sm text-slate-400">Verificando sessão…</p></div></main>;
   if (!token) return <Login />;
 
   return (

@@ -15,3 +15,66 @@
 
 /sw.js
   Cache-Control: no-cache
+
+# Concentrar a marca no domínio oficial, sem indexar cópias do deploy.
+https://simplesx-projeto-beta.pages.dev/*
+  X-Robots-Tag: noindex
+
+https://:version.simplesx-projeto-beta.pages.dev/*
+  X-Robots-Tag: noindex
+
+# Estas páginas continuam acessíveis, mas não são resultados de pesquisa.
+# Não bloquear no robots.txt: o buscador precisa ler o noindex.
+/login*
+  X-Robots-Tag: noindex
+
+/dashboard*
+  X-Robots-Tag: noindex
+
+/vendas*
+  X-Robots-Tag: noindex
+
+/estoque*
+  X-Robots-Tag: noindex
+
+/entrada*
+  X-Robots-Tag: noindex
+
+/validade*
+  X-Robots-Tag: noindex
+
+/categorias*
+  X-Robots-Tag: noindex
+
+/financeiro*
+  X-Robots-Tag: noindex
+
+/fechamento-caixa*
+  X-Robots-Tag: noindex
+
+/relatorios*
+  X-Robots-Tag: noindex
+
+/perdas*
+  X-Robots-Tag: noindex
+
+/funcionarios*
+  X-Robots-Tag: noindex
+
+/impressoras*
+  X-Robots-Tag: noindex
+
+/config*
+  X-Robots-Tag: noindex
+
+/fiscal*
+  X-Robots-Tag: noindex
+
+/pdv*
+  X-Robots-Tag: noindex
+
+/restaurante*
+  X-Robots-Tag: noindex
+
+/pedido/:slug/acompanhar/*
+  X-Robots-Tag: noindex, nofollow, nosnippet

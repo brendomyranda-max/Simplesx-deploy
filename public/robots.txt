@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /downloads/
+
+Sitemap: https://doixp.com/sitemap.xml
