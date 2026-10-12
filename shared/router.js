@@ -20,7 +20,7 @@ import * as online from './handlers-online.js';
 import { TenantDb } from './tenant-db.js';
 import { usarCartaoHandler } from './cartao-nfc.js';
 import { consumirNfcHandler, identificarNfcLocalHandler, listarNfcHandler, publicarNfcGestorHandler } from './nfc.js';
-import { criarSolicitacaoNfcHandler, consultarSolicitacaoNfcHandler, cancelarSolicitacaoNfcHandler, responderSolicitacaoNfcHandler } from './nfc-solicitacoes.js';
+import { criarSolicitacaoNfcHandler, consultarSolicitacaoNfcHandler, cancelarSolicitacaoNfcHandler, responderSolicitacaoNfcHandler, listarServidoresNfcHandler } from './nfc-solicitacoes.js';
 
 // Módulos: 'gestor' (tudo), 'pdv_mercado', 'restaurante'
 const routes = [
@@ -177,6 +177,7 @@ const routes = [
   { m: 'GET', p: '/api/nfc/eventos', h: listarNfcHandler },
   { m: 'POST', p: '/api/nfc/identificar', h: identificarNfcLocalHandler },
   { m: 'POST', p: '/api/nfc/solicitacoes', h: criarSolicitacaoNfcHandler },
+  { m: 'GET', p: '/api/nfc/servidores', h: listarServidoresNfcHandler },
   { m: 'GET', p: '/api/nfc/solicitacoes/:id', h: consultarSolicitacaoNfcHandler },
   { m: 'DELETE', p: '/api/nfc/solicitacoes/:id', h: cancelarSolicitacaoNfcHandler },
   { m: 'POST', p: '/api/nfc/solicitacoes/:id/leitura', h: responderSolicitacaoNfcHandler, pub: true },

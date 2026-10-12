@@ -1,6 +1,7 @@
 package br.com.simplesx.gestor.update
 
 import android.content.Intent
+import android.app.Activity
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -11,11 +12,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import br.com.simplesx.gestor.BuildConfig
 import br.com.simplesx.gestor.data.AppConfig
@@ -34,6 +37,7 @@ fun UpdatePanel(activity: ComponentActivity, config: AppConfig) {
     var release by remember { mutableStateOf<UpdateRelease?>(null) }
     var apk by remember { mutableStateOf<File?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var continueAfterPermission by rememberSaveable { mutableStateOf(false) }
     var message by remember { mutableStateOf("Busque uma nova versão sem desinstalar o servidor.") }
     fun resumeService() {
         if (config.resumeAfterUpdate) {
@@ -41,59 +45,61 @@ fun UpdatePanel(activity: ComponentActivity, config: AppConfig) {
             PrintSyncService.start(activity)
         }
     }
-    val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+    val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         resumeService()
         busy = false
-        message = "Instalador fechado. Você pode buscar atualizações novamente."
+        message = if (result.resultCode == Activity.RESULT_OK) "Atualização instalada. Abra o servidor para conferir a nova versão."
+            else "Instalação não concluída. Toque em Atualizar servidor para tentar novamente e confirme Atualizar no Android."
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        message = if (activity.packageManager.canRequestPackageInstalls()) "Permissão concedida. Toque em Atualizar servidor."
-        else "Autorize este servidor a instalar a atualização nas configurações do Android."
+        if (activity.packageManager.canRequestPackageInstalls()) continueAfterPermission = true
+        else { busy = false; message = "Permissão não concedida. Toque em Atualizar servidor e autorize a instalação para continuar." }
+    }
+
+    suspend fun update() {
+        busy = true
+        try {
+            val available = release ?: withContext(Dispatchers.IO) { updater.cachedRelease() ?: updater.check() }
+            if (available.versionCode <= BuildConfig.VERSION_CODE) {
+                message = "O servidor já está atualizado."
+                busy = false
+                return
+            }
+            release = available
+            message = "Baixando e verificando a atualização…"
+            val file = apk ?: withContext(Dispatchers.IO) {
+                if (updater.cachedRelease() == available) updater.cachedApk()
+                else updater.download(available) { percent -> activity.runOnUiThread { message = "Baixando atualização: $percent%" } }
+            }.also { apk = it }
+            if (!activity.packageManager.canRequestPackageInstalls()) {
+                message = "Autorize a instalação. Ao voltar, o instalador abrirá automaticamente."
+                permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+            } else {
+                withContext(Dispatchers.IO) { updater.validateApk(file, available) }
+                message = "Finalizando impressões em andamento…"
+                config.resumeAfterUpdate = config.serviceEnabled || config.resumeAfterUpdate
+                if (config.serviceEnabled || PrintSyncService.isRunning) PrintSyncService.stop(activity)
+                withTimeout(60_000) { while (PrintSyncService.isRunning) delay(250) }
+                message = "Confirme a atualização no instalador do Android."
+                installer.launch(updater.installIntent(file))
+            }
+        } catch (error: Exception) {
+            resumeService()
+            apk = null
+            release = null
+            message = "Não foi possível atualizar: ${error.message ?: "verifique a conexão e tente novamente"}"
+            busy = false
+        }
+    }
+    LaunchedEffect(continueAfterPermission) {
+        if (continueAfterPermission) {
+            update()
+            continueAfterPermission = false
+        }
     }
     Text("Versão instalada: ${BuildConfig.VERSION_NAME}")
     Text(message)
-    Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
-        scope.launch {
-            busy = true
-            try {
-                val file = apk
-                val available = release
-                if (file != null && available != null) {
-                    if (!activity.packageManager.canRequestPackageInstalls()) {
-                        permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
-                        busy = false
-                    } else {
-                        withContext(Dispatchers.IO) { updater.validateApk(file, available) }
-                        message = "Finalizando impressões em andamento…"
-                        config.resumeAfterUpdate = config.serviceEnabled || config.resumeAfterUpdate
-                        if (config.serviceEnabled || PrintSyncService.isRunning) PrintSyncService.stop(activity)
-                        withTimeout(60_000) { while (PrintSyncService.isRunning) delay(250) }
-                        message = "Confirme a atualização no instalador do Android."
-                        installer.launch(updater.installIntent(file))
-                    }
-                } else if (available != null) {
-                    message = "Baixando atualização…"
-                    apk = withContext(Dispatchers.IO) {
-                        updater.download(available) { percent -> activity.runOnUiThread { message = "Baixando atualização: $percent%" } }
-                    }
-                    message = "Versão ${available.version} pronta para instalar."
-                    busy = false
-                } else {
-                    message = "Buscando atualizações…"
-                    val latest = withContext(Dispatchers.IO) { updater.check() }
-                    if (latest.versionCode > BuildConfig.VERSION_CODE) {
-                        release = latest
-                        message = "Versão ${latest.version} disponível."
-                    } else { message = "O servidor já está atualizado." }
-                    busy = false
-                }
-            } catch (error: Exception) {
-                resumeService()
-                message = "Não foi possível atualizar: ${error.message ?: "verifique a conexão e tente novamente"}"
-                busy = false
-            }
-        }
-    }) { Text(if (apk != null) "Atualizar servidor" else if (release != null) "Baixar atualização" else "Buscar atualizações") }
+    Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = { scope.launch { update() } }) { Text("Atualizar servidor") }
     if (release != null) {
         OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = { release = null; apk = null; message = "Busque a versão publicada novamente." }) { Text("Buscar outra vez") }
     }

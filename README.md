@@ -323,6 +323,16 @@ caso, sem transferir saldo entre cartões.
 
 ### Diagnóstico NFC no Android (1.5.16)
 
+Na versão **1.5.19**, uma tela web no computador, celular ou PDA pode escolher
+o aparelho leitor em **Onde aproximar o cartão**. A lista usa o mesmo pareamento
+dos servidores de impressão. No S21, ative **Usar como leitor para outro aparelho**
+e mantenha o Servidor aberto e desbloqueado. No computador, ative o leitor USB
+no Servidor e mantenha a janela dele em foco. A web recebe a leitura pela internet,
+mesmo sem o foco na janela, e só a tela solicitante recebe o cartão. Cada leitor
+aceita uma espera por vez; conclua ou cancele antes de atender em outra tela.
+Atualize o backend e aplique **0040_nfc_servidores.sql**. No próprio Android,
+**Neste celular / PDA → Ler cartão neste celular** continua abrindo o leitor nativo.
+
 Na versão **1.5.18**, o Chrome/PWA pode solicitar o leitor Android: em
 **Aguardar cartão**, **Adicionar com cartão** ou **Fechamento de cartão**, toque
 em **Ler cartão neste celular**, aproxime o cartão na tela nativa e aguarde o
@@ -365,22 +375,25 @@ compilar localmente não atualiza o aplicativo instalado no celular.
 
 ### Atualizar os servidores sem desinstalar (1.5.16)
 
-Instale a versão 1.5.18 por cima da instalação anterior: execute o instalador do
+Instale a versão 1.5.19 por cima da instalação anterior: execute o instalador do
 Windows, substitua o AppImage no Linux ou confirme **Atualizar** no instalador do
 Android. O APK publicado usa a mesma chave permanente; APKs de desenvolvimento
 com outra assinatura não podem substituir a instalação oficial.
 
-Depois, no próprio servidor, use **Atualização do servidor → Buscar atualizações →
-Baixar atualização → Atualizar servidor / Atualizar e reiniciar**. Token,
+Na versão 1.5.19, use **Atualização do servidor → Atualizar servidor**: o botão
+busca, baixa, verifica e inicia a instalação no mesmo fluxo. Nas versões anteriores,
+conclua **Buscar atualizações → Baixar atualização → Atualizar servidor / Atualizar e reiniciar**
+para receber essa correção, ou execute o instalador oficial por cima. Token,
 pareamento, impressoras e diário de impressão permanecem no diretório existente.
 Os trabalhos já recebidos terminam antes de instalar. No Android, autorize
-**Permitir desta fonte** quando solicitado e confirme no instalador do sistema;
+**Permitir desta fonte** quando solicitado; ao retornar, a instalação continua
+automaticamente. Confirme **Atualizar** no instalador do sistema;
 ao concluir ou cancelar, a recepção é retomada se estava ligada.
 
 A release inclui `latest.yml`, `latest-linux.yml`, instaladores e `android.json`
 com versão, tamanho e SHA-256. Os feeds públicos em `/atualizacoes/` apontam
 somente para arquivos permitidos da release publicada. O Android verifica também
-o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.18` pelo workflow
+o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.19` pelo workflow
 dos servidores e aguarde os três artefatos antes de publicar o site com o novo
 `shared/gestor-releases.js`. Nas próximas versões, aumente as versões do desktop,
 Android e desse arquivo juntas.

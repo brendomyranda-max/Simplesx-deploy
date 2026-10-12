@@ -5,7 +5,7 @@
 
 import { estabelecimentoId, gerarToken, httpError, kvGet, kvPut, now, num, sha256, temModulo } from './util.js';
 import { cleanupServerStatements, serverCutoff, SESSION_CONFLICT } from './print-servers.js';
-import { normalizarLeituraNfc, registrarLeituraNfc } from './nfc.js';
+import { normalizarLeituraNfc, registrarLeituraNfc, registrarNfcServidor } from './nfc.js';
 
 export const DEVICE_TASK_TYPES = new Set([
   'PRINT_ORDER',
@@ -240,7 +240,7 @@ export async function publishDeviceNfcHandler(c, env) {
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object') return c.json({ error: 'Corpo JSON obrigatório' }, 400);
   const leitura = normalizarLeituraNfc(body);
-  const evento = await registrarLeituraNfc(env.DB, device.estabelecimento_id, leitura, 'android');
+  const evento = await registrarNfcServidor(env.DB, device.estabelecimento_id, leitura, 'android', { tipo: 'android', id: device.id });
   return c.json({ ok: true, ...evento });
 }
 
@@ -268,7 +268,9 @@ export async function deviceNfcStatusHandler(c, env) {
     "SELECT id, uid, consumido_em FROM nfc_eventos WHERE id=? AND estabelecimento_id=? AND origem IN ('android','android-teste')"
   ).bind(id, device.estabelecimento_id).first();
   if (!evento) return c.json({ error: 'Leitura não encontrada' }, 404);
-  return c.json({ ok: true, ...evento, recebido_pelo_terminal: Boolean(evento.consumido_em) });
+  const request = await env.DB.prepare('SELECT entregue_em FROM nfc_solicitacoes WHERE evento_id=? AND estabelecimento_id=? AND servidor_tipo=? AND servidor_id=?')
+    .bind(id, device.estabelecimento_id, 'android', device.id).first();
+  return c.json({ ok: true, ...evento, recebido_pelo_terminal: request ? Boolean(request.entregue_em) : Boolean(evento.consumido_em) });
 }
 
 export async function devicePrintConfigHandler(c, env) {

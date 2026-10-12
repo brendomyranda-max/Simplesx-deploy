@@ -142,8 +142,11 @@ isolada por estabelecimento. Não há nova migração de banco.
 
 ### Atualização pelo próprio aplicativo
 
-A partir de 1.5.16, abra **Atualização do servidor → Buscar atualizações**. Se
-houver uma versão nova, use **Baixar atualização → Atualizar servidor**. O app
+Na versão **1.5.19**, abra **Atualização do servidor → Atualizar servidor**. O app
+busca, baixa e abre o instalador no mesmo fluxo. Ao autorizar **Permitir desta fonte**,
+volte ao app: a instalação continua automaticamente, inclusive se o Android recriar
+a tela, pois o download validado é recuperado. Nas versões anteriores, conclua
+**Buscar atualizações → Baixar atualização → Atualizar servidor** para receber essa correção. O app
 baixa o APK oficial, confere SHA-256, tamanho, pacote, versão e assinatura e
 aguarda as impressões antes de abrir o instalador. Autorize **Permitir desta
 fonte** e confirme **Atualizar** quando o Android solicitar. O pareamento e as
@@ -153,6 +156,17 @@ Para receber este botão pela primeira vez, instale o APK oficial por cima da
 versão antiga, sem desinstalar. A assinatura permanente usada no GitHub precisa
 ser mantida para todas as versões. Um APK debug tem outra assinatura e não
 consegue substituir o app oficial.
+
+### NFC compartilhado pela internet (1.5.19)
+
+Pareie este servidor na mesma conta usada na web, ative **Usar como leitor para
+outro aparelho** e deixe o Servidor aberto e desbloqueado. Na tela de cartão da
+web/PDA, selecione o nome desse servidor em **Onde aproximar o cartão**. Aguarde
+a mensagem de espera antes de aproximar. A leitura fica reservada à tela solicitante,
+sem exigir foco na janela do navegador, e confirma a chegada ao terminal.
+Outra tela recebe um aviso de leitor ocupado até a espera terminar ou ser cancelada.
+Backend e web precisam da migração **0040_nfc_servidores.sql**. Para ler no
+próprio PDA/Android, escolha **Neste celular / PDA** e abra o leitor nativo.
 
 Para trocar de estabelecimento, toque em **Desconectar e trocar de conta**, aguarde
 os trabalhos em andamento e faça um novo pareamento com o código da outra conta.

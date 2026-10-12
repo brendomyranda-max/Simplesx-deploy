@@ -475,7 +475,8 @@ export interface NfcEvento {
 }
 
 export const nfcApi = {
-  solicitar: () => api.post<{ id: string; token: string; expira_em: string }>('/nfc/solicitacoes'),
+  servidores: () => api.get<NfcServidor[]>('/nfc/servidores'),
+  solicitar: (servidor?: NfcServidor) => api.post<{ id: string; token: string; expira_em: string }>('/nfc/solicitacoes', servidor ? { servidor_tipo: servidor.tipo, servidor_id: servidor.id } : {}),
   solicitacao: (id: string) => api.get<{ estado: 'aguardando' | 'lido' | 'cancelado' | 'expirado'; uid?: string; payload?: string }>(`/nfc/solicitacoes/${id}`),
   cancelarSolicitacao: (id: string) => api.del(`/nfc/solicitacoes/${id}`),
   identificar: (uid: string) => api.post<NfcEvento>('/nfc/identificar', { uid }),
@@ -483,6 +484,8 @@ export const nfcApi = {
   historico: () => api.get<NfcEvento[]>('/nfc/eventos?historico=1'),
   consumir: (id: number) => api.post<NfcEvento>(`/nfc/eventos/${id}/consumir`),
 };
+
+export interface NfcServidor { tipo: 'android' | 'desktop'; id: string; nome: string; online: boolean }
 
 export const impressoraApi = {
   setores: () => api.get<any[]>('/setores-impressao'),

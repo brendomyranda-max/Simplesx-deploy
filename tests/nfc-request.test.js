@@ -17,9 +17,9 @@ async function fixture(t) {
     DB.prepare('INSERT INTO sessoes (estabelecimento_id,funcionario_id,token_hash,expira_em) VALUES (?,?,?,?)')
       .bind(loja, id, await sha256(`sessao-${id}`), '2099-01-01').run();
   }
-  const call = (path, body, token = 'sessao-1', method = 'POST') => handle({
+  const call = (path, body, token = 'sessao-1', method = 'POST', headers = {}) => handle({
     req: { path, method, json: async () => body, query: () => undefined,
-      header: (name) => name === 'cookie' ? `simplesx_session=${token}` : undefined },
+      header: (name) => headers[name] ?? (name === 'cookie' ? `simplesx_session=${token}` : undefined) },
     json: (data, status = 200) => ({ data, status }),
   }, { DB });
   const create = async () => (await call('/api/nfc/solicitacoes', {})).data;
@@ -27,6 +27,95 @@ async function fixture(t) {
   const status = (r, token) => call(`/api/nfc/solicitacoes/${r.id}`, null, token, 'GET');
   return { DB, call, create, read, status };
 }
+
+async function remoteFixture(t) {
+  const f = await fixture(t);
+  const now = new Date().toISOString();
+  for (const [id, loja] of [['s21', 1], ['pda', 1], ['outra-loja', 2]]) {
+    f.DB.prepare(`INSERT INTO devices (id,estabelecimento_id,nome,plataforma,token_hash,token_expira_em,status,ultima_conexao,criado_em,atualizado_em)
+      VALUES (?,?,?,'android',?,'2099-01-01','online',?,?,?)`).bind(id, loja, id, await sha256(`device-${id}`), now, now, now).run();
+  }
+  f.DB.prepare(`INSERT INTO gestores (id,token,nome,ativo,estabelecimento_id,sessao_id,ultima_conexao)
+    VALUES (1,'pc-token','Caixa PC',1,1,'pc-session',?)`).bind(now).run();
+  return { ...f,
+    request: async (id = 's21', tipo = 'android', session = 'sessao-1') => f.call('/api/nfc/solicitacoes', { servidor_tipo: tipo, servidor_id: id }, session),
+    publish: (id = 's21', uid = '00A224B1C2D380', extras = {}) => f.call('/api/device/nfc', { uid, ...extras }, '', 'POST', { authorization: `Bearer device-${id}`, 'x-device-id': id }),
+    received: (id, event) => f.call('/api/device/nfc/status', { evento_id: event }, '', 'POST', { authorization: `Bearer device-${id}`, 'x-device-id': id }),
+  };
+}
+
+test('servidores NFC usam o pareamento da impressão e a lista não expõe credenciais nem outra loja', async (t) => {
+  const f = await remoteFixture(t);
+  const result = await f.call('/api/nfc/servidores', null, 'sessao-1', 'GET');
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.map((s) => `${s.tipo}:${s.id}`).sort(), ['android:pda', 'android:s21', 'desktop:1']);
+  assert.ok(result.data.every((s) => s.online && !('token' in s) && !('token_hash' in s)));
+  assert.equal((await f.request('outra-loja')).status, 404);
+  assert.equal((await f.request('s21', 'android', 'sessao-2')).status, 404);
+  assert.equal((await f.request('s21', 'evil')).status, 400);
+});
+
+test('S21 → web de outro aparelho → pedido salvo uma vez; outro servidor/tela não captura a leitura', async (t) => {
+  const f = await remoteFixture(t);
+  const a = (await f.request()).data;
+  const b = (await f.request('pda', 'android', 'sessao-3')).data;
+  assert.equal((await f.publish('s21', '00112233', { servidor_id: 'pda', estabelecimento_id: 2 })).status, 200);
+  assert.equal((await f.status(b, 'sessao-3')).data.estado, 'aguardando');
+  assert.deepEqual((await f.call('/api/nfc/eventos', null, 'sessao-1', 'GET')).data, []);
+  const event = f.DB.prepare('SELECT id FROM nfc_eventos').first().id;
+  assert.equal((await f.received('s21', event)).data.recebido_pelo_terminal, false);
+  const result = (await f.status(a)).data;
+  assert.equal(result.uid, '00112233');
+  assert.equal((await f.received('s21', event)).data.recebido_pelo_terminal, true);
+  assert.equal((await f.status(a, 'sessao-3')).status, 404);
+  const product = f.DB.prepare("INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (1,'Cartão pela internet',12,1)").run();
+  const body = { ...result, acao: 'lancar', chave: 'pedido-remoto-unico', itens: [{ produto_id: product.meta.last_row_id, quantidade: 2 }] };
+  assert.equal((await f.call('/api/cartoes/usar', body)).status, 200);
+  assert.equal((await f.call('/api/cartoes/usar', body)).status, 200);
+  assert.equal(f.DB.prepare('SELECT COUNT(*) n FROM comanda_itens').first().n, 1);
+});
+
+test('computador → web/PDA usa a sessão do servidor e reserva exclusivamente a tela solicitante', async (t) => {
+  const f = await remoteFixture(t);
+  const r = (await f.request('1', 'desktop')).data;
+  assert.equal((await f.read(r)).status, 401, 'Capacidade do leitor local não pode substituir o servidor selecionado');
+  const published = await f.call('/api/gestor/nfc', { token: 'pc-token', session_id: 'pc-session', uid: '00112233' }, '');
+  assert.equal(published.status, 200);
+  assert.equal((await f.status(r)).data.uid, '00112233');
+  assert.deepEqual((await f.call('/api/nfc/eventos', null, 'sessao-3', 'GET')).data, []);
+  assert.equal((await f.call('/api/gestor/nfc', { token: 'pc-token', session_id: 'errada', uid: '44556677' }, '')).status, 401);
+});
+
+test('um leitor aceita uma espera; cancelar/expirar libera outra tela e respostas concorrentes têm um vencedor', async (t) => {
+  const f = await remoteFixture(t);
+  const attempts = await Promise.all([f.request(), f.request('s21', 'android', 'sessao-3')]);
+  assert.deepEqual(attempts.map((a) => a.status).sort(), [200, 409]);
+  const index = attempts.findIndex((a) => a.status === 200);
+  const active = attempts[index].data;
+  await f.call(`/api/nfc/solicitacoes/${active.id}`, {}, index ? 'sessao-3' : 'sessao-1', 'DELETE');
+  const next = (await f.request()).data;
+  await Promise.all([f.publish('s21', '00112233'), f.publish('s21', '44556677')]);
+  assert.ok(['00112233', '44556677'].includes((await f.status(next)).data.uid));
+  assert.deepEqual((await f.call('/api/nfc/eventos', null, 'sessao-3', 'GET')).data, []);
+  const expired = (await f.request()).data;
+  f.DB.prepare('UPDATE nfc_solicitacoes SET expira_em=? WHERE id=?').bind(new Date(Date.now() - 1000).toISOString(), expired.id).run();
+  assert.equal((await f.request('s21', 'android', 'sessao-3')).status, 200);
+});
+
+test('leituras rápidas de servidores diferentes e uma nova espera com o mesmo cartão não se confundem', async (t) => {
+  const f = await remoteFixture(t);
+  const a = (await f.request()).data;
+  const b = (await f.request('pda')).data;
+  await f.publish(); await f.publish('pda');
+  assert.equal((await f.status(a)).data.uid, '00A224B1C2D380');
+  assert.equal((await f.status(b)).data.uid, '00A224B1C2D380');
+  const next = (await f.request()).data;
+  await f.publish();
+  assert.equal((await f.status(next)).data.uid, '00A224B1C2D380');
+  const repeat = await f.publish();
+  assert.equal(repeat.data.duplicate, true);
+  assert.deepEqual((await f.call('/api/nfc/eventos', null, 'sessao-1', 'GET')).data, []);
+});
 
 test('solicitar leitura exige login e área; o segredo temporário é armazenado somente como hash', async (t) => {
   const f = await fixture(t);
@@ -123,8 +212,10 @@ test('link acionado pelo usuário abre somente o pacote Android esperado com par
   assert.throws(() => nfcScanLink('https://doixp.com', id, 'x;component=evil'));
 });
 
-test('botão web prepara link real, espera retorno do Android e entrega UID uma vez à ação', async (t) => {
-  const f = await fixture(t);
+for (const remote of [false, true]) test(remote
+  ? 'web no computador recebe o cartão do S21 mesmo com o foco na janela do servidor'
+  : 'botão web prepara link real, espera retorno do Android e entrega UID uma vez à ação', async (t) => {
+  const f = remote ? await remoteFixture(t) : await fixture(t);
   const effects = [];
   const cleanups = [];
   const states = [];
@@ -138,14 +229,16 @@ test('botão web prepara link real, espera retorno do Android e entrega UID uma 
   let cancelled;
   const cancellation = new Promise((resolve) => { cancelled = resolve; });
   t.after(() => cleanups.reverse().forEach((fn) => fn()));
-  const document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+  const document = Object.assign(new EventTarget(), { visibilityState: 'visible', hasFocus: () => false });
   const globals = {
     window: Object.assign(new EventTarget(), { location: { origin: 'https://doixp.com' } }),
-    document, navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 15; Samsung S21) Chrome/140.0' },
+    document, navigator: { userAgent: remote ? 'Mozilla/5.0 (Windows NT 10.0) Chrome/140.0' : 'Mozilla/5.0 (Linux; Android 15; Samsung S21) Chrome/140.0' },
+    localStorage: { getItem: () => null, setItem: () => {} },
     __scanState: (initial) => { const index = slot++; if (!(index in states)) states[index] = initial; return [states[index], (v) => { states[index] = typeof v === 'function' ? v(states[index]) : v; }]; },
     __scanEffect: (fn) => effects.push(fn),
     __scanApi: {
-      solicitar: async () => { const request = await f.create(); created(); return request; },
+      servidores: async () => [{ tipo: 'android', id: 's21', nome: 'S21', online: true }],
+      solicitar: async (source) => { const request = source ? (await f.request(source.id, source.tipo)).data : await f.create(); created(); return request; },
       solicitacao: async (id) => (await f.status({ id })).data,
       cancelarSolicitacao: async (id) => { const result = await f.call(`/api/nfc/solicitacoes/${id}`, null, 'sessao-1', 'DELETE'); cancelled(); return result; },
     },
@@ -161,7 +254,7 @@ test('botão web prepara link real, espera retorno do Android e entrega UID uma 
   }).outputText.replace('"react/jsx-runtime"', JSON.stringify(runtime))).toString('base64');
   const runtime = 'data:text/javascript;base64,' + Buffer.from('export const jsx = (type,props) => ({type,props}); export const jsxs = jsx;').toString('base64');
   const react = module('export const useRef = (v) => ({current:v}); export const useState = (v) => globalThis.__scanState(v); export const useEffect = (fn) => globalThis.__scanEffect(fn);');
-  const api = module('export const nfcApi = globalThis.__scanApi;');
+  const api = module(`export const nfcApi = globalThis.__scanApi; // remote:${remote}`);
   const ui = module('export const Button = () => {};');
   const linkModule = module(readFileSync('src/lib/nfcScanLink.ts', 'utf8'));
   const source = readFileSync('src/components/NfcScanButton.tsx', 'utf8')
@@ -170,20 +263,30 @@ test('botão web prepara link real, espera retorno do Android e entrega UID uma 
   const { NfcScanButton } = await import(module(source, true));
   const props = { enabled: true, onStart: () => { started = true; }, onRead: (reading) => { delivered.push(reading); accepted(); } };
   NfcScanButton(props);
+  if (remote) {
+    cleanups.push(effects[1]()); // Lista os servidores vinculados e seleciona o único disponível.
+    await new Promise(setImmediate);
+    effects.length = 0;
+    slot = 0;
+    NfcScanButton(props);
+  }
   cleanups.push(effects.shift()());
   await creation;
   await new Promise(setImmediate);
   slot = 0;
   const tree = NfcScanButton(props);
   const anchor = tree.props.children.find((node) => node?.type === 'a');
-  assert.ok(anchor, 'A solicitação deve preparar o link de leitura');
-  assert.ok(anchor.props.href.startsWith('intent://nfc/ler?'));
-  anchor.props.onClick();
+  if (!remote) {
+    assert.ok(anchor, 'A solicitação deve preparar o link de leitura');
+    assert.ok(anchor.props.href.startsWith('intent://nfc/ler?'));
+    anchor.props.onClick();
+  } else assert.equal(anchor, undefined, 'Uma tela remota aguarda o servidor, sem tentar abrir um app neste computador');
   assert.equal(started, true);
-  const native = new URL(anchor.props.href.replace(/^intent:/, 'doixp:').split('#')[0]);
-  const request = { id: native.searchParams.get('id'), token: native.searchParams.get('token') };
+  const native = !remote && new URL(anchor.props.href.replace(/^intent:/, 'doixp:').split('#')[0]);
+  const request = remote ? f.DB.prepare('SELECT id FROM nfc_solicitacoes WHERE servidor_id=?').first('s21')
+    : { id: native.searchParams.get('id'), token: native.searchParams.get('token') };
   document.visibilityState = 'hidden';
-  await f.read(request);
+  if (remote) await f.publish(); else await f.read(request);
   document.dispatchEvent(new Event('visibilitychange'));
   await new Promise(setImmediate);
   assert.deepEqual(delivered, []);
@@ -197,5 +300,6 @@ test('botão web prepara link real, espera retorno do Android e entrega UID uma 
   assert.equal(delivered.length, 1);
   cleanups.pop()();
   await cancellation;
-  assert.equal((await f.read(request)).status, 410);
+  assert.equal((await f.status(request)).data.estado, 'cancelado');
+  if (!remote) assert.equal((await f.read(request)).status, 410);
 });

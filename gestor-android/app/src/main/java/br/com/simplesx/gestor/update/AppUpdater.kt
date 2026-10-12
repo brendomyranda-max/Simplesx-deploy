@@ -14,6 +14,21 @@ import java.net.URL
 import java.security.MessageDigest
 
 class AppUpdater(private val context: Context) {
+    private val directory get() = File(context.cacheDir, "updates").apply { mkdirs() }
+    private fun releaseJson(release: UpdateRelease) = JSONObject().put("version", release.version)
+        .put("versionCode", release.versionCode).put("url", release.url).put("sha256", release.sha256).put("size", release.size)
+    private fun parseRelease(json: JSONObject) = UpdateRelease(json.getString("version"), json.getInt("versionCode"),
+        json.getString("url"), json.getString("sha256"), json.getLong("size")).validate()
+
+    // As configurações de permissão podem recriar a Activity no Samsung.
+    // Recupera o download validado para continuar a instalação ao voltar.
+    fun cachedRelease(): UpdateRelease? = runCatching {
+        val release = parseRelease(JSONObject(File(directory, "release.json").readText()))
+        validateApk(File(directory, "servidor-doixp.apk"), release)
+        release
+    }.getOrNull()
+
+    fun cachedApk() = File(directory, "servidor-doixp.apk")
     private fun connection(url: String): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
         connectTimeout = 15_000
         readTimeout = 30_000
@@ -36,14 +51,13 @@ class AppUpdater(private val context: Context) {
                 output.toByteArray()
             }
             val json = JSONObject(bytes.toString(Charsets.UTF_8))
-            return UpdateRelease(json.getString("version"), json.getInt("versionCode"), json.getString("url"), json.getString("sha256"), json.getLong("size")).validate()
+            return parseRelease(json)
         } finally { connection.disconnect() }
     }
 
     fun download(release: UpdateRelease, progress: (Int) -> Unit): File {
         release.validate()
         check(release.versionCode > BuildConfig.VERSION_CODE) { "O servidor já está atualizado" }
-        val directory = File(context.cacheDir, "updates").apply { mkdirs() }
         val target = File(directory, "servidor-doixp.apk")
         val partial = File(directory, "servidor-doixp.part")
         val digest = MessageDigest.getInstance("SHA-256")
@@ -70,6 +84,7 @@ class AppUpdater(private val context: Context) {
             check(total == release.size && digest.digest().hex() == release.sha256) { "Download incompleto ou corrompido. Tente novamente." }
             validateApk(partial, release)
             check(partial.renameTo(target)) { "Não foi possível salvar o APK" }
+            File(directory, "release.json").writeText(releaseJson(release).toString())
             return target
         } finally { connection.disconnect(); partial.delete() }
     }

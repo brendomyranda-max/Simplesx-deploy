@@ -1,6 +1,6 @@
 // Electron-updater valida o checksum dos instaladores publicados pelo nosso feed.
 function createUpdates({ updater, supported, prepareInstall, recoverInstall = async () => {}, notify }) {
-  let state = { phase: 'idle', message: 'Busque uma nova versão sem desinstalar o servidor.' }
+  let state = { phase: 'idle', message: 'Atualize para baixar, instalar e reabrir o servidor. As configurações são preservadas.' }
   let busy = false
   function change(phase, message, extra = {}) {
     state = { phase, message, ...extra }
@@ -19,24 +19,26 @@ function createUpdates({ updater, supported, prepareInstall, recoverInstall = as
   updater.on('update-available', (info) => change('available', `Versão ${info.version} disponível.`, { version: info.version }))
   updater.on('update-not-available', () => change('current', 'O servidor já está atualizado.'))
   updater.on('download-progress', (progress) => change('downloading', `Baixando atualização: ${Math.round(progress.percent)}%`, { percent: progress.percent }))
-  updater.on('update-downloaded', (info) => change('downloaded', `Versão ${info.version} pronta. Termine o atendimento antes de reiniciar.`, { version: info.version }))
+  updater.on('update-downloaded', (info) => change('downloaded', `Versão ${info.version} baixada. Preparando a instalação…`, { version: info.version }))
 
   async function action() {
-    if (busy) return state
+    if (busy || state.phase === 'installing') return state
     if (!supported()) return change('unsupported', 'Use o aplicativo instalado no Windows ou o arquivo AppImage no Linux para atualizar por aqui.')
     busy = true
     try {
+      if (!['available', 'downloaded'].includes(state.phase)) {
+        change('checking', 'Buscando atualizações…')
+        await updater.checkForUpdates()
+      }
+      if (state.phase === 'available') {
+        change('downloading', 'Iniciando download…')
+        await updater.downloadUpdate()
+      }
       if (state.phase === 'downloaded') {
         const version = state.version
         change('installing', 'Finalizando impressões em andamento e reiniciando…', { version })
         await prepareInstall()
-        updater.quitAndInstall(false, true)
-      } else if (state.phase === 'available') {
-        change('downloading', 'Iniciando download…')
-        await updater.downloadUpdate()
-      } else {
-        change('checking', 'Buscando atualizações…')
-        await updater.checkForUpdates()
+        updater.quitAndInstall(true, true)
       }
     } catch {
       await failed()

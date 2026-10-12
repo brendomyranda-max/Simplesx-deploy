@@ -123,7 +123,7 @@ fun NfcPanel(activity: ComponentActivity, config: AppConfig, paired: Boolean, on
     LaunchedEffect(eventId, paired) {
         val id = eventId ?: return@LaunchedEffect
         if (!paired) return@LaunchedEffect
-        terminalStatus = "Aguardando a tela DoixP aberta e em foco (até 60 segundos)…"
+        terminalStatus = "Aguardando a tela DoixP que solicitou o cartão (até 60 segundos)…"
         val deadline = android.os.SystemClock.elapsedRealtime() + 60_000
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
             val result = withContext(Dispatchers.IO) { runCatching { SimplexsaApi(config).nfcReceived(id) } }
@@ -155,6 +155,14 @@ fun NfcPanel(activity: ComponentActivity, config: AppConfig, paired: Boolean, on
         testMode = false
         onOpenDoixP()
     }, enabled = !sending, modifier = Modifier.fillMaxWidth()) { Text("Abrir DoixP e usar cartões NFC") }
+    OutlinedButton(onClick = {
+        enabled = true
+        config.nfcEnabled = true
+        testMode = false
+        restart += 1
+        terminalStatus = "Na DoixP web, abra uma ação de cartão e selecione ${config.deviceName} em Onde aproximar o cartão."
+    }, enabled = paired && !sending, modifier = Modifier.fillMaxWidth()) { Text("Usar como leitor para outro aparelho") }
+    Text("Leitor compartilhado: ${config.deviceName}. Pareie na mesma conta, selecione este nome na web ou no PDA e deixe esta tela aberta e desbloqueada.", style = MaterialTheme.typography.bodySmall)
     Text("Dentro desta tela, o cartão usa o login da DoixP e não depende do serviço de impressão. Para enviar a leitura a outro aparelho, pareie este servidor. Mantenha a tela interna aberta para ler cartões.", style = MaterialTheme.typography.bodySmall)
     Text("${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · Servidor ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
