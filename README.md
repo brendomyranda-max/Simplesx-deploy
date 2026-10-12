@@ -10,6 +10,19 @@ agente local é o **Servidor DoixP**.
 Consulte [MARCA.md](./MARCA.md) para a compatibilidade da atualização com as
 instalações, os dados e os endereços existentes.
 
+## Versão da aplicação
+
+**DoixP 0.1.0-beta.1 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
+A versão exibida na aplicação vem do `package.json`, sincronizado com o
+`package-lock.json`. As próximas versões de pré-lançamento seguem
+`0.1.0-beta.2`, `0.1.0-beta.3` e assim por diante. Cada publicação recebe uma tag
+`doixp-v<VERSÃO>` e uma release marcada como pré-lançamento no GitHub.
+Ao liberar a versão estável, retire o sufixo beta e a identificação de
+pré-lançamento da interface.
+
+Os instaladores do **Servidor DoixP** mantêm seu próprio versionamento e as tags
+`gestor-v<VERSÃO>`.
+
 ## Transferência e exclusão de mesas
 
 Na comanda de uma mesa do salão, **Transferir todos** move todos os lançamentos

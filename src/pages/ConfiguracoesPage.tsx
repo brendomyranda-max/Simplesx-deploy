@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Settings, Save } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { AppVersion } from '@/components/AppVersion';
 import { PdaInstalacaoCard } from '@/components/PdaInstalacaoCard';
 import { Button, Card, Field, Input, Select, Spinner, useToast } from '@/components/ui';
 import { configApi } from '@/lib/api';
@@ -65,6 +66,7 @@ export function ConfiguracoesPage() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Configurações</h1>
           <p className="text-sm text-slate-500">Preferências do sistema e instalação do PDA</p>
+          <AppVersion className="mt-1 text-xs text-slate-500" />
         </div>
       </div>
 

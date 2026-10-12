@@ -2,6 +2,7 @@
 import React from 'react';
 import marca from '../content/marca.json';
 import { BrandLogo } from './BrandLogo';
+import { AppVersion } from './AppVersion';
 
 export function PublicBrandIntro() {
   return (
@@ -10,6 +11,7 @@ export function PublicBrandIntro() {
         <BrandLogo width={64} height={64} className="h-16 w-16 rounded-2xl" />
         <span className="text-2xl font-extrabold tracking-tight">{marca.nome}</span>
       </a>
+      <AppVersion className="mt-3 text-xs font-semibold text-amber-200" />
       <h1 id="doixp-apresentacao" className="mt-6 max-w-xl text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
         {marca.chamada}
       </h1>

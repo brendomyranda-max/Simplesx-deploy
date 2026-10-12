@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/components/ui';
 import { BrandLogo } from '@/components/BrandLogo';
+import { AppVersion } from '@/components/AppVersion';
 import { useAuth } from '@/store/auth';
 import { areaSelecionada, type AreaApp } from '@/lib/areas';
 
@@ -87,7 +88,10 @@ export function AppShell({
       <div className="flex min-h-viewport flex-col">
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2.5 border-b border-slate-200 bg-white/80 px-3 pt-[env(safe-area-inset-top)] pb-1 backdrop-blur">
           <BrandLogo className="h-10 w-10 shrink-0 rounded-xl shadow-md shadow-black/20" />
-          <p className="min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'DoixP'}</p>
+          <div className="min-w-0">
+            <p className="truncate font-extrabold text-slate-800">{empresaNome || 'DoixP'}</p>
+            <AppVersion className="text-[10px] text-slate-500" />
+          </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {modulosAtivos > 1 && (
               <button
@@ -245,6 +249,7 @@ export function AppShell({
         ))}
       </nav>
       <div className="shrink-0 border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <AppVersion className="mb-3 text-[10px] text-slate-400" />
         <div className="mb-2 flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
             {String(nome || 'U').slice(0, 1).toUpperCase()}
