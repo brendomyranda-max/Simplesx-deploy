@@ -16,6 +16,9 @@ das configurações do Android e inclui diagnóstico de leitura, conexão e entr
 ao sistema web. O texto gravado no cartão não é aberto pelo leitor nesse modo.
 A versão 1.5.17 entrega o UID diretamente à tela interna, pela sessão web logada,
 e corrige o início e a indicação do serviço em segundo plano.
+A versão 1.5.18 inclui um leitor acionado pelo Chrome/PWA ou pela tela interna:
+**Aguardar cartão → Ler cartão neste celular**. A identificação volta à espera
+que iniciou a leitura, sem exigir pareamento de impressora.
 
 ## Requisitos
 
@@ -82,6 +85,35 @@ possível usar outro aparelho/computador como terminal web e deixar este celular
 no painel do leitor. A sessão web interna exige login próprio, separado do Chrome.
 
 ### Testar NFC e conferir o Samsung S21
+
+#### Ler a partir do Chrome ou da DoixP instalada pelo navegador (1.5.18)
+
+1. Atualize o Servidor Android pelo próprio botão **Buscar atualizações**, sem desinstalar.
+2. No Chrome/PWA, abra **Mesas → Lançar para cartão**, monte o pedido e toque em
+   **Aguardar cartão → Ler cartão neste celular**. O botão também aparece em
+   **Adicionar com cartão** e **Fechamento de cartão**.
+3. Confirme a abertura do Servidor, se o Android pedir. Surge **Leitor NFC DoixP**.
+4. Aproxime o NTAG215. O leitor envia o UID por HTTPS e fecha para retornar à tela
+   que o abriu; confira a confirmação do pedido no navegador. Em falha de rede,
+   **Tentar enviar novamente** repete o mesmo envio sem trocar a identificação.
+
+A janela de leitura entra em primeiro plano brevemente porque o Android exige
+isso para ler o UID. O serviço de impressão continua ativo. Não é necessário
+Web NFC, gravar NDEF, escolher carteira de pagamento nem parear impressoras para
+esta leitura. Se o app ainda não tiver o leitor, o link para atualizar aparece
+na própria espera. O mesmo botão funciona na WebView interna.
+
+O backend exige a migração **0039_nfc_solicitacoes.sql**. A sessão web cria uma
+capacidade aleatória de 256 bits, válida por dois minutos, armazenada como hash.
+O leitor nativo só pode enviar um UID a essa solicitação; não recebe a sessão web
+nem credenciais de impressora. A consulta/cancelamento exige o funcionário e a
+loja originais. Leituras concluídas podem ser recuperadas por cinco minutos após
+a expiração quando o navegador fica suspenso. Uma espera cancelada recusa envio.
+O envio aceita somente a origem oficial ou a HTTPS configurada no aparelho,
+sem redirecionar o segredo para outro endereço. Nenhum pedido é criado pelo
+endpoint nativo; o lançamento depende da ação autenticada na tela web.
+
+#### Diagnóstico pelo painel do servidor
 
 1. No S21, abra **Configurações → Conexões → NFC e pagamentos sem contato** e
    ligue o NFC. A opção **Configurações NFC** no Servidor abre essa tela.

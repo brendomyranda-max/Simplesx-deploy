@@ -19,7 +19,7 @@ const TABELAS = [
   'funcionarios', 'setores_impressao', 'impressora_agentes', 'impressora_etiquetas',
   'gestores', 'gestor_jobs',
   'device_pairing_codes', 'devices', 'device_tasks', 'device_task_events', 'device_audit_events',
-  'nfc_eventos',
+  'nfc_eventos', 'nfc_solicitacoes',
   'venda_ajustes',
   'fechamentos_caixa', 'fechamento_caixa_itens',
   'fiscal_config', 'produto_fiscal', 'documentos_fiscais',

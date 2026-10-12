@@ -475,6 +475,9 @@ export interface NfcEvento {
 }
 
 export const nfcApi = {
+  solicitar: () => api.post<{ id: string; token: string; expira_em: string }>('/nfc/solicitacoes'),
+  solicitacao: (id: string) => api.get<{ estado: 'aguardando' | 'lido' | 'cancelado' | 'expirado'; uid?: string; payload?: string }>(`/nfc/solicitacoes/${id}`),
+  cancelarSolicitacao: (id: string) => api.del(`/nfc/solicitacoes/${id}`),
   identificar: (uid: string) => api.post<NfcEvento>('/nfc/identificar', { uid }),
   pendentes: () => api.get<NfcEvento[]>('/nfc/eventos?diagnostico=todos'),
   historico: () => api.get<NfcEvento[]>('/nfc/eventos?historico=1'),

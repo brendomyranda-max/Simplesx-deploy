@@ -31,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import br.com.simplesx.gestor.nfc.NfcScanActivity
+import br.com.simplesx.gestor.nfc.NfcScanRequest
 
 /** A tela web e o leitor NFC pertencem à mesma Activity em primeiro plano. */
 @SuppressLint("SetJavaScriptEnabled")
@@ -51,6 +53,14 @@ fun DoixPWebPanel(activity: ComponentActivity, deployUrl: String, nfcStatus: Str
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val target = request.url.toString()
                     if (sameDoixPOrigin(base, target)) return false
+                    if (request.isForMainFrame && request.hasGesture() && sameDoixPOrigin(base, view.url.orEmpty()) && request.url.scheme in setOf("intent", "doixp")) {
+                        runCatching {
+                            val data = if (request.url.scheme == "intent") Intent.parseUri(target, Intent.URI_INTENT_SCHEME).data else request.url
+                            NfcScanRequest.parse(data.toString(), deployUrl)
+                            activity.startActivity(Intent(activity, NfcScanActivity::class.java).setData(data))
+                        }.onFailure { error = "Não foi possível abrir o leitor: ${it.message}" }
+                        return true
+                    }
                     if (request.isForMainFrame && request.url.scheme in setOf("https", "http")) {
                         runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
                         error = "Link externo aberto. Volte a esta tela para usar cartões NFC."

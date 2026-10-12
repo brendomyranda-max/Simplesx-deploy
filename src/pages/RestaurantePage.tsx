@@ -13,6 +13,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, 
 import { useAuth } from '@/store/auth';
 import { mesaApi, funcionarioApi, cartaoApi, type NfcEvento } from '@/lib/api';
 import { useNfcLeitura } from '@/lib/useNfcBridge';
+import { NfcScanButton } from '@/components/NfcScanButton';
 import type { Mesa, Funcionario } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
 
@@ -32,6 +33,8 @@ export function RestaurantePage() {
   const [mSetor, setMSetor] = useState('Salão');
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [espera, setEspera] = useState<'abrir' | 'fechar' | null>(null);
+  const [leituraSolicitada, setLeituraSolicitada] = useState(false);
+  useEffect(() => { if (!espera) setLeituraSolicitada(false); }, [espera]);
   const [lendoCartao, setLendoCartao] = useState(false);
   const lendoCartaoRef = useRef(false);
   const [excluir, setExcluir] = useState<Mesa | null>(null);
@@ -90,7 +93,7 @@ export function RestaurantePage() {
     }
   };
 
-  const usarCartao = async (acao: 'abrir' | 'fechar', leitura: NfcEvento) => {
+  const usarCartao = async (acao: 'abrir' | 'fechar', leitura: Pick<NfcEvento, 'uid' | 'payload'>) => {
     if (lendoCartaoRef.current) return;
     lendoCartaoRef.current = true;
     setLendoCartao(true);
@@ -117,7 +120,7 @@ export function RestaurantePage() {
     }
   };
 
-  useNfcLeitura(!!espera && !lendoCartao, (leitura) => {
+  useNfcLeitura(!!espera && !lendoCartao && !leituraSolicitada, (leitura) => {
     if (espera && (leitura?.uid || leitura?.payload)) void usarCartao(espera, leitura);
   });
 
@@ -301,6 +304,7 @@ export function RestaurantePage() {
       >
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
+          <NfcScanButton enabled={!lendoCartao} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { if (espera) void usarCartao(espera, reading); }} />
           <p className="text-sm text-slate-600">
             {espera === 'fechar'
               ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'

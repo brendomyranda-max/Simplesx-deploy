@@ -344,7 +344,7 @@ export function ImpressorasPage() {
         <div className="flex flex-wrap items-center gap-3">
           <img src="/brand/LogoDoixPAmarelo.png" alt="Servidor DoixP" className="h-11 w-11 shrink-0 rounded-xl object-contain" />
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.17</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.18</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
           {INSTALADORES.map((item) => (

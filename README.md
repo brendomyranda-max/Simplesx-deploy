@@ -323,6 +323,15 @@ caso, sem transferir saldo entre cartões.
 
 ### Diagnóstico NFC no Android (1.5.16)
 
+Na versão **1.5.18**, o Chrome/PWA pode solicitar o leitor Android: em
+**Aguardar cartão**, **Adicionar com cartão** ou **Fechamento de cartão**, toque
+em **Ler cartão neste celular**, aproxime o cartão na tela nativa e aguarde o
+retorno à DoixP. A opção funciona também na tela interna do Servidor. A leitura
+usa uma solicitação temporária própria do funcionário/tela e não exige parear
+uma impressora. Atualize o APK, backend e interface e aplique
+**0039_nfc_solicitacoes.sql**. O leitor precisa aparecer brevemente em primeiro
+plano; manter apenas um serviço em segundo plano não concede NFC ao navegador.
+
 Em **Servidor DoixP → Cartões NFC**, use **Testar conexão** para conferir o
 pareamento e o nome do estabelecimento. Use **Testar cartão** e aproxime o cartão
 com essa tela aberta. O modo de teste mostra:
@@ -356,7 +365,7 @@ compilar localmente não atualiza o aplicativo instalado no celular.
 
 ### Atualizar os servidores sem desinstalar (1.5.16)
 
-Instale a versão 1.5.17 por cima da instalação anterior: execute o instalador do
+Instale a versão 1.5.18 por cima da instalação anterior: execute o instalador do
 Windows, substitua o AppImage no Linux ou confirme **Atualizar** no instalador do
 Android. O APK publicado usa a mesma chave permanente; APKs de desenvolvimento
 com outra assinatura não podem substituir a instalação oficial.
@@ -371,7 +380,7 @@ ao concluir ou cancelar, a recepção é retomada se estava ligada.
 A release inclui `latest.yml`, `latest-linux.yml`, instaladores e `android.json`
 com versão, tamanho e SHA-256. Os feeds públicos em `/atualizacoes/` apontam
 somente para arquivos permitidos da release publicada. O Android verifica também
-o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.17` pelo workflow
+o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.18` pelo workflow
 dos servidores e aguarde os três artefatos antes de publicar o site com o novo
 `shared/gestor-releases.js`. Nas próximas versões, aumente as versões do desktop,
 Android e desse arquivo juntas.

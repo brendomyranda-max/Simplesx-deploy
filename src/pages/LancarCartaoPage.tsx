@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Minus, Nfc, Plus, Trash2 } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestaurantCatalog } from '@/components/RestaurantCatalog';
+import { NfcScanButton } from '@/components/NfcScanButton';
 import { Button, Card, Modal, Spinner, useToast } from '@/components/ui';
 import { cartaoApi, categoriaApi, produtoApi } from '@/lib/api';
 import type { NfcEvento } from '@/lib/api';
@@ -28,6 +29,7 @@ export function LancarCartaoPage() {
   const [load, setLoad] = useState(true);
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [espera, setEspera] = useState(false);
+  const [leituraSolicitada, setLeituraSolicitada] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const enviandoRef = useRef(false);
 
@@ -53,7 +55,7 @@ export function LancarCartaoPage() {
 
   const total = itens.reduce((soma, item) => soma + Number(item.produto.preco || 0) * item.quantidade, 0);
 
-  const lancar = async (leitura: NfcEvento) => {
+  const lancar = async (leitura: Pick<NfcEvento, 'uid' | 'payload'>) => {
     if (enviandoRef.current || !itens.length) return;
     enviandoRef.current = true;
     setEnviando(true);
@@ -77,7 +79,7 @@ export function LancarCartaoPage() {
     }
   };
 
-  useNfcLeitura(espera && !enviando, (leitura) => {
+  useNfcLeitura(espera && !enviando && !leituraSolicitada, (leitura) => {
     if (leitura?.uid || leitura?.payload) void lancar(leitura);
   });
 
@@ -125,7 +127,7 @@ export function LancarCartaoPage() {
         )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-extrabold text-slate-800">Total {fmtBRL(total)}</p>
-          <Button type="button" disabled={!itens.length} icon={<Nfc className="h-4 w-4" />} onClick={() => setEspera(true)}>
+          <Button type="button" disabled={!itens.length} icon={<Nfc className="h-4 w-4" />} onClick={() => { setLeituraSolicitada(false); setEspera(true); }}>
             Aguardar cartão
           </Button>
         </div>
@@ -134,6 +136,7 @@ export function LancarCartaoPage() {
       <Modal open={espera} onClose={() => { if (!enviando) setEspera(false); }} title="Aproxime o cartão">
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
+          <NfcScanButton enabled={!enviando} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { void lancar(reading); }} />
           <p className="text-sm text-slate-600">
             Aproxime o cartão do celular com o Servidor DoixP aberto e o NFC ligado. Os itens ficam na comanda do sistema.
           </p>
