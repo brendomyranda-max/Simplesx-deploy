@@ -6,9 +6,40 @@
 import { useEffect, useRef } from 'react';
 import { CUPS_SERVER } from '@/lib/cupsPrint';
 import { nfcApi, type NfcEvento } from '@/lib/api';
+import { createNfcDelivery, type AndroidNfcReading } from './nfcDelivery';
 
 export const NFC_EVENTO = 'simplexsa:nfc';
 export const NFC_TESTE_EVENTO = 'simplexsa:nfc-teste';
+const NFC_ESPERA = 'simplexsa:nfc-espera';
+let receptores = 0;
+let esperaAtual = 0;
+declare global { interface Window { __doixpAndroidNfc?: AndroidNfcReading } }
+
+// Registra a espera real, para a ponte não descartar uma leitura no dashboard.
+export function useNfcLeitura(ativo: boolean, onLeitura: (evento: NfcEvento) => void, continuo = false) {
+  const callback = useRef(onLeitura);
+  callback.current = onLeitura;
+  useEffect(() => {
+    if (!ativo) return;
+    let esperando = true;
+    const retirar = () => {
+      if (!esperando) return;
+      esperando = false;
+      receptores--;
+      esperaAtual++;
+      window.removeEventListener(NFC_EVENTO, aoLer);
+    };
+    const aoLer = (event: Event) => {
+      if (!continuo) retirar();
+      callback.current((event as CustomEvent<NfcEvento>).detail);
+    };
+    window.addEventListener(NFC_EVENTO, aoLer);
+    receptores++;
+    esperaAtual++;
+    window.dispatchEvent(new Event(NFC_ESPERA));
+    return retirar;
+  }, [ativo, continuo]);
+}
 
 interface NfcLocal {
   ativo: boolean;
@@ -42,6 +73,7 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
   const callbackRef = useRef(onLeitura);
   const vistos = useRef(new Set<number>());
   const localRef = useRef<NfcLocal>({ ativo: false, prefixo: 'NFC:' });
+  const deliveryRef = useRef<ReturnType<typeof createNfcDelivery> | null>(null);
 
   useEffect(() => {
     callbackRef.current = onLeitura;
@@ -61,6 +93,21 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
   useEffect(() => {
     let ativo = true;
     let consultando = false;
+    const delivery = createNfcDelivery({
+      ready: () => receptores > 0,
+      request: () => esperaAtual,
+      visible: () => document.visibilityState === 'visible',
+      identify: nfcApi.identificar,
+      consume: nfcApi.consumir,
+      deliver: entregar,
+      error: (message) => window.dispatchEvent(new CustomEvent('simplexsa:nfc-erro', { detail: message })),
+      pending: () => window.dispatchEvent(new Event('simplexsa:nfc-sem-espera')),
+    });
+    deliveryRef.current = delivery;
+    const aoLerAndroid = (event?: Event) => {
+      const reading = (event as CustomEvent<AndroidNfcReading> | undefined)?.detail || window.__doixpAndroidNfc;
+      if (reading) void delivery.receiveNative(reading);
+    };
     const consultarLocal = async () => {
       try {
         const resposta = await fetch(`${CUPS_SERVER}/nfc`);
@@ -76,16 +123,7 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
       consultando = true;
       try {
         const pendentes = await nfcApi.pendentes();
-        for (const evento of pendentes) {
-          if (!ativo || document.visibilityState !== 'visible' || !document.hasFocus()) break;
-          if (vistos.current.has(evento.id)) continue;
-          try {
-            const consumido = await nfcApi.consumir(evento.id);
-            entregar(consumido);
-          } catch (error: any) {
-            if (error?.status !== 409) break;
-          }
-        }
+        if (ativo && document.hasFocus()) await delivery.receiveCloud(pendentes);
       } catch {
         /* a sessão ou a rede podem falhar sem interromper o PDV */
       } finally {
@@ -94,10 +132,20 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
     };
     consultarLocal();
     consultarNuvem();
+    aoLerAndroid();
+    const aoEsperar = () => { void delivery.flushNative(); void consultarNuvem(); };
+    window.addEventListener('doixp:android-nfc', aoLerAndroid);
+    window.addEventListener(NFC_ESPERA, aoEsperar);
+    document.addEventListener('visibilitychange', aoEsperar);
     const local = setInterval(consultarLocal, 5000);
     const nuvem = setInterval(consultarNuvem, 2000);
     return () => {
       ativo = false;
+      delivery.dispose();
+      deliveryRef.current = null;
+      window.removeEventListener('doixp:android-nfc', aoLerAndroid);
+      window.removeEventListener(NFC_ESPERA, aoEsperar);
+      document.removeEventListener('visibilitychange', aoEsperar);
       clearInterval(local);
       clearInterval(nuvem);
     };
@@ -122,14 +170,7 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
         event.preventDefault();
         event.stopImmediatePropagation();
         publicarLocal(texto)
-          .then(async (evento) => {
-            try {
-              const consumido = await nfcApi.consumir(evento.id);
-              entregar(consumido);
-            } catch (error: any) {
-              if (error?.status !== 409) throw error;
-            }
-          })
+          .then((evento) => deliveryRef.current?.receiveCloud([evento]))
           .catch((error: any) => {
             window.dispatchEvent(new CustomEvent('simplexsa:nfc-erro', { detail: error?.message || 'Falha na ponte NFC' }));
           });

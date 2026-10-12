@@ -14,7 +14,7 @@ import { fmtBRL, fmtNum, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
 import { printReceipt } from '@/lib/print';
 import { observarEstoqueAtualizado } from '@/lib/estoqueSync';
 import { useBarcodeScanner } from '@/lib/useBarcodeScanner';
-import { NFC_EVENTO } from '@/lib/useNfcBridge';
+import { useNfcLeitura } from '@/lib/useNfcBridge';
 
 interface CartItem {
   produto: Produto;
@@ -170,20 +170,10 @@ export function PdvPage() {
   };
 
   useBarcodeScanner(adicionarPorCodigo, { enabled: !pagar && !comprovante });
-  const adicionarPorCodigoRef = useRef(adicionarPorCodigo);
-  const nfcLiberado = useRef(true);
-  adicionarPorCodigoRef.current = adicionarPorCodigo;
-  nfcLiberado.current = !pagar && !comprovante;
-  useEffect(() => {
-    const aoLerNfc = (event: Event) => {
-      if (!nfcLiberado.current) return;
-      const detalhe = (event as CustomEvent<{ payload?: string; uid?: string }>).detail;
-      const codigo = String(detalhe?.payload || detalhe?.uid || '');
-      if (codigo) adicionarPorCodigoRef.current(codigo);
-    };
-    window.addEventListener(NFC_EVENTO, aoLerNfc);
-    return () => window.removeEventListener(NFC_EVENTO, aoLerNfc);
-  }, []);
+  useNfcLeitura(!pagar && !comprovante, (detalhe) => {
+    const codigo = String(detalhe?.payload || detalhe?.uid || '');
+    if (codigo) void adicionarPorCodigo(codigo);
+  }, true);
 
   const mudarQtd = (id: number, delta: number) => {
     const item = cart.find((i) => i.produto.id === id);

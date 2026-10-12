@@ -471,9 +471,11 @@ export interface NfcEvento {
   payload: string;
   criado_em: string;
   consumido_em?: string | null;
+  duplicate?: boolean;
 }
 
 export const nfcApi = {
+  identificar: (uid: string) => api.post<NfcEvento>('/nfc/identificar', { uid }),
   pendentes: () => api.get<NfcEvento[]>('/nfc/eventos?diagnostico=todos'),
   historico: () => api.get<NfcEvento[]>('/nfc/eventos?historico=1'),
   consumir: (id: number) => api.post<NfcEvento>(`/nfc/eventos/${id}/consumir`),

@@ -11,7 +11,7 @@ import { RestaurantCatalog } from '@/components/RestaurantCatalog';
 import { Button, Card, Modal, Spinner, useToast } from '@/components/ui';
 import { cartaoApi, categoriaApi, produtoApi } from '@/lib/api';
 import type { NfcEvento } from '@/lib/api';
-import { NFC_EVENTO } from '@/lib/useNfcBridge';
+import { useNfcLeitura } from '@/lib/useNfcBridge';
 import type { Categoria, Produto } from '@/lib/types';
 import { fmtBRL } from '@/lib/format';
 
@@ -77,16 +77,9 @@ export function LancarCartaoPage() {
     }
   };
 
-  useEffect(() => {
-    if (!espera || enviando) return;
-    const aoLer = (event: Event) => {
-      const leitura = (event as CustomEvent<NfcEvento>).detail;
-      if (!leitura?.uid && !leitura?.payload) return;
-      void lancar(leitura);
-    };
-    window.addEventListener(NFC_EVENTO, aoLer);
-    return () => window.removeEventListener(NFC_EVENTO, aoLer);
-  }, [espera, enviando, itens]);
+  useNfcLeitura(espera && !enviando, (leitura) => {
+    if (leitura?.uid || leitura?.payload) void lancar(leitura);
+  });
 
   if (load) return <Spinner />;
 

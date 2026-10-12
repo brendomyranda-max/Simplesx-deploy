@@ -3,7 +3,7 @@
  * Responsabilidade: Valida leituras NFC e grava a ponte isolada por estabelecimento.
  */
 
-import { httpError, now } from './util.js';
+import { estabelecimentoId, httpError, now } from './util.js';
 
 const JANELA_DUPLICADA_MS = 2000;
 const RETENCAO_MS = 24 * 60 * 60 * 1000;
@@ -47,7 +47,7 @@ export async function sincronizarConfigNfc(db, estabelecimentoId, nfc) {
   if (prefixoNfcValido(prefixo)) await salvar('nfc_prefixo', prefixo);
 }
 
-export async function registrarLeituraNfc(db, estabelecimentoId, leitura, origem) {
+export async function registrarLeituraNfc(db, estabelecimentoId, leitura, origem, consumidoPor = null) {
   const id = Number(estabelecimentoId);
   if (!Number.isInteger(id) || id <= 0) throw httpError(401, 'Gestor não vinculado a um estabelecimento');
   const agora = now();
@@ -59,14 +59,28 @@ export async function registrarLeituraNfc(db, estabelecimentoId, leitura, origem
   if (recente) return { id: recente.id, uid: recente.uid, payload: recente.payload, origem: recente.origem, duplicate: true };
 
   const criado = await db.prepare(
-    `INSERT INTO nfc_eventos (estabelecimento_id, origem, leitor, uid, payload, criado_em)
-     VALUES (?,?,?,?,?,?)`
-  ).bind(id, origem, leitura.leitor, leitura.uid, leitura.payload, agora).run();
+    `INSERT INTO nfc_eventos (estabelecimento_id, origem, leitor, uid, payload, criado_em, consumido_em, consumido_por)
+     VALUES (?,?,?,?,?,?,?,?)`
+  ).bind(id, origem, leitura.leitor, leitura.uid, leitura.payload, agora,
+    consumidoPor === null ? null : agora, consumidoPor === null ? null : String(consumidoPor)).run();
   await db.prepare(
     `DELETE FROM nfc_eventos WHERE estabelecimento_id=? AND (
       (consumido_em IS NOT NULL AND consumido_em<?) OR criado_em<?)`
   ).bind(id, new Date(Date.now() - RETENCAO_MS).toISOString(), new Date(Date.now() - PENDENTE_MS).toISOString()).run();
-  return { id: criado.meta.last_row_id, uid: leitura.uid, payload: leitura.payload, origem, duplicate: false };
+  return { id: criado.meta.last_row_id, uid: leitura.uid, payload: leitura.payload, origem, criado_em: agora, duplicate: false };
+}
+
+// A tela interna recebe o UID do leitor nativo e usa sua própria sessão web.
+// Já nasce consumida: outra tela não pode capturar o cartão deste atendimento.
+export async function identificarNfcLocalHandler(c, env) {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Corpo JSON obrigatório' }, 400);
+  const leitura = normalizarLeituraNfc({ uid: body.uid, leitor: 'Android integrado' });
+  if (!/^(?:[0-9A-F]{8}|[0-9A-F]{14}|[0-9A-F]{20})$/.test(leitura.uid)) {
+    return c.json({ error: 'UID NFC inválido' }, 400);
+  }
+  const evento = await registrarLeituraNfc(env.DB, estabelecimentoId(env), leitura, 'android-local', c.user.id);
+  return c.json({ ok: true, ...evento });
 }
 
 export async function publicarNfcGestorHandler(c, env) {

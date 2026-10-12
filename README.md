@@ -291,7 +291,7 @@ como o mesmo cartão, preservando os zeros iniciais.
    anterior preservado.
 
 No mesmo celular, use **Servidor DoixP → Cartões NFC → Abrir DoixP e usar cartões
-NFC**. Entre na mesma conta do pareamento, abra **Mesas** e monte o pedido. A tela
+NFC**. Entre na conta do estabelecimento, abra **Mesas** e monte o pedido. A tela
 web fica dentro da mesma Activity do leitor: a aproximação funciona sem trocar de
 app. O botão desliga o modo de teste e liga a leitura para atendimento.
 Mantenha o celular desbloqueado. A impressão continua em segundo plano, mas o
@@ -299,9 +299,24 @@ Android só permite `enableReaderMode` enquanto a Activity está em primeiro pla
 um serviço não permite ler UID livremente sobre o Chrome ou outro aplicativo.
 Também é possível deixar o celular como leitor e usar a DoixP em outro aparelho.
 
+Na versão **1.5.17**, a tela interna recebe o UID diretamente por evento nativo e
+usa `POST /api/nfc/identificar` com o login web. A leitura é registrada já
+consumida, isolada na loja logada, sem exigir pareamento para impressão nem
+depender do foco de elementos HTML. O texto gravado na tag é ignorado. Uma ação
+precisa aguardar cartão para receber a leitura; a tela inicial não consome a
+fila normal. A última leitura local pode aguardar a ação por até 15 segundos.
+Ao cancelar uma espera, sua requisição em andamento não entrega o cartão a uma
+nova ação. O pedido só é salvo pela ação autenticada de lançamento.
+
+**Serviço em segundo plano → Receber impressões** aguarda as permissões e
+mostra **Iniciando**, **Ativo em segundo plano** ou **Parado** conforme o serviço
+real. A falta de pareamento aparece junto do botão. O atalho para configurações
+do Android permite revisar notificações e bateria. No mesmo S21, use a tela
+DoixP interna para NFC e mantenha-a em primeiro plano durante a aproximação.
+
 O aplicativo Android existente já envia o UID. Para o diagnóstico e a leitura
 que ignora o texto, atualize o backend, a interface web e o APK Android para
-**1.5.16**. Não há nova migração de banco. Contas antigas que
+**1.5.17**. Não há nova migração de banco. Contas antigas que
 usavam apenas o texto NDEF devem ser fechadas pela tela **Mesas** antes do primeiro
 uso pelo UID; o sistema bloqueia a criação de outra conta quando detecta esse
 caso, sem transferir saldo entre cartões.
@@ -341,7 +356,7 @@ compilar localmente não atualiza o aplicativo instalado no celular.
 
 ### Atualizar os servidores sem desinstalar (1.5.16)
 
-Instale a versão 1.5.16 por cima da instalação anterior: execute o instalador do
+Instale a versão 1.5.17 por cima da instalação anterior: execute o instalador do
 Windows, substitua o AppImage no Linux ou confirme **Atualizar** no instalador do
 Android. O APK publicado usa a mesma chave permanente; APKs de desenvolvimento
 com outra assinatura não podem substituir a instalação oficial.
@@ -356,7 +371,7 @@ ao concluir ou cancelar, a recepção é retomada se estava ligada.
 A release inclui `latest.yml`, `latest-linux.yml`, instaladores e `android.json`
 com versão, tamanho e SHA-256. Os feeds públicos em `/atualizacoes/` apontam
 somente para arquivos permitidos da release publicada. O Android verifica também
-o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.16` pelo workflow
+o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.17` pelo workflow
 dos servidores e aguarde os três artefatos antes de publicar o site com o novo
 `shared/gestor-releases.js`. Nas próximas versões, aumente as versões do desktop,
 Android e desse arquivo juntas.

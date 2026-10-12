@@ -50,7 +50,6 @@ class PrintSyncService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
         config = AppConfig(this)
         try {
             createChannel()
@@ -62,6 +61,8 @@ class PrintSyncService : Service() {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DoixP:PrintSync")
                 .apply { acquire() }
             foregroundReady = true
+            isRunning = true
+            config.lastStatus = "Serviço ativo em segundo plano · conectando à DoixP…"
         } catch (error: RuntimeException) {
             recordStartFailure(config, error)
             stopSelf()
@@ -253,6 +254,7 @@ class PrintSyncService : Service() {
                 return false
             }
             config.serviceEnabled = true
+            config.lastStatus = "Iniciando serviço em segundo plano…"
             return try {
                 context.startForegroundService(Intent(context, PrintSyncService::class.java))
                 true
@@ -265,6 +267,11 @@ class PrintSyncService : Service() {
         fun stop(context: Context, forgetPairing: Boolean = false) {
             val config = AppConfig(context)
             config.serviceEnabled = false
+            if (!isRunning) {
+                if (forgetPairing) { config.deviceToken = ""; config.tokenExpiresAt = "" }
+                config.lastStatus = "Desconectado"
+                return
+            }
             try {
                 context.startForegroundService(Intent(context, PrintSyncService::class.java)
                     .setAction(ACTION_STOP).putExtra("forget_pairing", forgetPairing))

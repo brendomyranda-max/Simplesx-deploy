@@ -72,6 +72,7 @@ import br.com.simplesx.gestor.sync.PrintSyncService
 import br.com.simplesx.gestor.update.UpdatePanel
 import br.com.simplesx.gestor.web.DoixPWebPanel
 import br.com.simplesx.gestor.web.doixpAddress
+import br.com.simplesx.gestor.web.NfcWebReading
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -99,6 +100,7 @@ private fun GestorScreen(activity: ComponentActivity) {
     var deviceName by remember { mutableStateOf(config.deviceName) }
     var pairingId by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
+    var pairing by remember { mutableStateOf(false) }
     var printers by remember { mutableStateOf(config.printers) }
     var selectedPrinterIndex by remember { mutableStateOf(0) }
     var printer by remember { mutableStateOf(printers.first()) }
@@ -118,6 +120,9 @@ private fun GestorScreen(activity: ComponentActivity) {
     var usbExpanded by remember { mutableStateOf(false) }
     var deployCategories by remember { mutableStateOf<List<DeviceCategory>>(emptyList()) }
     var openBluetoothAfterPermission by remember { mutableStateOf(false) }
+    var startAfterPermission by remember { mutableStateOf(false) }
+    var serviceStarting by remember { mutableStateOf(false) }
+    var serviceRunning by remember { mutableStateOf(PrintSyncService.isRunning) }
 
     fun refreshBluetooth(): Boolean = runCatching { PrinterTransport.pairedBluetooth(context) }.fold({
         bluetoothPrinters = it
@@ -148,17 +153,28 @@ private fun GestorScreen(activity: ComponentActivity) {
             message = "Permissão Bluetooth negada. Autorize Dispositivos próximos nas configurações do aplicativo."
         }
         openBluetoothAfterPermission = false
+        if (startAfterPermission) {
+            startAfterPermission = false
+            serviceEnabled = PrintSyncService.start(activity)
+            serviceStarting = serviceEnabled
+            message = config.lastStatus
+        }
     }
-    fun requestPermissions(openBluetoothPicker: Boolean = false) {
+    fun requestPermissions(openBluetoothPicker: Boolean = false, startService: Boolean = false) {
         val required = buildList {
             if (Build.VERSION.SDK_INT >= 31 && (openBluetoothPicker || printers.any { it.connection == ConnectionType.BLUETOOTH })) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (required.isNotEmpty()) {
             openBluetoothAfterPermission = openBluetoothPicker
+            startAfterPermission = startService
             permissions.launch(required.toTypedArray())
         } else if (openBluetoothPicker) {
             bluetoothExpanded = refreshBluetooth()
+        } else if (startService) {
+            serviceEnabled = PrintSyncService.start(activity)
+            serviceStarting = serviceEnabled
+            message = config.lastStatus
         }
     }
 
@@ -188,6 +204,11 @@ private fun GestorScreen(activity: ComponentActivity) {
     LaunchedEffect(Unit) {
         while (true) {
             serviceEnabled = config.serviceEnabled
+            serviceRunning = PrintSyncService.isRunning
+            if (serviceStarting && (serviceRunning || !serviceEnabled)) {
+                serviceStarting = false
+                message = config.lastStatus
+            }
             paired = config.deviceToken.isNotBlank()
             serviceStatus = config.lastStatus
             lastJob = config.lastJob
@@ -201,6 +222,7 @@ private fun GestorScreen(activity: ComponentActivity) {
 
     var doixpOpen by rememberSaveable { mutableStateOf(false) }
     var nfcStatus by remember { mutableStateOf("NFC: aguardando leitor") }
+    var webReading by remember { mutableStateOf<NfcWebReading?>(null) }
     Box(Modifier.fillMaxSize()) {
     // Mantém NfcPanel composto sob a tela web: o leitor continua na mesma Activity.
     Scaffold(topBar = {
@@ -215,7 +237,7 @@ private fun GestorScreen(activity: ComponentActivity) {
         })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatusCard(serviceEnabled, paired, serviceStatus, lastJob)
+            StatusCard(serviceRunning, paired, serviceStatus, lastJob)
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodyMedium)
 
             Section("Atualização do servidor") { UpdatePanel(activity, config) }
@@ -228,12 +250,17 @@ private fun GestorScreen(activity: ComponentActivity) {
                     OutlinedTextField(pairingCode, { pairingCode = it.uppercase() }, label = { Text("Código de pareamento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Button(onClick = {
                         config.deployUrl = deployUrl; config.deviceName = deviceName
-                        background {
-                            SimplexsaApi(config).pair(pairingId, pairingCode)
-                            if (PrintSyncService.start(context)) "Pareamento concluído e recepção iniciada"
-                            else config.lastStatus
+                        pairing = true
+                        screenScope.launch {
+                            val result = withContext(Dispatchers.IO) { runCatching { SimplexsaApi(config).pair(pairingId, pairingCode) } }
+                            pairing = false
+                            result.fold({
+                                paired = true
+                                message = "Pareamento concluído"
+                                requestPermissions(startService = true)
+                            }, { message = "Erro ao parear: ${it.message}" })
                         }
-                    }, modifier = Modifier.fillMaxWidth()) { Text("Parear aparelho") }
+                    }, enabled = !pairing, modifier = Modifier.fillMaxWidth()) { Text(if (pairing) "Pareando…" else "Parear aparelho") }
                 } else {
                     Text("Aparelho pareado · ${config.deviceId}", color = MaterialTheme.colorScheme.primary)
                     OutlinedButton(onClick = {
@@ -248,6 +275,11 @@ private fun GestorScreen(activity: ComponentActivity) {
             Section("Cartões NFC") {
                 NfcPanel(activity, config, paired, onOpenDoixP = {
                     runCatching { doixpAddress(config.deployUrl) }.fold({ doixpOpen = true }, { message = it.message.orEmpty() })
+                }, onReadInDoixP = { reading ->
+                    if (doixpOpen) {
+                        webReading = NfcWebReading(reading.uid, System.currentTimeMillis())
+                        true
+                    } else false
                 }, onStatus = { nfcStatus = it })
             }
 
@@ -567,25 +599,32 @@ private fun GestorScreen(activity: ComponentActivity) {
             }
 
             Section("Serviço em segundo plano") {
+                Text("Mantém a recepção de impressões ao sair da tela. Para cartões no mesmo celular, use Abrir DoixP e usar cartões NFC.", style = MaterialTheme.typography.bodySmall)
+                if (!paired) Text("Para ativar a impressão em segundo plano, primeiro pareie em Conexão com a DoixP.", color = MaterialTheme.colorScheme.error)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column { Text("Receber impressões"); Text("Mantém uma notificação ativa", style = MaterialTheme.typography.bodySmall) }
-                    Switch(serviceEnabled, enabled = paired && !disconnecting, onCheckedChange = {
-                        requestPermissions(); config.deployUrl = deployUrl; config.deviceName = deviceName; config.printers = printers
-                        serviceEnabled = it
+                    Column(Modifier.weight(1f)) { Text("Receber impressões"); Text(if (serviceStarting) "Iniciando…" else if (serviceRunning) "Ativo em segundo plano" else "Parado", style = MaterialTheme.typography.bodySmall) }
+                    Switch(serviceEnabled, enabled = paired && !disconnecting && !serviceStarting && !startAfterPermission, onCheckedChange = {
+                        config.deployUrl = deployUrl; config.deviceName = deviceName; config.printers = printers
                         if (it) {
-                            serviceEnabled = PrintSyncService.start(context)
-                            if (!serviceEnabled) message = config.lastStatus
+                            requestPermissions(startService = true)
                         } else {
+                            serviceEnabled = false
                             disconnecting = true
                             PrintSyncService.stop(context)
                         }
                     })
                 }
+                Text(config.lastStatus, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = {
+                    runCatching { activity.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:${activity.packageName}"))) }
+                        .onFailure { message = "Abra as configurações do Android para permitir notificações e uso de bateria deste app." }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Configurações do app no Android") }
             }
             Spacer(Modifier.height(24.dp))
         }
     }
-    if (doixpOpen) DoixPWebPanel(activity, config.deployUrl, nfcStatus, onClose = { doixpOpen = false })
+    if (doixpOpen) DoixPWebPanel(activity, config.deployUrl, nfcStatus, webReading, onClose = { doixpOpen = false; webReading = null })
     }
 }
 

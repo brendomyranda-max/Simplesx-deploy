@@ -14,6 +14,8 @@ A versão 1.5.15 usa a variante **LogoDoixPAmarelo** no cabeçalho e no ícone.
 A versão 1.5.16 identifica cartões somente pelo UID, retoma o leitor ao voltar
 das configurações do Android e inclui diagnóstico de leitura, conexão e entrega
 ao sistema web. O texto gravado no cartão não é aberto pelo leitor nesse modo.
+A versão 1.5.17 entrega o UID diretamente à tela interna, pela sessão web logada,
+e corrige o início e a indicação do serviço em segundo plano.
 
 ## Requisitos
 
@@ -51,8 +53,9 @@ Para usar cartões físicos como comandas, ative **Cartões NFC** no próprio
 Servidor DoixP. A preferência é salva imediatamente neste aparelho; se o NFC do
 Android estiver desligado, ligue-o também nas configurações do aparelho.
 Mantenha o Servidor DoixP aberto para ler o cartão. No sistema web, monte o
-pedido em **Mesas → Lançar para cartão** antes de aproximá-lo. O servidor precisa
-estar pareado e conectado à internet para enviar a leitura ao estabelecimento.
+pedido em **Mesas → Lançar para cartão → Aguardar cartão** antes de aproximá-lo.
+Para enviar a leitura a outro aparelho, o servidor precisa estar pareado e
+conectado à internet. A fila normal só é consumida por uma ação aguardando cartão.
 
 Cartões **NTAG215** funcionam vazios: o aplicativo já envia o UID físico de
 7 bytes, e o sistema atualizado usa esse serial para identificar a comanda.
@@ -60,10 +63,17 @@ Não é necessário gravar pedidos nem formatar o cartão. Após pagar e encerra
 a comanda, o cartão pode ser reutilizado para outro atendimento.
 
 Para usar o mesmo celular, toque em **Abrir DoixP e usar cartões NFC**. Entre na
-mesma conta do pareamento e monte o pedido em **Mesas** dentro dessa tela. O leitor
+conta do estabelecimento e monte o pedido em **Mesas** dentro dessa tela. O leitor
 e a interface web permanecem na mesma Activity, permitindo aproximar o cartão sem
 trocar de aplicativo. O botão liga o leitor e desliga o modo de teste. O topo
 mostra o estado NFC e a última identificação enviada; **Servidor** volta aos ajustes.
+Na versão 1.5.17, o UID chega à tela interna sem passar pela fila de outro
+terminal: `POST /api/nfc/identificar` usa o login web, valida o UID e registra a
+leitura já consumida pelo funcionário. O pareamento para impressão não é exigido
+nesse percurso. A gravação do pedido continua dependendo da ação na tela.
+Se aproximar antes de abrir a ação, a tela avisa e mantém a última leitura por
+até 15 segundos; após esse prazo, aproxime novamente. Leituras repetidas no
+carregamento da página não são entregues duas vezes na mesma sessão da ponte.
 
 O Android exige primeiro plano para esse leitor NFC. **Receber impressões** continua
 funcionando em segundo plano, mas não mantém a leitura de UID sobre outro app.
@@ -126,6 +136,13 @@ a impressora avançar várias etiquetas procurando o próximo espaço ou marca.
 O serviço mostra uma notificação permanente porque o Android pode suspender
 aplicativos em segundo plano. Em aparelhos com otimização agressiva de bateria,
 autorize o Servidor DoixP a executar sem restrições.
+Na versão 1.5.17, **Receber impressões** aguarda a resposta das permissões antes
+de iniciar. **Iniciando**, **Ativo em segundo plano** e **Parado** refletem a
+inicialização real. Se o botão estiver desabilitado por falta de pareamento, o
+motivo aparece nessa seção. **Configurações do app no Android** permite revisar
+notificações e bateria; no S21, selecione **Bateria → Sem restrições** caso o
+Android esteja suspendendo o serviço. Isso mantém a impressão, enquanto o leitor
+NFC continua exigindo a tela interna em primeiro plano.
 
 Na versão 1.5.11, o serviço usa o tipo Android `connectedDevice`, adequado às
 conexões USB, Bluetooth e de rede com impressoras. O tipo anterior, `dataSync`,

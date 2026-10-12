@@ -22,9 +22,12 @@ export function NfcBridge() {
     const aoFalhar = (event: Event) => {
       toast('error', String((event as CustomEvent<string>).detail || 'Falha na ponte NFC'));
     };
+    const aoEsperar = () => toast('info', 'Cartão lido. Abra Adicionar com cartão, Lançar para cartão ou Fechamento de cartão.');
+    window.addEventListener('simplexsa:nfc-sem-espera', aoEsperar);
     window.addEventListener('simplexsa:nfc-erro', aoFalhar);
     window.addEventListener(NFC_TESTE_EVENTO, aoTestar);
     return () => {
+      window.removeEventListener('simplexsa:nfc-sem-espera', aoEsperar);
       window.removeEventListener('simplexsa:nfc-erro', aoFalhar);
       window.removeEventListener(NFC_TESTE_EVENTO, aoTestar);
     };

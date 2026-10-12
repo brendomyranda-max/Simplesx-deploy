@@ -22,9 +22,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -33,9 +35,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 /** A tela web e o leitor NFC pertencem à mesma Activity em primeiro plano. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun DoixPWebPanel(activity: ComponentActivity, deployUrl: String, nfcStatus: String, onClose: () -> Unit) {
+fun DoixPWebPanel(activity: ComponentActivity, deployUrl: String, nfcStatus: String, reading: NfcWebReading?, onClose: () -> Unit) {
     val base = remember(deployUrl) { doixpAddress(deployUrl) }
     var error by remember { mutableStateOf("") }
+    val currentReading by rememberUpdatedState(reading)
     val browser = remember(activity, base) {
         WebView(activity).apply {
             settings.javaScriptEnabled = true
@@ -57,13 +60,23 @@ fun DoixPWebPanel(activity: ComponentActivity, deployUrl: String, nfcStatus: Str
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
                     if (request.isForMainFrame) error = "Não foi possível abrir a DoixP. Confira a internet e toque em Recarregar."
                 }
-                override fun onPageFinished(view: WebView, url: String) { view.requestFocus() }
+                override fun onPageFinished(view: WebView, url: String) {
+                    view.requestFocus()
+                    if (sameDoixPOrigin(base, url)) currentReading?.script(System.currentTimeMillis())?.let {
+                        view.evaluateJavascript(it, null)
+                    }
+                }
             }
             loadUrl(base.toString() + "/restaurante")
         }
     }
     DisposableEffect(browser) {
         onDispose { browser.stopLoading(); browser.destroy() }
+    }
+    LaunchedEffect(browser, reading) {
+        if (sameDoixPOrigin(base, browser.url.orEmpty())) reading?.script(System.currentTimeMillis())?.let {
+            browser.evaluateJavascript(it, null)
+        }
     }
     BackHandler { if (browser.canGoBack()) browser.goBack() else onClose() }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

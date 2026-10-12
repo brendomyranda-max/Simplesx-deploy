@@ -19,7 +19,7 @@ import * as fiscal from './handlers-fiscal.js';
 import * as online from './handlers-online.js';
 import { TenantDb } from './tenant-db.js';
 import { usarCartaoHandler } from './cartao-nfc.js';
-import { consumirNfcHandler, listarNfcHandler, publicarNfcGestorHandler } from './nfc.js';
+import { consumirNfcHandler, identificarNfcLocalHandler, listarNfcHandler, publicarNfcGestorHandler } from './nfc.js';
 
 // Módulos: 'gestor' (tudo), 'pdv_mercado', 'restaurante'
 const routes = [
@@ -174,6 +174,7 @@ const routes = [
   { m: 'POST', p: '/api/device/nfc/test', h: devices.testDeviceNfcHandler, pub: true },
   { m: 'POST', p: '/api/device/nfc/status', h: devices.deviceNfcStatusHandler, pub: true },
   { m: 'GET', p: '/api/nfc/eventos', h: listarNfcHandler },
+  { m: 'POST', p: '/api/nfc/identificar', h: identificarNfcLocalHandler },
   { m: 'POST', p: '/api/nfc/eventos/:id/consumir', h: consumirNfcHandler },
   { m: 'GET', p: '/api/devices', h: devices.listDevicesHandler, mod: 'gestor' },
   { m: 'PUT', p: '/api/devices/:id', h: devices.updateDeviceHandler, mod: 'gestor' },

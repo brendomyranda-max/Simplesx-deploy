@@ -100,13 +100,14 @@ jobs:
           files: artefatos/*
           make_latest: false
           body: |
-            Servidor DoixP 1.5.16 para Windows, Linux e Android.
+            Servidor DoixP 1.5.17 para Windows, Linux e Android.
 
             - Botão Buscar atualizações, download e instalação sem desinstalar o servidor.
             - Preserva pareamento, configurações e histórico de impressão.
-            - Android: leitura pelo UID do cartão NTAG215, diagnóstico NFC e retomada do leitor ao voltar das configurações.
-            - Abrir DoixP e usar cartões NFC: atendimento dentro do servidor Android, sem trocar de app e pausar o leitor.
+            - Android: entrega direta do UID à DoixP aberta dentro do servidor, usando o login web do estabelecimento.
+            - Leituras normais só são consumidas enquanto uma ação aguarda cartão, sem descartar a leitura no dashboard.
+            - Serviço em segundo plano inicia após as permissões e mostra o estado real, com motivo quando não pode ser ativado.
             - Termina trabalhos recebidos antes de instalar uma atualização.
 
-            Para passar de uma versão antiga para esta, execute o instalador por cima da instalação atual. No Android, confirme Atualizar. As próximas versões poderão ser buscadas pelo novo botão.
+            Na versão 1.5.16, use Buscar atualizações. Em versões anteriores, execute o instalador por cima da instalação atual. No Android, confirme Atualizar. Para NFC no mesmo celular, use Cartões NFC → Abrir DoixP e usar cartões NFC; monte o pedido e toque em Aguardar cartão antes de aproximá-lo.
 # Testa e publica os instaladores Android, Linux e Windows do Servidor DoixP.

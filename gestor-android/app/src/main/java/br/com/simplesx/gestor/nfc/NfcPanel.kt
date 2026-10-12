@@ -36,13 +36,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun NfcPanel(activity: ComponentActivity, config: AppConfig, paired: Boolean, onOpenDoixP: () -> Unit, onStatus: (String) -> Unit) {
+fun NfcPanel(activity: ComponentActivity, config: AppConfig, paired: Boolean, onOpenDoixP: () -> Unit,
+    onReadInDoixP: (NfcTagReading) -> Boolean, onStatus: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var enabled by remember { mutableStateOf(config.nfcEnabled) }
     var state by remember { mutableStateOf(NfcReaderState.OFF) }
     var testMode by rememberSaveable { mutableStateOf(false) }
     val testingNow by rememberUpdatedState(testMode)
     val pairedNow by rememberUpdatedState(paired)
+    val readInDoixP by rememberUpdatedState(onReadInDoixP)
     var restart by remember { mutableStateOf(0) }
     var lastReading by remember { mutableStateOf<NfcTagReading?>(null) }
     var localStatus by remember { mutableStateOf("Aguardando cartão") }
@@ -67,6 +69,11 @@ fun NfcPanel(activity: ComponentActivity, config: AppConfig, paired: Boolean, on
                 localStatus = "OK · UID ${reading.uid} · ${reading.technologies.joinToString() }"
                 eventId = null
                 terminalStatus = "Aguardando envio"
+                if (readInDoixP(reading)) {
+                    deliveryStatus = "UID entregue à DoixP neste celular"
+                    terminalStatus = "Confira a confirmação da comanda na tela de atendimento."
+                    return@onTag
+                }
                 if (!pairedNow) {
                     deliveryStatus = "Leitura local OK. Pareie este aparelho para enviar ao DoixP."
                     return@onTag
@@ -147,8 +154,8 @@ fun NfcPanel(activity: ComponentActivity, config: AppConfig, paired: Boolean, on
         config.nfcEnabled = true
         testMode = false
         onOpenDoixP()
-    }, enabled = paired && !sending, modifier = Modifier.fillMaxWidth()) { Text("Abrir DoixP e usar cartões NFC") }
-    Text("Atenda pela DoixP aberta neste botão para ler cartões no mesmo celular. Entre na mesma conta do pareamento. A impressão continua em segundo plano; o leitor NFC precisa desta tela aberta.", style = MaterialTheme.typography.bodySmall)
+    }, enabled = !sending, modifier = Modifier.fillMaxWidth()) { Text("Abrir DoixP e usar cartões NFC") }
+    Text("Dentro desta tela, o cartão usa o login da DoixP e não depende do serviço de impressão. Para enviar a leitura a outro aparelho, pareie este servidor. Mantenha a tela interna aberta para ler cartões.", style = MaterialTheme.typography.bodySmall)
     Text("${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · Servidor ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = {

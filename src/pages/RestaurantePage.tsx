@@ -12,7 +12,7 @@ import { RestauranteAbas } from '@/components/RestauranteAbas';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, useToast } from '@/components/ui';
 import { useAuth } from '@/store/auth';
 import { mesaApi, funcionarioApi, cartaoApi, type NfcEvento } from '@/lib/api';
-import { NFC_EVENTO } from '@/lib/useNfcBridge';
+import { useNfcLeitura } from '@/lib/useNfcBridge';
 import type { Mesa, Funcionario } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
 
@@ -117,16 +117,9 @@ export function RestaurantePage() {
     }
   };
 
-  useEffect(() => {
-    if (!espera || lendoCartao) return;
-    const aoLer = (event: Event) => {
-      const leitura = (event as CustomEvent<NfcEvento>).detail;
-      if (!leitura?.uid && !leitura?.payload) return;
-      void usarCartao(espera, leitura);
-    };
-    window.addEventListener(NFC_EVENTO, aoLer);
-    return () => window.removeEventListener(NFC_EVENTO, aoLer);
-  }, [espera, lendoCartao]);
+  useNfcLeitura(!!espera && !lendoCartao, (leitura) => {
+    if (espera && (leitura?.uid || leitura?.payload)) void usarCartao(espera, leitura);
+  });
 
   const criarMesa = async (e: React.FormEvent) => {
     e.preventDefault();
