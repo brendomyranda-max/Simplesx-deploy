@@ -272,6 +272,95 @@ Em **Mesas → Lançar para cartão**, monte o pedido e aproxime o cartão físi
 registrá-lo na comanda. A ativação não fica em Configurações gerais e cada
 servidor mantém sua própria preferência de NFC.
 
+### Comandas com cartão NTAG215
+
+O NTAG215 é compatível com o leitor NFC do celular Android e pode ser usado
+vazio, sem formatar ou gravar o cartão. Cada cartão identifica uma mesa virtual
+pelo UID físico de 7 bytes; pedidos, valores e pagamentos ficam no sistema.
+O texto NDEF não define a conta: cartões diferentes com o mesmo texto têm contas
+separadas. UIDs em hexadecimal com espaços, dois-pontos ou hífens são reconhecidos
+como o mesmo cartão, preservando os zeros iniciais.
+
+1. No celular já pareado, ligue o NFC do Android e **Cartões NFC** no Servidor DoixP.
+2. Na tela **Mesas**, use **Adicionar com cartão** e aproxime o cartão do celular
+   para abrir ou consultar a comanda. Para enviar um pedido pronto, use
+   **Lançar para cartão → Aguardar cartão** antes da aproximação.
+3. Use **Fechamento de cartão**, aproxime o mesmo cartão e finalize o pagamento
+   pela comanda. A aproximação apenas localiza a conta; o pagamento é confirmado
+   na tela. Após fechar, o mesmo cartão abre uma nova comanda com o histórico
+   anterior preservado.
+
+No mesmo celular, use **Servidor DoixP → Cartões NFC → Abrir DoixP e usar cartões
+NFC**. Entre na mesma conta do pareamento, abra **Mesas** e monte o pedido. A tela
+web fica dentro da mesma Activity do leitor: a aproximação funciona sem trocar de
+app. O botão desliga o modo de teste e liga a leitura para atendimento.
+Mantenha o celular desbloqueado. A impressão continua em segundo plano, mas o
+Android só permite `enableReaderMode` enquanto a Activity está em primeiro plano;
+um serviço não permite ler UID livremente sobre o Chrome ou outro aplicativo.
+Também é possível deixar o celular como leitor e usar a DoixP em outro aparelho.
+
+O aplicativo Android existente já envia o UID. Para o diagnóstico e a leitura
+que ignora o texto, atualize o backend, a interface web e o APK Android para
+**1.5.16**. Não há nova migração de banco. Contas antigas que
+usavam apenas o texto NDEF devem ser fechadas pela tela **Mesas** antes do primeiro
+uso pelo UID; o sistema bloqueia a criação de outra conta quando detecta esse
+caso, sem transferir saldo entre cartões.
+
+### Diagnóstico NFC no Android (1.5.16)
+
+Em **Servidor DoixP → Cartões NFC**, use **Testar conexão** para conferir o
+pareamento e o nome do estabelecimento. Use **Testar cartão** e aproxime o cartão
+com essa tela aberta. O modo de teste mostra:
+
+1. **Cartão no celular:** UID físico e tecnologias detectadas, mesmo sem internet.
+2. **Envio ao DoixP:** confirmação do backend ou o erro de rede/pareamento.
+3. **Chegada à tela:** confirmação de que o sistema web consumiu a leitura.
+
+Deixe o DoixP web aberto e em foco, na mesma conta, preferencialmente em outro
+aparelho. Em **Impressoras**, aparece a leitura como **teste Android**; também há
+uma confirmação na tela. A fila de diagnósticos é separada da fila de atendimento,
+inclusive para clientes antigos: testes não abrem comandas nem lançam itens.
+Desligue **Modo de teste** antes de atender e confirme o pedido salvo na tela web;
+receber a leitura não significa, por si só, salvar um pedido.
+
+No **Samsung Galaxy S21**, confira **Configurações → Conexões → NFC e pagamentos
+sem contato** e ative o NFC. Mantenha o celular desbloqueado e aproxime um cartão
+por vez da traseira. O botão **Configurações NFC** abre o ajuste do Android, e
+**Reiniciar leitor** permite reativar a leitura. O leitor também é retomado
+automaticamente ao voltar das configurações ou ligar o NFC.
+
+Com o Servidor em primeiro plano, a versão 1.5.16 usa apenas o UID e desativa
+a interpretação de NDEF (`FLAG_READER_SKIP_NDEF_CHECK`), impedindo que o texto
+seja aberto nesse modo. Fora do Servidor, o Android pode continuar mostrando
+o texto gravado; a leitura em segundo plano não faz parte desse fluxo.
+Não é necessário apagar o cartão ou trocar a carteira padrão de pagamentos.
+
+O APK de teste local fica em `gestor-android/app/build/outputs/apk/debug/app-debug.apk`.
+A versão publicada em **Downloads** só muda após a publicação do instalador;
+compilar localmente não atualiza o aplicativo instalado no celular.
+
+### Atualizar os servidores sem desinstalar (1.5.16)
+
+Instale a versão 1.5.16 por cima da instalação anterior: execute o instalador do
+Windows, substitua o AppImage no Linux ou confirme **Atualizar** no instalador do
+Android. O APK publicado usa a mesma chave permanente; APKs de desenvolvimento
+com outra assinatura não podem substituir a instalação oficial.
+
+Depois, no próprio servidor, use **Atualização do servidor → Buscar atualizações →
+Baixar atualização → Atualizar servidor / Atualizar e reiniciar**. Token,
+pareamento, impressoras e diário de impressão permanecem no diretório existente.
+Os trabalhos já recebidos terminam antes de instalar. No Android, autorize
+**Permitir desta fonte** quando solicitado e confirme no instalador do sistema;
+ao concluir ou cancelar, a recepção é retomada se estava ligada.
+
+A release inclui `latest.yml`, `latest-linux.yml`, instaladores e `android.json`
+com versão, tamanho e SHA-256. Os feeds públicos em `/atualizacoes/` apontam
+somente para arquivos permitidos da release publicada. O Android verifica também
+o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.16` pelo workflow
+dos servidores e aguarde os três artefatos antes de publicar o site com o novo
+`shared/gestor-releases.js`. Nas próximas versões, aumente as versões do desktop,
+Android e desse arquivo juntas.
+
 Na versão **1.5.13**, as rotas com **Usar a impressora padrão do servidor**
 respeitam a seleção feita no Gestor Windows, Linux ou Android. O nome da rota
 (por exemplo, Cozinha ou Bar) não substitui o nome da impressora física.

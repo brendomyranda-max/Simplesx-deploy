@@ -474,7 +474,7 @@ export interface NfcEvento {
 }
 
 export const nfcApi = {
-  pendentes: () => api.get<NfcEvento[]>('/nfc/eventos'),
+  pendentes: () => api.get<NfcEvento[]>('/nfc/eventos?diagnostico=todos'),
   historico: () => api.get<NfcEvento[]>('/nfc/eventos?historico=1'),
   consumir: (id: number) => api.post<NfcEvento>(`/nfc/eventos/${id}/consumir`),
 };

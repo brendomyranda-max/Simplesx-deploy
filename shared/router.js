@@ -171,6 +171,8 @@ const routes = [
   { m: 'POST', p: '/api/device/tasks/pull', h: devices.pullDeviceTasksHandler, pub: true },
   { m: 'POST', p: '/api/device/tasks/:id/status', h: devices.updateDeviceTaskStatusHandler, pub: true },
   { m: 'POST', p: '/api/device/nfc', h: devices.publishDeviceNfcHandler, pub: true },
+  { m: 'POST', p: '/api/device/nfc/test', h: devices.testDeviceNfcHandler, pub: true },
+  { m: 'POST', p: '/api/device/nfc/status', h: devices.deviceNfcStatusHandler, pub: true },
   { m: 'GET', p: '/api/nfc/eventos', h: listarNfcHandler },
   { m: 'POST', p: '/api/nfc/eventos/:id/consumir', h: consumirNfcHandler },
   { m: 'GET', p: '/api/devices', h: devices.listDevicesHandler, mod: 'gestor' },

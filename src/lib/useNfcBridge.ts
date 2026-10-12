@@ -8,6 +8,7 @@ import { CUPS_SERVER } from '@/lib/cupsPrint';
 import { nfcApi, type NfcEvento } from '@/lib/api';
 
 export const NFC_EVENTO = 'simplexsa:nfc';
+export const NFC_TESTE_EVENTO = 'simplexsa:nfc-teste';
 
 interface NfcLocal {
   ativo: boolean;
@@ -33,7 +34,8 @@ async function publicarLocal(texto: string) {
 }
 
 function entregar(evento: NfcEvento) {
-  window.dispatchEvent(new CustomEvent(NFC_EVENTO, { detail: evento }));
+  const tipo = evento.origem === 'android-teste' ? NFC_TESTE_EVENTO : NFC_EVENTO;
+  window.dispatchEvent(new CustomEvent(tipo, { detail: evento }));
 }
 
 export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
@@ -58,6 +60,7 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
 
   useEffect(() => {
     let ativo = true;
+    let consultando = false;
     const consultarLocal = async () => {
       try {
         const resposta = await fetch(`${CUPS_SERVER}/nfc`);
@@ -69,10 +72,12 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
       }
     };
     const consultarNuvem = async () => {
-      if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      if (!ativo || consultando || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      consultando = true;
       try {
         const pendentes = await nfcApi.pendentes();
         for (const evento of pendentes) {
+          if (!ativo || document.visibilityState !== 'visible' || !document.hasFocus()) break;
           if (vistos.current.has(evento.id)) continue;
           try {
             const consumido = await nfcApi.consumir(evento.id);
@@ -83,6 +88,8 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
         }
       } catch {
         /* a sessão ou a rede podem falhar sem interromper o PDV */
+      } finally {
+        consultando = false;
       }
     };
     consultarLocal();

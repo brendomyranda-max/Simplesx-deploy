@@ -5,12 +5,15 @@
 
 import { dispatchOrders } from './order-printing.js';
 import { saveOrderItems } from './restaurant-orders.js';
+import { normalizarUidNfc } from './nfc.js';
 import { getConfigValue, httpError, now, num } from './util.js';
 
 export function idDoCartao(body) {
   const payload = String(body?.payload || '').replace(/[\u0000-\u001F\u007F]/g, '').trim();
-  const uid = String(body?.uid || '').replace(/[\u0000-\u001F\u007F]/g, '').trim();
-  const bruto = (payload || uid).replace(/\s+/g, '');
+  const uid = normalizarUidNfc(body?.uid);
+  // O cartão identifica a conta pelo serial físico, mesmo vazio ou com outro texto NDEF.
+  // Leitores antigos que só fornecem o texto continuam aceitos quando não há UID.
+  const bruto = (uid || payload).replace(/\s+/g, '');
   if (!/^[\x21-\x7E]{1,64}$/.test(bruto)) throw httpError(400, 'Aproxime um cartão NFC válido');
   return bruto.toUpperCase();
 }
@@ -93,6 +96,18 @@ export async function usarCartaoHandler(c, env) {
   if (!['abrir', 'lancar', 'fechar'].includes(acao)) return c.json({ error: 'Ação do cartão inválida' }, 400);
   const cartao = idDoCartao(body);
   const garcom = String(body.garcom_nome || '').trim().slice(0, 80);
+
+  // Uma conta antiga pode ter usado o texto NDEF como chave. Não abra outra
+  // conta nem atribua esse saldo a qualquer cartão que tenha o mesmo texto.
+  if (body.uid && body.payload && !(await mesaDoCartao(env, cartao))) {
+    const legado = String(body.payload).replace(/[\u0000-\u001F\u007F\s]/g, '').toUpperCase();
+    if (legado !== cartao && /^[\x21-\x7E]{1,64}$/.test(legado)) {
+      const mesaAntiga = await mesaDoCartao(env, legado);
+      if (mesaAntiga && await comandaAtual(env, mesaAntiga.id)) {
+        return c.json({ error: `Há uma conta antiga no cartão ${legado}, identificado pelo texto gravado. Feche essa conta pela tela Mesas antes de usar o UID do cartão.` }, 409);
+      }
+    }
+  }
 
   if (acao === 'fechar') {
     const mesa = await mesaDoCartao(env, cartao);

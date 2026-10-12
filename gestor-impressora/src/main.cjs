@@ -16,6 +16,8 @@ const { resolveDataDirectory } = require('./data-directory.cjs')
 const { createPrinterDiscovery, selectPrinter } = require('./printer-discovery.cjs')
 const { externalFilePath } = require('./native-files.cjs')
 const { interpretarLeituraNfc, prefixoValido, PREFIXO_PADRAO } = require('./nfc-leitura.cjs')
+const { autoUpdater } = require('electron-updater')
+const { createUpdates } = require('./updates.cjs')
 
 const executarArquivo = promisify(execFile)
 
@@ -38,6 +40,8 @@ let ultimoErro = ''
 let ultimoContato = null
 let ultimoJob = null
 let ultimoNfc = null
+let instalandoAtualizacao = false
+let reconectarAposAtualizacao
 const filasImpressao = new Map()
 const descobrirImpressoras = createPrinterDiscovery({
   execute: executarArquivo,
@@ -415,6 +419,7 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
 }
 
 async function imprimirRaw(opcoes) {
+  if (instalandoAtualizacao) throw new Error('Servidor reiniciando para atualizar. Aguarde a reabertura.')
   const printer = await resolverImpressora(opcoes.impressora)
   const chave = nomeComparavel(printer.name)
   const anterior = filasImpressao.get(chave) || Promise.resolve()
@@ -458,7 +463,7 @@ async function desconectar() {
 }
 
 async function sincronizarAgora() {
-  if (sincronizando || !config?.conectado || !config?.token || !config?.deployUrl) return
+  if (instalandoAtualizacao || sincronizando || !config?.conectado || !config?.token || !config?.deployUrl) return
   sincronizando = true
   try {
     await registrar()
@@ -643,6 +648,39 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
 })
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))
 ipcMain.handle('ler-nfc', (_e, texto) => publicarLeituraNfc(texto))
+
+const updates = createUpdates({
+  updater: autoUpdater,
+  supported: () => app.isPackaged && (process.platform === 'win32' || (process.platform === 'linux' && !!process.env.APPIMAGE)),
+  notify: (state) => {
+    if (janela && !janela.isDestroyed()) janela.webContents.send('atualizacao-status', state)
+  },
+  prepareInstall: async () => {
+    // Aguarda também impressões manuais/API local e mantém token, filas e diário.
+    const reconectar = config.conectado
+    reconectarAposAtualizacao = reconectar
+    // Impede novas consultas; os trabalhos já recebidos ainda podem imprimir.
+    clearInterval(timer)
+    await desconectar()
+    instalandoAtualizacao = true
+    await Promise.allSettled([...filasImpressao.values()])
+    await salvarConfig({ ...config, conectado: reconectar })
+    encerrando = true
+  },
+  recoverInstall: async () => {
+    encerrando = false
+    instalandoAtualizacao = false
+    if (reconectarAposAtualizacao !== undefined) {
+      await salvarConfig({ ...config, conectado: reconectarAposAtualizacao })
+      reconectarAposAtualizacao = undefined
+    }
+    clearInterval(timer)
+    timer = setInterval(sincronizar, INTERVALO_POLL)
+    sincronizar()
+  },
+})
+ipcMain.handle('atualizacao-status', () => updates.status())
+ipcMain.handle('atualizar-servidor', () => updates.action())
 
 if (instanciaUnica) {
   app.whenReady().then(async () => {

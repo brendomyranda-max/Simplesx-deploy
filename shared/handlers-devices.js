@@ -244,6 +244,33 @@ export async function publishDeviceNfcHandler(c, env) {
   return c.json({ ok: true, ...evento });
 }
 
+export async function testDeviceNfcHandler(c, env) {
+  const device = await authenticateDevice(c, env, true);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Corpo JSON obrigatório' }, 400);
+  const loja = await env.DB.prepare('SELECT nome FROM estabelecimentos WHERE id=?')
+    .bind(device.estabelecimento_id).first();
+  // Sem cartão, verifica somente a conexão. Com cartão, testa a entrega ao painel
+  // em uma fila separada, que não abre comandas nem lança pedidos.
+  const evento = body.uid
+    ? await registrarLeituraNfc(env.DB, device.estabelecimento_id,
+      normalizarLeituraNfc({ uid: body.uid, leitor: device.nome }), 'android-teste')
+    : null;
+  return c.json({ ok: true, estabelecimento: loja?.nome || '', ...evento });
+}
+
+export async function deviceNfcStatusHandler(c, env) {
+  const device = await authenticateDevice(c, env);
+  const body = await c.req.json().catch(() => null);
+  const id = Number(body?.evento_id);
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: 'Leitura não encontrada' }, 404);
+  const evento = await env.DB.prepare(
+    "SELECT id, uid, consumido_em FROM nfc_eventos WHERE id=? AND estabelecimento_id=? AND origem IN ('android','android-teste')"
+  ).bind(id, device.estabelecimento_id).first();
+  if (!evento) return c.json({ error: 'Leitura não encontrada' }, 404);
+  return c.json({ ok: true, ...evento, recebido_pelo_terminal: Boolean(evento.consumido_em) });
+}
+
 export async function devicePrintConfigHandler(c, env) {
   const device = await authenticateDevice(c, env);
   const categories = await env.DB.prepare(

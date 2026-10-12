@@ -17,7 +17,7 @@ function fixture(t, { job, execute = async () => {}, disconnectError, ackError }
   const context = {
     app: { getPath: () => directory }, path, JobJournal, setInterval, clearInterval, setTimeout: () => {},
     config: { conectado: true, token: 'secret', deployUrl: 'https://example.test' },
-    sincronizando: false, sincronizacaoAtual: null, sessaoId: 'current-session',
+    sincronizando: false, sincronizacaoAtual: null, sessaoId: 'current-session', instalandoAtualizacao: false,
     ultimoContato: null, ultimoErro: '', ultimoJob: null, crypto,
     registrar: async () => calls.push('register'),
     api: async (endpoint) => {
@@ -58,6 +58,14 @@ test('desconectar aguarda o trabalho em andamento e impede novo polling', async 
   await c.sincronizar()
   assert.equal(calls.length, 5)
   assert.notEqual(c.sessaoId, 'current-session')
+})
+
+test('instalação impede nova busca mesmo com reconexão salva para a próxima abertura', async (t) => {
+  const { context: c, calls } = fixture(t)
+  c.instalandoAtualizacao = true
+  await c.sincronizar()
+  assert.deepEqual(calls, [])
+  assert.equal(c.config.conectado, true)
 })
 
 test('falha de rede ao desconectar mantém a recepção pausada', async (t) => {

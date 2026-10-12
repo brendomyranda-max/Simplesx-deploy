@@ -224,4 +224,17 @@ document.addEventListener('keydown', (event) => {
 })
 
 window.simplexsa.onStatus(render)
+function renderAtualizacao(status) {
+  $('atualizacaoMensagem').textContent = status.message
+  $('atualizarServidor').disabled = ['checking', 'downloading', 'installing'].includes(status.phase)
+  $('atualizarServidor').textContent = status.phase === 'available' ? 'Baixar atualização'
+    : status.phase === 'downloaded' ? 'Atualizar e reiniciar' : 'Buscar atualizações'
+}
+$('atualizarServidor').onclick = async () => {
+  $('atualizarServidor').disabled = true
+  try { renderAtualizacao(await window.simplexsa.atualizarServidor()) }
+  catch (error) { toast(error.message); $('atualizarServidor').disabled = false }
+}
+window.simplexsa.onAtualizacao(renderAtualizacao)
+window.simplexsa.atualizacaoStatus().then(renderAtualizacao).catch((error) => toast(error.message))
 window.simplexsa.status().then(async (s) => { render(s); await carregarImpressoras() }).catch((e) => toast(`Erro: ${e.message}`))

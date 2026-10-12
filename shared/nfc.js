@@ -14,8 +14,15 @@ function semControle(value) {
   return String(value || '').replace(/[\u0000-\u001F\u007F]/g, '').trim();
 }
 
+export function normalizarUidNfc(value) {
+  const uid = semControle(value);
+  const hex = uid.replace(/[\s:-]/g, '');
+  // UIDs NFC de 4, 7 (NTAG215) ou 10 bytes, na ordem enviada pelo leitor.
+  return /^(?:[0-9a-f]{8}|[0-9a-f]{14}|[0-9a-f]{20})$/i.test(hex) ? hex.toUpperCase() : uid;
+}
+
 export function normalizarLeituraNfc(body) {
-  const uid = semControle(body?.uid);
+  const uid = normalizarUidNfc(body?.uid);
   const payload = semControle(body?.payload);
   const leitor = semControle(body?.leitor).slice(0, 80);
   if (!/^[\x20-\x7E]{1,128}$/.test(uid)) throw httpError(400, 'Leitura NFC inválida');
@@ -46,9 +53,9 @@ export async function registrarLeituraNfc(db, estabelecimentoId, leitura, origem
   const agora = now();
   const recente = await db.prepare(
     `SELECT id, uid, payload, origem FROM nfc_eventos
-     WHERE estabelecimento_id=? AND uid=? AND criado_em>?
+     WHERE estabelecimento_id=? AND uid=? AND origem=? AND criado_em>?
      ORDER BY id DESC LIMIT 1`
-  ).bind(id, leitura.uid, new Date(Date.now() - JANELA_DUPLICADA_MS).toISOString()).first();
+  ).bind(id, leitura.uid, origem, new Date(Date.now() - JANELA_DUPLICADA_MS).toISOString()).first();
   if (recente) return { id: recente.id, uid: recente.uid, payload: recente.payload, origem: recente.origem, duplicate: true };
 
   const criado = await db.prepare(
@@ -79,6 +86,9 @@ export async function publicarNfcGestorHandler(c, env) {
 
 export async function listarNfcHandler(c, env) {
   const historico = c.req.query('historico') === '1';
+  const diagnostico = c.req.query('diagnostico');
+  const filtroOrigem = diagnostico === 'todos' ? ''
+    : diagnostico === '1' ? "AND origem='android-teste'" : "AND origem!='android-teste'";
   const rows = historico
     ? await env.DB.prepare(
       `SELECT id, origem, leitor, uid, payload, criado_em, consumido_em
@@ -86,7 +96,8 @@ export async function listarNfcHandler(c, env) {
     ).all()
     : await env.DB.prepare(
       `SELECT id, origem, leitor, uid, payload, criado_em
-       FROM nfc_eventos WHERE consumido_em IS NULL AND criado_em>? ORDER BY id LIMIT 20`
+       FROM nfc_eventos WHERE consumido_em IS NULL AND criado_em>?
+       ${filtroOrigem} ORDER BY id LIMIT 20`
     ).bind(new Date(Date.now() - 60_000).toISOString()).all();
   return c.json(rows.results);
 }

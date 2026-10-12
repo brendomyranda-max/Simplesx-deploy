@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import SqliteDb from './sqlite-db.js';
 import { handle } from '../shared/router.js';
 import { loadLocalEnv, serverEnv, localDatabasePath } from './env.js';
+import { instaladorGestor, arquivoAtualizacaoGestor } from '../shared/gestor-releases.js';
 
 loadLocalEnv();
 const config = serverEnv();
@@ -29,6 +30,17 @@ const env = {
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
+
+app.get('/downloads/:sistema', (req, res) => {
+  const destino = instaladorGestor(req.params.sistema);
+  if (!destino) return res.status(404).send('Instalador não encontrado');
+  res.set('Cache-Control', 'no-store').redirect(302, destino);
+});
+app.get('/atualizacoes/:arquivo', (req, res) => {
+  const destino = arquivoAtualizacaoGestor(req.params.arquivo);
+  if (!destino) return res.status(404).send('Atualização não encontrada');
+  res.set('Cache-Control', 'no-store').redirect(302, destino);
+});
 
 function adapt(req, res) {
   const ctx = {

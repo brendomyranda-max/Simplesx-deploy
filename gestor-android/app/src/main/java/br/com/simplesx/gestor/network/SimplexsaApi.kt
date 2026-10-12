@@ -14,6 +14,7 @@ import java.net.URL
 
 data class DeviceTask(val id: String, val type: String, val leaseId: String, val payload: JSONObject)
 data class DeviceCategory(val id: Int, val name: String, val parentId: Int?, val printer: String?)
+data class NfcDelivery(val id: Long, val uid: String, val duplicate: Boolean)
 
 class SimplexsaApi(private val config: AppConfig) {
     private val appVersion = BuildConfig.VERSION_NAME
@@ -57,8 +58,17 @@ class SimplexsaApi(private val config: AppConfig) {
         config.tokenExpiresAt = response.optString("token_expires_at")
     }
 
-    fun postNfc(uid: String, payload: String) {
-        request("/device/nfc", JSONObject().put("uid", uid).put("payload", payload).put("leitor", config.deviceName))
+    fun postNfc(uid: String): NfcDelivery {
+        val response = request("/device/nfc", JSONObject().put("uid", uid).put("leitor", config.deviceName))
+        return NfcDelivery(response.getLong("id"), response.getString("uid"), response.optBoolean("duplicate"))
+    }
+
+    fun testNfc(uid: String? = null): JSONObject {
+        return request("/device/nfc/test", JSONObject().apply { if (uid != null) put("uid", uid) })
+    }
+
+    fun nfcReceived(eventId: Long): Boolean {
+        return request("/device/nfc/status", JSONObject().put("evento_id", eventId)).getBoolean("recebido_pelo_terminal")
     }
 
     fun heartbeat(status: String = "online", error: String? = null) {

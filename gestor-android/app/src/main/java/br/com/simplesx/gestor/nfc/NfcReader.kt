@@ -1,59 +1,98 @@
-/**
- * Arquivo: NfcReader.kt
- * Responsabilidade: Lê a identificação e o texto de uma tag NFC enquanto o Gestor está aberto.
- */
-
+/** Lê somente o UID, sem abrir nem interpretar o texto gravado no cartão. */
 package br.com.simplesx.gestor.nfc
 
-import android.app.Activity
-import android.nfc.NdefRecord
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.nfc.NfcAdapter
 import android.nfc.Tag
-import android.nfc.tech.Ndef
 import android.os.Bundle
+import android.os.SystemClock
+import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 
 class NfcReader(
-    private val activity: Activity,
-    private val onTag: (uid: String, payload: String) -> Unit,
-) {
-    private val adapter: NfcAdapter? = NfcAdapter.getDefaultAdapter(activity)
-    val available: Boolean get() = adapter != null
-    val enabled: Boolean get() = adapter?.isEnabled == true
-
-    fun start() {
-        adapter?.enableReaderMode(
-            activity,
-            { tag -> deliver(tag) },
-            NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or
-                NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V or
-                NfcAdapter.FLAG_READER_NFC_BARCODE,
-            Bundle(),
-        )
+    private val activity: ComponentActivity,
+    private val onTag: (NfcTagReading) -> Unit,
+    private val onState: (NfcReaderState) -> Unit,
+    private val onError: (String) -> Unit,
+) : DefaultLifecycleObserver {
+    private val adapter = runCatching { NfcAdapter.getDefaultAdapter(activity) }.getOrNull()
+    private val gate = NfcReadGate()
+    private var attached = false
+    private var active = false
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) refresh()
+        }
     }
 
-    fun stop() {
-        adapter?.disableReaderMode(activity)
+    fun start() {
+        if (attached) return
+        ContextCompat.registerReceiver(activity, receiver,
+            IntentFilter(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED), ContextCompat.RECEIVER_EXPORTED)
+        attached = true
+        activity.lifecycle.addObserver(this)
+        refresh()
+    }
+
+    override fun onResume(owner: LifecycleOwner) = refresh()
+
+    override fun onPause(owner: LifecycleOwner) {
+        stopHardware()
+        onState(NfcReaderState.PAUSED)
+    }
+
+    private fun refresh() {
+        val state = nfcReaderState(adapter != null, adapter?.isEnabled == true,
+            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        if (state != NfcReaderState.READY) {
+            stopHardware()
+            onState(state)
+            return
+        }
+        runCatching {
+            if (!active) {
+                adapter?.enableReaderMode(activity, { tag -> deliver(tag) },
+                    NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or
+                        NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V or
+                        NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
+                    Bundle().apply { putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 250) })
+                active = true
+            }
+        }.fold({ onState(NfcReaderState.READY) }, {
+            active = false
+            onState(NfcReaderState.ERROR)
+            onError("Falha ao iniciar NFC: ${it.message}")
+        })
     }
 
     private fun deliver(tag: Tag) {
-        val uid = tag.id.joinToString("") { byte -> "%02X".format(byte) }
-        val payload = readText(tag).ifBlank { uid }
-        activity.runOnUiThread { onTag(uid, payload) }
+        val reading = runCatching {
+            NfcTagReading(nfcUid(tag.id), tag.techList.map { it.substringAfterLast('.') })
+        }
+        activity.runOnUiThread {
+            if (!active || !attached) return@runOnUiThread
+            reading.fold({
+                if (gate.accept(it.uid, SystemClock.elapsedRealtime())) onTag(it)
+            }, { onError(it.message ?: "Não foi possível identificar o cartão") })
+        }
     }
 
-    private fun readText(tag: Tag): String {
-        val message = Ndef.get(tag)?.cachedNdefMessage ?: return ""
-        return message.records.firstNotNullOfOrNull { recordText(it) }.orEmpty()
+    private fun stopHardware() {
+        if (active) runCatching { adapter?.disableReaderMode(activity) }
+        active = false
     }
 
-    private fun recordText(record: NdefRecord): String? {
-        if (record.tnf != NdefRecord.TNF_WELL_KNOWN || !record.type.contentEquals(NdefRecord.RTD_TEXT)) return null
-        val bytes = record.payload
-        if (bytes.isEmpty()) return null
-        val languageLength = bytes[0].toInt() and 0x3F
-        val encoding = if (bytes[0].toInt() and 0x80 == 0) Charsets.UTF_8 else Charsets.UTF_16
-        val start = 1 + languageLength
-        if (start > bytes.size) return null
-        return bytes.copyOfRange(start, bytes.size).toString(encoding).trim()
+    fun close() {
+        if (!attached) return
+        attached = false
+        activity.lifecycle.removeObserver(this)
+        activity.unregisterReceiver(receiver)
+        stopHardware()
     }
 }

@@ -50,6 +50,7 @@ class PrintSyncService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         config = AppConfig(this)
         try {
             createChannel()
@@ -213,6 +214,7 @@ class PrintSyncService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         scope.cancel()
         // O Bluetooth pode estar conectando ou enviando. Nunca espere seu lock
         // na thread principal, pois isso causa o popup "aplicativo não responde".
@@ -231,6 +233,8 @@ class PrintSyncService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        @Volatile var isRunning = false
+            private set
         private const val CHANNEL_ID = "simplesx_print_sync"
         private const val NOTIFICATION_ID = 8410
         private const val ACTION_STOP = "br.com.simplesx.gestor.STOP"

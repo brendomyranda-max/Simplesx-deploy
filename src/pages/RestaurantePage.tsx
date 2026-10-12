@@ -33,6 +33,7 @@ export function RestaurantePage() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [espera, setEspera] = useState<'abrir' | 'fechar' | null>(null);
   const [lendoCartao, setLendoCartao] = useState(false);
+  const lendoCartaoRef = useRef(false);
   const [excluir, setExcluir] = useState<Mesa | null>(null);
   const [excluindo, setExcluindo] = useState(false);
   const excluindoRef = useRef(false);
@@ -90,6 +91,8 @@ export function RestaurantePage() {
   };
 
   const usarCartao = async (acao: 'abrir' | 'fechar', leitura: NfcEvento) => {
+    if (lendoCartaoRef.current) return;
+    lendoCartaoRef.current = true;
     setLendoCartao(true);
     try {
       const resultado = await cartaoApi.usar({
@@ -109,6 +112,8 @@ export function RestaurantePage() {
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível ler o cartão');
       setLendoCartao(false);
+    } finally {
+      lendoCartaoRef.current = false;
     }
   };
 
@@ -306,9 +311,10 @@ export function RestaurantePage() {
           <p className="text-sm text-slate-600">
             {espera === 'fechar'
               ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'
-              : 'Aproxime o cartão. O número dele abre a mesa para lançar os itens.'}
+              : 'Aproxime o cartão. A identificação dele abre a comanda, como uma mesa, para lançar os itens.'}
           </p>
           <p className="text-xs text-slate-400">O Servidor DoixP precisa estar aberto, com o NFC ligado, neste computador ou no celular.</p>
+          <p className="text-xs text-slate-400">NTAG215 funciona vazio: a conta fica no sistema e o mesmo cartão pode ser reutilizado após o fechamento.</p>
           {lendoCartao && <Spinner />}
         </div>
       </Modal>

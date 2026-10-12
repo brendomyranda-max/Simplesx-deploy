@@ -42,7 +42,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: servidor-doixp-${{ runner.os }}
-          path: gestor-impressora/release/servidor-doixp-*
+          path: |
+            gestor-impressora/release/servidor-doixp-*
+            gestor-impressora/release/latest*.yml
           if-no-files-found: error
 
   android:
@@ -83,12 +85,28 @@ jobs:
     needs: [build, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v4
         with:
           path: artefatos
           merge-multiple: true
+      - name: Validar instaladores e preparar manifesto Android
+        run: node scripts/gestor-release.mjs artefatos
       - uses: softprops/action-gh-release@v2
         with:
           files: artefatos/*
           make_latest: false
+          body: |
+            Servidor DoixP 1.5.16 para Windows, Linux e Android.
+
+            - Botão Buscar atualizações, download e instalação sem desinstalar o servidor.
+            - Preserva pareamento, configurações e histórico de impressão.
+            - Android: leitura pelo UID do cartão NTAG215, diagnóstico NFC e retomada do leitor ao voltar das configurações.
+            - Abrir DoixP e usar cartões NFC: atendimento dentro do servidor Android, sem trocar de app e pausar o leitor.
+            - Termina trabalhos recebidos antes de instalar uma atualização.
+
+            Para passar de uma versão antiga para esta, execute o instalador por cima da instalação atual. No Android, confirme Atualizar. As próximas versões poderão ser buscadas pelo novo botão.
 # Testa e publica os instaladores Android, Linux e Windows do Servidor DoixP.

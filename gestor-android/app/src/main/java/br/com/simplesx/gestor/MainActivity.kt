@@ -16,6 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,13 +43,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,13 +62,16 @@ import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
 import br.com.simplesx.gestor.network.SimplexsaApi
-import br.com.simplesx.gestor.nfc.NfcReader
+import br.com.simplesx.gestor.nfc.NfcPanel
 import br.com.simplesx.gestor.network.DeviceCategory
 import br.com.simplesx.gestor.print.PrinterCommands
 import br.com.simplesx.gestor.print.PrinterTransport
 import br.com.simplesx.gestor.print.PairedPrinter
 import br.com.simplesx.gestor.print.UsbPrinter
 import br.com.simplesx.gestor.sync.PrintSyncService
+import br.com.simplesx.gestor.update.UpdatePanel
+import br.com.simplesx.gestor.web.DoixPWebPanel
+import br.com.simplesx.gestor.web.doixpAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,14 +80,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val config = AppConfig(this)
+        if (config.resumeAfterUpdate) {
+            config.serviceEnabled = true
+            config.resumeAfterUpdate = false
+        }
         if (config.deviceToken.isNotBlank() && config.serviceEnabled) PrintSyncService.start(this)
-        setContent { MaterialTheme { GestorScreen() } }
+        setContent { MaterialTheme { GestorScreen(this) } }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GestorScreen() {
+private fun GestorScreen(activity: ComponentActivity) {
     val context = LocalContext.current
     val config = remember { AppConfig(context) }
     val screenScope = rememberCoroutineScope()
@@ -99,9 +107,6 @@ private fun GestorScreen() {
     var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
-    var nfcEnabled by remember { mutableStateOf(config.nfcEnabled) }
-    var nfcStatus by remember { mutableStateOf("Leitura de cartões NFC desligada") }
-    var lastNfc by remember { mutableStateOf("Nenhuma") }
     var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
     var disconnecting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -180,28 +185,6 @@ private fun GestorScreen() {
     }
 
     LaunchedEffect(paired) { refreshCategories() }
-    DisposableEffect(nfcEnabled, paired) {
-        val activity = context as? android.app.Activity
-        val reader = if (activity != null && nfcEnabled) NfcReader(activity) { uid, payload ->
-            val codigo = payload.ifBlank { uid }
-            lastNfc = codigo
-            if (!paired) message = "Pareie o Servidor DoixP antes de enviar o NFC"
-            else screenScope.launch {
-                val erro = withContext(Dispatchers.IO) {
-                    runCatching { SimplexsaApi(config).postNfc(uid, codigo) }.exceptionOrNull()
-                }
-                message = if (erro == null) "NFC enviado: $codigo" else "NFC não enviado: ${erro.message}"
-            }
-        } else null
-        nfcStatus = when {
-            reader == null -> "Leitura de cartões NFC desligada"
-            !reader.available -> "Este aparelho não tem NFC"
-            !reader.enabled -> "Ligue o NFC nas configurações do Android"
-            else -> "Aproxime o cartão com o Servidor DoixP aberto"
-        }
-        if (reader?.available == true && reader.enabled) reader.start()
-        onDispose { reader?.stop() }
-    }
     LaunchedEffect(Unit) {
         while (true) {
             serviceEnabled = config.serviceEnabled
@@ -216,6 +199,10 @@ private fun GestorScreen() {
         }
     }
 
+    var doixpOpen by rememberSaveable { mutableStateOf(false) }
+    var nfcStatus by remember { mutableStateOf("NFC: aguardando leitor") }
+    Box(Modifier.fillMaxSize()) {
+    // Mantém NfcPanel composto sob a tela web: o leitor continua na mesma Activity.
     Scaffold(topBar = {
         TopAppBar(title = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -230,6 +217,8 @@ private fun GestorScreen() {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusCard(serviceEnabled, paired, serviceStatus, lastJob)
             if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodyMedium)
+
+            Section("Atualização do servidor") { UpdatePanel(activity, config) }
 
             Section("Conexão com a DoixP") {
                 OutlinedTextField(deployUrl, { deployUrl = it }, enabled = !paired, label = { Text("Endereço da DoixP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -257,19 +246,9 @@ private fun GestorScreen() {
             }
 
             Section("Cartões NFC") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Ativar cartões NFC")
-                        Text(nfcStatus, style = MaterialTheme.typography.bodySmall)
-                        Text("Última leitura: $lastNfc", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(nfcEnabled, onCheckedChange = {
-                        nfcEnabled = it
-                        config.nfcEnabled = it
-                    })
-                }
-                Text("A ativação é salva neste aparelho. Mantenha o Servidor DoixP aberto durante a leitura.", style = MaterialTheme.typography.bodySmall)
-                Text("Na DoixP, monte o pedido em Mesas → Lançar para cartão. Depois aproxime o cartão deste aparelho para registrar os itens na comanda.", style = MaterialTheme.typography.bodySmall)
+                NfcPanel(activity, config, paired, onOpenDoixP = {
+                    runCatching { doixpAddress(config.deployUrl) }.fold({ doixpOpen = true }, { message = it.message.orEmpty() })
+                }, onStatus = { nfcStatus = it })
             }
 
             Section("Impressoras") {
@@ -605,6 +584,8 @@ private fun GestorScreen() {
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+    if (doixpOpen) DoixPWebPanel(activity, config.deployUrl, nfcStatus, onClose = { doixpOpen = false })
     }
 }
 

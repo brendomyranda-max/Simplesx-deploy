@@ -1,9 +1,9 @@
 /**
  * Arquivo: LancarCartaoPage.tsx
- * Responsabilidade: Monta o pedido e grava no cartão NFC quando ele é aproximado.
+ * Responsabilidade: Monta o pedido e o registra na comanda identificada pelo cartão NFC.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Minus, Nfc, Plus, Trash2 } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
@@ -29,6 +29,7 @@ export function LancarCartaoPage() {
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [espera, setEspera] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const enviandoRef = useRef(false);
 
   useEffect(() => {
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()])
@@ -53,7 +54,8 @@ export function LancarCartaoPage() {
   const total = itens.reduce((soma, item) => soma + Number(item.produto.preco || 0) * item.quantidade, 0);
 
   const lancar = async (leitura: NfcEvento) => {
-    if (enviando || !itens.length) return;
+    if (enviandoRef.current || !itens.length) return;
+    enviandoRef.current = true;
     setEnviando(true);
     try {
       const resultado = await cartaoApi.usar({
@@ -65,11 +67,12 @@ export function LancarCartaoPage() {
         itens: itens.map((item) => ({ produto_id: item.produto.id, quantidade: item.quantidade })),
       });
       const falha = resultado.cozinha?.sem_rota?.[0] || resultado.cozinha?.falhas?.[0]?.erro;
-      if (falha) toast('error', `Pedido guardado no cartão ${resultado.cartao}. A cozinha não recebeu: ${falha}`);
+      if (falha) toast('error', `Pedido salvo na comanda do cartão ${resultado.cartao}. A cozinha não recebeu: ${falha}`);
       else toast('success', `Pedido do cartão ${resultado.cartao} enviado à cozinha`);
       navigate(`/restaurante/comanda/${resultado.comanda_id}`);
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível lançar no cartão');
+      enviandoRef.current = false;
       setEnviando(false);
     }
   };
@@ -92,7 +95,7 @@ export function LancarCartaoPage() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Lançar para cartão</h1>
-          <p className="text-sm text-slate-500">Adicione os itens. Depois aproxime o cartão para guardar o pedido e enviar à cozinha.</p>
+          <p className="text-sm text-slate-500">Adicione os itens. Depois aproxime o cartão para identificar a comanda e enviar à cozinha.</p>
         </div>
         <Button variant="secondary" icon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate('/restaurante')}>Mesas</Button>
       </div>
@@ -139,8 +142,9 @@ export function LancarCartaoPage() {
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
           <p className="text-sm text-slate-600">
-            O leitor identifica o cartão, guarda estes itens nessa mesa e envia o pedido à cozinha.
+            Aproxime o cartão do celular com o Servidor DoixP aberto e o NFC ligado. Os itens ficam na comanda do sistema.
           </p>
+          <p className="text-xs text-slate-400">NTAG215 pode ser usado vazio. O cartão serve apenas como identificação.</p>
           {enviando && <Spinner />}
         </div>
       </Modal>

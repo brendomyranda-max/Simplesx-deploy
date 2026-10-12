@@ -11,6 +11,9 @@ e EPL/EPL2 por:
 A versão 1.5.14 inclui a logo DoixP no cabeçalho e no ícone do aplicativo. A
 seção **Cartões NFC** fica logo após a conexão com a DoixP.
 A versão 1.5.15 usa a variante **LogoDoixPAmarelo** no cabeçalho e no ícone.
+A versão 1.5.16 identifica cartões somente pelo UID, retoma o leitor ao voltar
+das configurações do Android e inclui diagnóstico de leitura, conexão e entrega
+ao sistema web. O texto gravado no cartão não é aberto pelo leitor nesse modo.
 
 ## Requisitos
 
@@ -50,6 +53,64 @@ Android estiver desligado, ligue-o também nas configurações do aparelho.
 Mantenha o Servidor DoixP aberto para ler o cartão. No sistema web, monte o
 pedido em **Mesas → Lançar para cartão** antes de aproximá-lo. O servidor precisa
 estar pareado e conectado à internet para enviar a leitura ao estabelecimento.
+
+Cartões **NTAG215** funcionam vazios: o aplicativo já envia o UID físico de
+7 bytes, e o sistema atualizado usa esse serial para identificar a comanda.
+Não é necessário gravar pedidos nem formatar o cartão. Após pagar e encerrar
+a comanda, o cartão pode ser reutilizado para outro atendimento.
+
+Para usar o mesmo celular, toque em **Abrir DoixP e usar cartões NFC**. Entre na
+mesma conta do pareamento e monte o pedido em **Mesas** dentro dessa tela. O leitor
+e a interface web permanecem na mesma Activity, permitindo aproximar o cartão sem
+trocar de aplicativo. O botão liga o leitor e desliga o modo de teste. O topo
+mostra o estado NFC e a última identificação enviada; **Servidor** volta aos ajustes.
+
+O Android exige primeiro plano para esse leitor NFC. **Receber impressões** continua
+funcionando em segundo plano, mas não mantém a leitura de UID sobre outro app.
+Mantenha a DoixP aberta dentro do Servidor e o celular desbloqueado. Também é
+possível usar outro aparelho/computador como terminal web e deixar este celular
+no painel do leitor. A sessão web interna exige login próprio, separado do Chrome.
+
+### Testar NFC e conferir o Samsung S21
+
+1. No S21, abra **Configurações → Conexões → NFC e pagamentos sem contato** e
+   ligue o NFC. A opção **Configurações NFC** no Servidor abre essa tela.
+2. No Servidor, use **Testar conexão**: deve aparecer **Conexão OK** com o nome
+   correto do estabelecimento. Erros indicam rede, endereço, credencial ou backend
+   desatualizado; não representam falha do cartão.
+3. Use **Testar cartão** e aproxime o cartão da traseira com o celular desbloqueado.
+   O primeiro resultado deve mostrar **OK · UID …**. Essa etapa funciona mesmo
+   sem pareamento/internet e comprova a leitura física.
+4. Para testar a ponte, mantenha o sistema web visível e em foco na mesma conta.
+   A confirmação **Teste recebido na tela DoixP** comprova o percurso completo.
+   No mesmo celular, volte ao site após ler; ao retornar ao Servidor, confira
+   o resultado. O evento precisa ser recebido pelo site em até um minuto.
+5. Desligue **Modo de teste (sem pedidos)** e teste um pedido pela tela **Mesas**.
+   A confirmação da leitura é separada da confirmação de pedido salvo.
+
+Se abrir o texto fora do Servidor, o Android está interpretando o conteúdo gravado
+na tag. Durante a leitura, mantenha o Servidor em primeiro plano. A versão 1.5.16
+usa `FLAG_READER_SKIP_NDEF_CHECK` e não lê nem envia esse texto. Não é preciso
+apagar a tag, formatá-la ou mudar a carteira padrão de pagamentos.
+
+O diagnóstico exige atualizar também backend e interface web. Testes usam uma
+fila separada que não chega ao fluxo de pedidos de clientes antigos, não abre
+contas e não envia produtos à cozinha. A consulta do resultado é autenticada e
+isolada por estabelecimento. Não há nova migração de banco.
+
+### Atualização pelo próprio aplicativo
+
+A partir de 1.5.16, abra **Atualização do servidor → Buscar atualizações**. Se
+houver uma versão nova, use **Baixar atualização → Atualizar servidor**. O app
+baixa o APK oficial, confere SHA-256, tamanho, pacote, versão e assinatura e
+aguarda as impressões antes de abrir o instalador. Autorize **Permitir desta
+fonte** e confirme **Atualizar** quando o Android solicitar. O pareamento e as
+impressoras são preservados; a recepção é retomada ao instalar ou cancelar.
+
+Para receber este botão pela primeira vez, instale o APK oficial por cima da
+versão antiga, sem desinstalar. A assinatura permanente usada no GitHub precisa
+ser mantida para todas as versões. Um APK debug tem outra assinatura e não
+consegue substituir o app oficial.
 
 Para trocar de estabelecimento, toque em **Desconectar e trocar de conta**, aguarde
 os trabalhos em andamento e faça um novo pareamento com o código da outra conta.

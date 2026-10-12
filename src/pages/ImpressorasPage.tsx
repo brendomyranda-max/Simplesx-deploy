@@ -344,7 +344,7 @@ export function ImpressorasPage() {
         <div className="flex flex-wrap items-center gap-3">
           <img src="/brand/LogoDoixPAmarelo.png" alt="Servidor DoixP" className="h-11 w-11 shrink-0 rounded-xl object-contain" />
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.15</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.16</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
           </div>
           {INSTALADORES.map((item) => (
@@ -375,18 +375,23 @@ export function ImpressorasPage() {
             <p className="mt-1 text-sm text-slate-500">
               A ativação fica no aplicativo Servidor DoixP, no mesmo aparelho das impressoras. No Windows e Linux,
               ative a leitura de cartões, configure o prefixo do leitor USB e clique em Salvar e conectar.
-              No Android, ative Cartões NFC e mantenha o Servidor DoixP aberto para aproximar o cartão.
+              No Android, use Abrir DoixP e usar cartões NFC no Servidor para atender e ler o cartão no mesmo celular.
+              Entre na mesma conta do pareamento. O Android pausa o leitor quando você troca para outro aplicativo.
             </p>
             <p className="mt-2 text-sm text-slate-500">
               Em Mesas, use Adicionar com cartão para abrir a comanda, Lançar para cartão para montar o pedido e
               aproximar o cartão, e Fechamento de cartão para receber. Cada aparelho controla sua própria leitura NFC.
             </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Para conferir a conexão, use Testar cartão no Servidor Android e mantenha esta tela em foco.
+              O diagnóstico confirma a chegada da leitura sem abrir conta nem lançar produtos.
+            </p>
             {nfcHistorico.length > 0 && (
               <ul className="mt-2 space-y-1 text-sm text-slate-600">
                 {nfcHistorico.slice(0, 5).map((leitura) => (
                   <li key={leitura.id}>
-                    {leitura.payload || leitura.uid}
-                    <span className="text-slate-400"> · {leitura.origem} · {leitura.consumido_em ? 'recebida' : 'aguardando terminal'}</span>
+                    {leitura.uid}
+                    <span className="text-slate-400"> · {leitura.origem === 'android-teste' ? 'teste Android' : leitura.origem} · {leitura.consumido_em ? 'recebida' : 'aguardando terminal'}</span>
                   </li>
                 ))}
               </ul>

@@ -9,7 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import SqliteDb from '../server/sqlite-db.js';
-import { publishDeviceNfcHandler } from '../shared/handlers-devices.js';
+import { deviceNfcStatusHandler, publishDeviceNfcHandler, testDeviceNfcHandler } from '../shared/handlers-devices.js';
+import { usarCartaoHandler } from '../shared/cartao-nfc.js';
 import { consumirNfcHandler, listarNfcHandler, publicarNfcGestorHandler } from '../shared/nfc.js';
 import { TenantDb } from '../shared/tenant-db.js';
 import { sha256 } from '../shared/util.js';
@@ -138,4 +139,127 @@ test('gestor sem estabelecimento não grava leitura', async () => {
   } finally {
     f.close();
   }
+});
+
+test('NTAG215 vazio percorre a ponte Android até a comanda e normaliza o UID sem duplicar', async () => {
+  const f = await fixture();
+  try {
+    const headers = { authorization: `Bearer ${f.tokenDispositivo}`, 'x-device-id': 'android-b' };
+    const publicada = await publishDeviceNfcHandler(requisicao(
+      // O Android instalado repete o UID no payload quando o cartão está vazio.
+      { uid: '04A224B1C2D380', payload: '04A224B1C2D380', leitor: 'celular NFC' }, { headers },
+    ), f.bruto);
+    assert.equal(publicada.status, 200);
+    assert.equal(publicada.data.payload, '04A224B1C2D380');
+    const repetida = await publishDeviceNfcHandler(requisicao(
+      { uid: '04:a2:24:b1:c2:d3:80' }, { headers },
+    ), f.bruto);
+    assert.equal(repetida.data.duplicate, true);
+    assert.equal(repetida.data.id, publicada.data.id);
+
+    assert.deepEqual((await listarNfcHandler(requisicao(null), f.envA)).data, []);
+    const pendentes = (await listarNfcHandler(requisicao(null), f.envB)).data;
+    assert.equal(pendentes.length, 1);
+    assert.equal(pendentes[0].uid, '04A224B1C2D380');
+    const consumida = await consumirNfcHandler(requisicao(null, {
+      params: { id: String(pendentes[0].id) },
+    }), f.envB);
+    const aberta = await usarCartaoHandler(requisicao({ acao: 'abrir', ...consumida.data }), f.envB);
+    assert.equal(aberta.status, 200);
+    assert.equal(aberta.data.cartao, '04A224B1C2D380');
+    const mesa = f.rawDB.prepare('SELECT estabelecimento_id, nfc_uid, tipo FROM mesas WHERE id=?').first(aberta.data.mesa_id);
+    assert.equal(mesa.estabelecimento_id, f.lojaB);
+    assert.equal(mesa.nfc_uid, '04A224B1C2D380');
+    assert.equal(mesa.tipo, 'cartao');
+    const produto = f.rawDB.prepare('INSERT INTO produtos (estabelecimento_id,nome,preco,ativo) VALUES (?,?,?,1)')
+      .bind(f.lojaB, 'Pedido NFC', 12).run();
+    const pedido = await usarCartaoHandler(requisicao({
+      ...consumida.data, acao: 'lancar', chave: 'nfc-android-pedido-integrado',
+      itens: [{ produto_id: produto.meta.last_row_id, quantidade: 2 }],
+    }), f.envB);
+    assert.equal(pedido.status, 200);
+    assert.equal(pedido.data.comanda_id, aberta.data.comanda_id);
+    const item = f.rawDB.prepare('SELECT estabelecimento_id,nome,quantidade,preco_unitario FROM comanda_itens WHERE comanda_id=?')
+      .first(aberta.data.comanda_id);
+    assert.equal(item.estabelecimento_id, f.lojaB);
+    assert.equal(item.nome, 'Pedido NFC');
+    assert.equal(item.quantidade, 2);
+    assert.equal(item.preco_unitario, 12);
+    assert.deepEqual(pedido.data.cozinha.sem_rota, ['Pedido NFC']);
+    assert.deepEqual((await listarNfcHandler(requisicao(null), f.envB)).data, []);
+  } finally {
+    f.close();
+  }
+});
+
+test('teste de conexão identifica a loja pareada sem criar leituras, mesas ou comandas', async () => {
+  const f = await fixture();
+  try {
+    const headers = { authorization: `Bearer ${f.tokenDispositivo}`, 'x-device-id': 'android-b' };
+    const resposta = await testDeviceNfcHandler(requisicao({}, { headers }), f.bruto);
+    assert.equal(resposta.status, 200);
+    assert.equal(resposta.data.estabelecimento, 'Loja B');
+    for (const tabela of ['nfc_eventos', 'mesas', 'comandas']) {
+      assert.equal(f.rawDB.prepare(`SELECT COUNT(*) n FROM ${tabela}`).first().n, 0);
+    }
+    await assert.rejects(testDeviceNfcHandler(requisicao({}, {
+      headers: { ...headers, authorization: 'Bearer inválido' },
+    }), f.bruto), { status: 401 });
+  } finally { f.close(); }
+});
+
+test('diagnóstico usa fila separada e confirma chegada ao painel sem lançar pedidos', async () => {
+  const f = await fixture();
+  try {
+    const headers = { authorization: `Bearer ${f.tokenDispositivo}`, 'x-device-id': 'android-b' };
+    const uid = '04A224B1C2D380';
+    const diagnostico = await testDeviceNfcHandler(requisicao({ uid, payload: 'COMANDA-001' }, { headers }), f.bruto);
+    assert.equal(diagnostico.status, 200);
+    assert.equal(diagnostico.data.payload, '');
+    assert.equal(diagnostico.data.origem, 'android-teste');
+    // Clientes antigos só consultam a fila normal: nunca recebem testes como pedidos.
+    assert.deepEqual((await listarNfcHandler(requisicao(null), f.envB)).data, []);
+    assert.deepEqual((await listarNfcHandler(requisicao(null, { query: { diagnostico: '1' } }), f.envA)).data, []);
+    const pendentes = (await listarNfcHandler(requisicao(null, { query: { diagnostico: '1' } }), f.envB)).data;
+    assert.equal(pendentes.length, 1);
+    assert.equal(pendentes[0].id, diagnostico.data.id);
+    assert.equal(pendentes[0].uid, uid);
+
+    const status = () => deviceNfcStatusHandler(requisicao({ evento_id: diagnostico.data.id }, { headers }), f.bruto);
+    assert.equal((await status()).data.recebido_pelo_terminal, false);
+    const normal = await publishDeviceNfcHandler(requisicao({ uid }, { headers }), f.bruto);
+    assert.notEqual(normal.data.id, diagnostico.data.id);
+    assert.equal(normal.data.duplicate, false);
+    assert.deepEqual((await listarNfcHandler(requisicao(null), f.envB)).data.map((row) => row.id), [normal.data.id]);
+    const todos = await listarNfcHandler(requisicao(null, { query: { diagnostico: 'todos' } }), f.envB);
+    assert.deepEqual(todos.data.map((row) => row.id), [diagnostico.data.id, normal.data.id]);
+
+    await consumirNfcHandler(requisicao(null, { params: { id: String(diagnostico.data.id) } }), f.envB);
+    const recebido = await status();
+    assert.equal(recebido.data.recebido_pelo_terminal, true);
+    assert.ok(recebido.data.consumido_em);
+    assert.equal((await deviceNfcStatusHandler(requisicao({ evento_id: normal.data.id }, { headers }), f.bruto)).data.recebido_pelo_terminal, false);
+    for (const tabela of ['mesas', 'comandas', 'comanda_itens', 'vendas']) {
+      assert.equal(f.rawDB.prepare(`SELECT COUNT(*) n FROM ${tabela}`).first().n, 0);
+    }
+  } finally { f.close(); }
+});
+
+test('consulta do diagnóstico exige autenticação e nunca revela leituras de outra loja', async () => {
+  const f = await fixture();
+  try {
+    const headersB = { authorization: `Bearer ${f.tokenDispositivo}`, 'x-device-id': 'android-b' };
+    const publicada = await testDeviceNfcHandler(requisicao({ uid: '04A224B1C2D380' }, { headers: headersB }), f.bruto);
+    f.rawDB.prepare(`INSERT INTO devices (id,estabelecimento_id,nome,plataforma,token_hash,token_expira_em,status,criado_em,atualizado_em)
+      VALUES ('android-a',?,'Outro celular','android',?,'2099-01-01T00:00:00.000Z','offline','2026-01-01','2026-01-01')`)
+      .bind(f.lojaA, await sha256('segredo-a')).run();
+    const headersA = { authorization: 'Bearer segredo-a', 'x-device-id': 'android-a' };
+    assert.equal((await deviceNfcStatusHandler(requisicao({ evento_id: publicada.data.id, estabelecimento_id: f.lojaB }, { headers: headersA }), f.bruto)).status, 404);
+    await assert.rejects(deviceNfcStatusHandler(requisicao({ evento_id: publicada.data.id }, {
+      headers: { ...headersB, authorization: 'Bearer inválido' },
+    }), f.bruto), { status: 401 });
+    for (const evento_id of [0, -1, 1.5, 'abc', null]) {
+      assert.equal((await deviceNfcStatusHandler(requisicao({ evento_id }, { headers: headersB }), f.bruto)).status, 404);
+    }
+  } finally { f.close(); }
 });

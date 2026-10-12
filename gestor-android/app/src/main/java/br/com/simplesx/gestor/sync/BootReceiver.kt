@@ -14,6 +14,10 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action !in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) return
         val config = AppConfig(context)
+        if (config.resumeAfterUpdate) {
+            config.serviceEnabled = true
+            config.resumeAfterUpdate = false
+        }
         if (config.serviceEnabled && config.deviceToken.isNotBlank()) PrintSyncService.start(context)
     }
 }
