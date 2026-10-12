@@ -34,6 +34,8 @@ export function RestaurantePage() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [espera, setEspera] = useState<'abrir' | 'fechar' | null>(null);
   const [leituraSolicitada, setLeituraSolicitada] = useState(false);
+  const esperaVersaoRef = useRef(0);
+  const esperaVersao = esperaVersaoRef.current;
   useEffect(() => { if (!espera) setLeituraSolicitada(false); }, [espera]);
   const [lendoCartao, setLendoCartao] = useState(false);
   const lendoCartaoRef = useRef(false);
@@ -162,9 +164,9 @@ export function RestaurantePage() {
         <RestauranteAbas atual="mesas" />
       </div>
       <div className="mb-5 flex flex-wrap gap-2">
-          <Button icon={<Nfc className="h-4 w-4" />} onClick={() => { setLendoCartao(false); setEspera('abrir'); }}>Adicionar com cartão</Button>
+          <Button icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(false); setLendoCartao(false); setEspera('abrir'); }}>Adicionar com cartão</Button>
           <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/restaurante/lancar-cartao')}>Lançar para cartão</Button>
-          <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => { setLendoCartao(false); setEspera('fechar'); }}>Fechamento de cartão</Button>
+          <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(false); setLendoCartao(false); setEspera('fechar'); }}>Fechamento de cartão</Button>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => setNovaMesa(true)}>Nova mesa</Button>
         </div>
 
@@ -299,12 +301,12 @@ export function RestaurantePage() {
 
       <Modal
         open={espera !== null}
-        onClose={() => { if (!lendoCartao) setEspera(null); }}
+        onClose={() => { if (!lendoCartaoRef.current) { esperaVersaoRef.current++; setEspera(null); } }}
         title={espera === 'fechar' ? 'Fechamento de cartão' : 'Adicionar com cartão'}
       >
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
-          <NfcScanButton enabled={!lendoCartao} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { if (espera) void usarCartao(espera, reading); }} />
+          <NfcScanButton key={esperaVersao} enabled={!lendoCartao} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { if (espera && esperaVersaoRef.current === esperaVersao) void usarCartao(espera, reading); }} />
           <p className="text-sm text-slate-600">
             {espera === 'fechar'
               ? 'Aproxime o cartão. A conta abre no fechamento, como uma mesa.'

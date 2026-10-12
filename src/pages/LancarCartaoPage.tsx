@@ -30,6 +30,8 @@ export function LancarCartaoPage() {
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [espera, setEspera] = useState(false);
   const [leituraSolicitada, setLeituraSolicitada] = useState(false);
+  const esperaVersaoRef = useRef(0);
+  const esperaVersao = esperaVersaoRef.current;
   const [enviando, setEnviando] = useState(false);
   const enviandoRef = useRef(false);
 
@@ -127,16 +129,16 @@ export function LancarCartaoPage() {
         )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-extrabold text-slate-800">Total {fmtBRL(total)}</p>
-          <Button type="button" disabled={!itens.length} icon={<Nfc className="h-4 w-4" />} onClick={() => { setLeituraSolicitada(false); setEspera(true); }}>
+          <Button type="button" disabled={!itens.length} icon={<Nfc className="h-4 w-4" />} onClick={() => { esperaVersaoRef.current++; setLeituraSolicitada(false); setEspera(true); }}>
             Aguardar cartão
           </Button>
         </div>
       </Card>
 
-      <Modal open={espera} onClose={() => { if (!enviando) setEspera(false); }} title="Aproxime o cartão">
+      <Modal open={espera} onClose={() => { if (!enviandoRef.current) { esperaVersaoRef.current++; setEspera(false); } }} title="Aproxime o cartão">
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <Nfc className="h-12 w-12 text-brand-600" />
-          <NfcScanButton enabled={!enviando} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { void lancar(reading); }} />
+          <NfcScanButton key={esperaVersao} enabled={!enviando} onStart={() => setLeituraSolicitada(true)} onRead={(reading) => { if (esperaVersaoRef.current === esperaVersao) void lancar(reading); }} />
           <p className="text-sm text-slate-600">
             Aproxime o cartão do celular com o Servidor DoixP aberto e o NFC ligado. Os itens ficam na comanda do sistema.
           </p>
