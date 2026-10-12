@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Nfc, Users, Wallet } from 'lucide-react';
+import { Nfc, Printer, Users, Wallet } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestauranteAbas } from '@/components/RestauranteAbas';
 import { NfcScanButton } from '@/components/NfcScanButton';
@@ -9,13 +9,15 @@ import { cartaoApi, mesaApi, type CartaoAtendimento, type NfcEvento } from '@/li
 import { useNfcLeitura } from '@/lib/useNfcBridge';
 import { useWebNfc } from '@/lib/useWebNfc';
 import { fmtBRL, FORMAS_PAGAMENTO } from '@/lib/format';
+import { printReceipt } from '@/lib/print';
 import type { Mesa } from '@/lib/types';
 
 type Cadastro = Pick<NfcEvento, 'uid' | 'payload'> & { cartao: string; chave: string };
+type ContaEncerrada = { id: string; nome: string; mesa: number; total: number };
 const nomeCliente = (a: CartaoAtendimento) => a.cliente_atual || a.cliente_nome;
-const totalConta = (a: CartaoAtendimento) => {
+const totalConta = (a: CartaoAtendimento, percentual = Number(a.taxa_garcom_pct)) => {
   const subtotal = Number(Number(a.subtotal).toFixed(2));
-  const taxa = Number((subtotal*Number(a.taxa_garcom_pct)/100).toFixed(2));
+  const taxa = Number((subtotal*percentual/100).toFixed(2));
   return Number((subtotal+taxa).toFixed(2));
 };
 
@@ -40,6 +42,13 @@ export function RecepcaoPage() {
   const [conta, setConta] = useState<CartaoAtendimento | null>(null);
   const [fechar, setFechar] = useState(false);
   const [forma, setForma] = useState('dinheiro');
+  const [taxaEditada, setTaxaEditada] = useState<{ id: string; valor: string } | null>(null);
+  const [encerrada, setEncerrada] = useState<ContaEncerrada | null>(null);
+  const [impressao, setImpressao] = useState<string | null>(null);
+  const impressaoRef = useRef<HTMLDivElement>(null);
+  const taxaTexto = conta && taxaEditada?.id===conta.id ? taxaEditada.valor : String(conta?.taxa_garcom_pct ?? 0);
+  const taxaPct = Number(taxaTexto);
+  const taxaValida = taxaTexto.trim()!=='' && Number.isFinite(taxaPct) && taxaPct>=0 && taxaPct<=100;
 
   const carregar = async () => {
     try {
@@ -90,11 +99,12 @@ export function RecepcaoPage() {
     finally { ocupadoRef.current=false; setOcupado(false); }
   };
   const encerrar = async () => {
-    if (!conta || ocupadoRef.current) return;
+    if (!conta || !taxaValida || ocupadoRef.current) return;
     ocupadoRef.current=true; setOcupado(true);
     try {
-      const r = await cartaoApi.fechar(conta.id,{forma,total:totalConta(conta)});
-      setConta(null); setFechar(false);
+      const r = await cartaoApi.fechar(conta.id,{forma,total:totalConta(conta,taxaPct),taxa_garcom_pct:taxaPct});
+      setEncerrada({id:conta.id,nome:nomeCliente(conta),mesa:conta.mesa_numero,total:r.total});
+      setConta(null); setFechar(false); setTaxaEditada(null);
       toast('success',r.sem_consumo ? 'Atendimento sem consumo encerrado. Cartão liberado.' : 'Conta individual encerrada. Cartão liberado.');
       await carregar();
     } catch (e: any) {
@@ -102,6 +112,23 @@ export function RecepcaoPage() {
       const lista = await cartaoApi.list().catch(()=>null);
       if (lista) { setAtendimentos(lista); setConta(lista.find(a=>a.id===conta.id) || null); }
     } finally { ocupadoRef.current=false; setOcupado(false); }
+  };
+  const prepararImpressao = async (id: string, percentual?: number) => {
+    if (ocupadoRef.current || (percentual!==undefined && !taxaValida)) return;
+    ocupadoRef.current=true; setOcupado(true);
+    try {
+      const r = await cartaoApi.conta(id,percentual===undefined ? {} : {taxa_garcom_pct:percentual});
+      if (conta?.id===id) setConta({...conta,subtotal:r.subtotal});
+      setImpressao(r.impressao);
+    } catch (e: any) { toast('error',e?.error || 'Não foi possível preparar a conta para impressão'); }
+    finally { ocupadoRef.current=false; setOcupado(false); }
+  };
+  const imprimir = async () => {
+    if (ocupadoRef.current) return;
+    ocupadoRef.current=true; setOcupado(true);
+    try { await printReceipt(impressaoRef.current); }
+    catch (e: any) { toast('error',e?.error || e?.message || 'Não foi possível imprimir a conta'); }
+    finally { ocupadoRef.current=false; setOcupado(false); }
   };
   const verConta = (a: CartaoAtendimento) => navigate(`/restaurante/comanda/${a.comanda_id}?pessoa=${a.pessoa_id}`);
   const exibidos = atendimentos.filter(a=>`${nomeCliente(a)} ${a.cartao} ${a.mesa_numero}`.toLocaleLowerCase().includes(busca.toLocaleLowerCase()));
@@ -140,15 +167,30 @@ export function RecepcaoPage() {
         <Button type="submit" loading={ocupado} disabled={!nome.trim() || !mesaId}>Salvar atendimento</Button>
       </form>
     </Modal>
-    <Modal open={!!conta} title={fechar ? 'Fechar comanda individual' : 'Cartão em atendimento'} onClose={()=>{if(!ocupadoRef.current)setConta(null);}}>
+    <Modal open={!!conta && !impressao} title={fechar ? 'Fechar comanda individual' : 'Cartão em atendimento'} onClose={()=>{if(!ocupadoRef.current){setConta(null);setTaxaEditada(null);}}}>
       {conta && <div className="space-y-4">
         <p className="font-bold">{nomeCliente(conta)} · Mesa {conta.mesa_numero}</p><p className="break-all text-xs text-slate-500">Cartão {conta.cartao}</p>
-        <div className="space-y-1 text-sm"><p>Consumo: {fmtBRL(Number(conta.subtotal))}</p><p>Serviço ({conta.taxa_garcom_pct}%): {fmtBRL(totalConta(conta)-Number(conta.subtotal))}</p><p className="text-lg font-bold">Total: {fmtBRL(totalConta(conta))}</p></div>
-        {fechar ? <><Field label="Forma de pagamento"><Select value={forma} onChange={e=>setForma(e.target.value)}>{FORMAS_PAGAMENTO.map(f=><option key={f.valor} value={f.valor}>{f.label}</option>)}</Select></Field>
+        {fechar && <div className="space-y-2"><Field label="Porcentagem do garçom (%)"><Input type="number" min={0} max={100} step="any" disabled={ocupado} value={taxaTexto} onChange={e=>setTaxaEditada({id:conta.id,valor:e.target.value})} /></Field>
+          <Button size="sm" variant="secondary" disabled={ocupado} onClick={()=>setTaxaEditada({id:conta.id,valor:'0'})}>Sem taxa de serviço</Button>
+          {!taxaValida && <p className="text-sm text-red-600">Informe uma porcentagem entre 0 e 100.</p>}
+          <p className="text-xs text-slate-500">Este percentual vale somente para a conta deste cliente.</p></div>}
+        <div className="space-y-1 text-sm"><p>Consumo: {fmtBRL(Number(conta.subtotal))}</p><p>Serviço ({taxaValida ? taxaPct : '—'}%): {taxaValida ? fmtBRL(totalConta(conta,taxaPct)-Number(Number(conta.subtotal).toFixed(2))) : '—'}</p><p className="text-lg font-bold">Total: {taxaValida ? fmtBRL(totalConta(conta,taxaPct)) : '—'}</p></div>
+        <Button variant="secondary" icon={<Printer className="h-4 w-4" />} disabled={ocupado || !taxaValida} onClick={()=>void prepararImpressao(conta.id,taxaPct)}>Imprimir conta</Button>
+        {fechar ? <><Field label="Forma de pagamento"><Select disabled={ocupado} value={forma} onChange={e=>setForma(e.target.value)}>{FORMAS_PAGAMENTO.map(f=><option key={f.valor} value={f.valor}>{f.label}</option>)}</Select></Field>
           <p className="text-sm text-slate-500">Confirme após receber o pagamento. A conta deste cliente será encerrada e o cartão ficará disponível para outro atendimento.</p>
-          <Button loading={ocupado} onClick={()=>void encerrar()}>{Number(conta.subtotal)===0 ? 'Encerrar atendimento' : 'Confirmar pagamento e liberar cartão'}</Button></> :
+          <Button loading={ocupado} disabled={!taxaValida} onClick={()=>void encerrar()}>{Number(conta.subtotal)===0 ? 'Encerrar atendimento' : 'Confirmar pagamento e liberar cartão'}</Button></> :
           <><p className="text-sm text-slate-500">Este cartão permanece vinculado ao cliente até fechar sua conta.</p><div className="flex gap-2"><Button onClick={()=>verConta(conta)}>Ver / lançar pedidos</Button><Button variant="secondary" onClick={()=>setFechar(true)}>Fechar comanda</Button></div></>}
       </div>}
+    </Modal>
+    <Modal open={!!encerrada && !impressao} title="Comanda encerrada" onClose={()=>{if(!ocupadoRef.current)setEncerrada(null);}}>
+      {encerrada && <div className="space-y-4"><p className="font-bold">{encerrada.nome} · Mesa {encerrada.mesa}</p><p className="text-lg font-bold">Total: {fmtBRL(encerrada.total)}</p>
+        <p className="text-sm text-slate-500">O cartão já está liberado para outro atendimento. Você pode imprimir a conta deste cliente agora.</p>
+        <div className="flex flex-wrap gap-2"><Button icon={<Printer className="h-4 w-4" />} loading={ocupado} onClick={()=>void prepararImpressao(encerrada.id)}>Imprimir conta</Button><Button variant="secondary" disabled={ocupado} onClick={()=>setEncerrada(null)}>Concluir</Button></div>
+      </div>}
+    </Modal>
+    <Modal open={!!impressao} title="Conta individual para impressão" onClose={()=>{if(!ocupadoRef.current)setImpressao(null);}}>
+      <div ref={impressaoRef} className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4"><pre className="whitespace-pre-wrap">{impressao}</pre></div>
+      <div className="mt-4 flex gap-2"><Button icon={<Printer className="h-4 w-4" />} loading={ocupado} onClick={()=>void imprimir()}>Imprimir</Button><Button variant="secondary" disabled={ocupado} onClick={()=>setImpressao(null)}>Voltar</Button></div>
     </Modal>
   </AnimatedPage>;
 }

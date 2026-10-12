@@ -2,6 +2,8 @@ import { idDoCartao } from './cartao-id.js';
 import { estabelecimentoId, getConfigValue, gerarNumeroVenda, httpError, now, num, sha256 } from './util.js';
 import { criarVendaRestaurante } from './restaurant-sale.js';
 import { somentePedidosPosteriores } from './restaurant-close-history.js';
+import { calcularContaIndividual } from './conta-individual.js';
+import { imprimirPessoaComandaHandler } from './handlers-cadastros.js';
 
 export async function atendimentoDoCartao(env, cartao) {
   return env.DB.prepare(`SELECT a.*,m.numero AS mesa_numero,p.nome AS cliente_atual,c.status AS comanda_status,
@@ -79,20 +81,41 @@ export async function cadastrarCartaoHandler(c, env) {
   return c.json(await atendimentoDoCartao(env, cartao), 201);
 }
 
+// Localiza também a comanda arquivada após pagar, mesmo se o cartão já foi reutilizado.
+export async function imprimirContaCartaoHandler(c, env) {
+  const a = await env.DB.prepare(`SELECT a.*,p.comanda_id AS comanda_atual_id FROM cartao_atendimentos a
+    JOIN comanda_pessoas p ON p.id=a.pessoa_id WHERE a.id=?`).bind(c.params.id).first();
+  if (!a) return c.json({ error: 'Atendimento não encontrado' }, 404);
+  const b = await c.req.json();
+  return imprimirPessoaComandaHandler({ ...c, req: { query: (key) => c.req.query(key), json: async () => ({
+    comanda_id: a.comanda_atual_id, pessoa_id: a.pessoa_id,
+    ...(a.encerrado_em ? {} : { taxa_garcom_pct: b.taxa_garcom_pct }),
+  }) } }, env);
+}
+
+async function respostaEncerrada(c, env, a) {
+  const com = await env.DB.prepare(`SELECT c.taxa_garcom_pct FROM comanda_pessoas p
+    JOIN comandas c ON c.id=p.comanda_id WHERE p.id=?`).bind(a.pessoa_id).first();
+  const venda = a.venda_id ? await env.DB.prepare('SELECT subtotal,total FROM vendas WHERE id=?').bind(a.venda_id).first() : null;
+  return c.json({ ok:true, repetido:true, venda_id:a.venda_id, total:venda?.total ?? 0,
+    subtotal:venda?.subtotal ?? 0, taxa_garcom_pct:com?.taxa_garcom_pct ?? 0, sem_consumo:!a.venda_id });
+}
+
 // O ID do atendimento impede que uma tela antiga feche o próximo cliente que usar o mesmo cartão.
 export async function fecharCartaoHandler(c, env) {
   const a = await env.DB.prepare('SELECT * FROM cartao_atendimentos WHERE id=?').bind(c.params.id).first();
   if (!a) return c.json({ error: 'Atendimento não encontrado' }, 404);
-  if (a.encerrado_em) return c.json({ ok: true, repetido: true, venda_id: a.venda_id });
+  if (a.encerrado_em) return respostaEncerrada(c, env, a);
   const b = await c.req.json();
   if (!['dinheiro','pix','credito','debito','vale'].includes(b.forma) || !Number.isFinite(b.total) || b.total<0) return c.json({ error: 'Selecione uma forma de pagamento válida e confira o total' }, 400);
+  if (b.taxa_garcom_pct !== undefined) calcularContaIndividual(0,b.taxa_garcom_pct);
   const reserva = new Date(Date.now()+5*60_000).toISOString();
   const acquired = await env.DB.prepare(`UPDATE comandas SET fechamento_bloqueado_ate=? WHERE id=? AND status IN ('aberta','pre_fechamento')
     AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?)`).bind(reserva, a.comanda_id, now()).run();
   if (!acquired.meta.changes) return c.json({ error: 'Existe um fechamento em andamento. Atualize e tente novamente.' }, 409);
   try {
     const atual = await env.DB.prepare('SELECT * FROM cartao_atendimentos WHERE id=?').bind(a.id).first();
-    if (atual.encerrado_em) return c.json({ ok: true, repetido: true, venda_id: atual.venda_id });
+    if (atual.encerrado_em) return respostaEncerrada(c, env, atual);
     const com = await env.DB.prepare('SELECT * FROM comandas WHERE id=?').bind(a.comanda_id).first();
     const itens = (await env.DB.prepare("SELECT * FROM comanda_itens WHERE comanda_id=? AND pessoa_id=? AND status!='cancelado' ORDER BY id").bind(com.id,a.pessoa_id).all()).results;
     const antigas = (await env.DB.prepare("SELECT id,criado_em FROM vendas WHERE comanda_id=? AND status='concluida'").bind(com.id).all()).results;
@@ -100,9 +123,9 @@ export async function fecharCartaoHandler(c, env) {
     const timestamp = now();
     const pessoa = await env.DB.prepare('SELECT nome FROM comanda_pessoas WHERE id=? AND comanda_id=?').bind(a.pessoa_id,a.comanda_id).first();
     const clienteNome = pessoa?.nome || a.cliente_nome;
-    const subtotal = Number(itens.reduce((s,i)=>s+num(i.quantidade)*num(i.preco_unitario),0).toFixed(2));
-    const taxa = Number((subtotal*num(com.taxa_garcom_pct)/100).toFixed(2));
-    const total = Number((subtotal+taxa).toFixed(2));
+    const taxaPct = b.taxa_garcom_pct === undefined ? num(com.taxa_garcom_pct) : b.taxa_garcom_pct;
+    const { subtotal, taxa_servico:taxa, total } = calcularContaIndividual(
+      itens.reduce((s,i)=>s+num(i.quantidade)*num(i.preco_unitario),0), taxaPct);
     if (Math.abs(b.total-total)>0.005) return c.json({ error: 'O consumo mudou. Confira o novo total antes de confirmar o pagamento.' }, 409);
     // Guarda o consumo quitado numa comanda de histórico. Os IDs dos pedidos e
     // suas impressões são preservados; a mesa mantém somente o saldo pendente.
@@ -117,7 +140,7 @@ export async function fecharCartaoHandler(c, env) {
       THEN 1 ELSE abs(-9223372036854775808) END`).bind(a.id,reserva,com.id,a.pessoa_id,itens.length,JSON.stringify(itens.map(i=>({id:i.id,versao:i.versao}))),com.id,a.pessoa_id);
     const concluir = [
       env.DB.prepare(`INSERT INTO comandas (mesa_id,cliente_nome,garcom_nome,status,taxa_garcom_pct,fechamento_tipo,pessoas_count,comanda_origem_id,criado_em,fechada_em,baixada_em)
-        VALUES (?,?,?,'fechada',?,'cartao_individual',1,?,?,?,?)`).bind(a.mesa_id,clienteNome,com.garcom_nome,com.taxa_garcom_pct,com.id,a.criado_em,timestamp,timestamp),
+        VALUES (?,?,?,'fechada',?,'cartao_individual',1,?,?,?,?)`).bind(a.mesa_id,clienteNome,com.garcom_nome,taxaPct,com.id,a.criado_em,timestamp,timestamp),
       env.DB.prepare(`UPDATE comanda_itens SET comanda_id=${arquivo} WHERE comanda_id=? AND pessoa_id=?`).bind(com.id,a.pessoa_id),
       env.DB.prepare(`UPDATE comanda_pessoas SET status='baixado',baixada_em=?,comanda_id=${arquivo} WHERE id=?`).bind(timestamp,a.pessoa_id),
       env.DB.prepare(`UPDATE cartao_atendimentos SET encerrado_em=?,venda_id=? WHERE id=?`).bind(timestamp,null,a.id),
@@ -138,7 +161,7 @@ export async function fecharCartaoHandler(c, env) {
         responsavel:c.user.nome || com.garcom_nome,itens:itens.map(i=>({...i,total:num(i.quantidade)*num(i.preco_unitario)})),pagamentos:[{forma:b.forma,valor:total}],
       },concluir);
     } else await env.DB.batch([validar,...concluir]);
-    return c.json({ ok:true,venda_id:venda?.id || null,total,sem_consumo:!itens.length });
+    return c.json({ ok:true,venda_id:venda?.id || null,total,subtotal,taxa_garcom_pct:taxaPct,sem_consumo:!itens.length });
   } catch (error) {
     if (/integer overflow/i.test(error.message)) throw httpError(409, 'O atendimento mudou. Atualize os pedidos antes de confirmar o fechamento.');
     throw error;

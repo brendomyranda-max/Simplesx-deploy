@@ -27,10 +27,11 @@ async function screen(t) {
     state(initial){const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return[states[i],v=>{states[i]=typeof v==='function'?v(states[i]):v;}];},
     ref(initial){const i=refIndex++;return refs[i] ||= {current:initial};},
     effect(fn,deps){const i=effectIndex++;if(!effectDeps[i]||deps?.some((d,j)=>d!==effectDeps[i][j])){effectDeps[i]=deps;effects.push(fn);}},
-    node(type,props,...children){return{type,props:{...props,children}};},
+    node(type,props,...children){const node={type,props:{...props,children}};if(props?.ref)props.ref.current=node;return node;},
     navigate:to=>navigation.push(to),params:new URLSearchParams(),setParams(){},toast:(...args)=>notifications.push(args),
     web:{scan:null,begin(){events.push('scan');return{};},stop(){events.push('stop');}},bridge(){},
-    cartaoApi:{list:()=>call('/api/cartoes',null,'GET'),consultar:b=>call('/api/cartoes/consultar',b),cadastrar:b=>call('/api/cartoes/cadastrar',b),fechar:(id,b)=>call(`/api/cartoes/${id}/fechar`,b)},
+    cartaoApi:{list:()=>call('/api/cartoes',null,'GET'),consultar:b=>call('/api/cartoes/consultar',b),cadastrar:b=>call('/api/cartoes/cadastrar',b),fechar:(id,b)=>call(`/api/cartoes/${id}/fechar`,b),conta:(id,b)=>call(`/api/cartoes/${id}/conta`,b)},
+    printReceipt:async node=>events.push({print:node}),
     mesaApi:{list:()=>call('/api/mesas',null,'GET')},
   };
   const globals={__receptionTest:h,React:{createElement:h.node},document:{hidden:false},localStorage:{getItem:()=>null},setInterval:()=>0,clearInterval:()=>{}};
@@ -42,7 +43,7 @@ async function screen(t) {
   const mocks={
     react:'export const useState=globalThis.__receptionTest.state;export const useRef=globalThis.__receptionTest.ref;export const useEffect=globalThis.__receptionTest.effect;',
     'react-router-dom':'export const useNavigate=()=>globalThis.__receptionTest.navigate;export const useSearchParams=()=>[globalThis.__receptionTest.params,globalThis.__receptionTest.setParams];',
-    'lucide-react':"export const Nfc='Nfc',Users='Users',Wallet='Wallet';",
+    'lucide-react':"export const Nfc='Nfc',Users='Users',Wallet='Wallet',Printer='Printer';",
     '@/components/AnimatedPage':"export const AnimatedPage='AnimatedPage';",
     '@/components/RestauranteAbas':"export const RestauranteAbas='RestauranteAbas';",
     '@/components/NfcScanButton':"export const NfcScanButton='NfcScanButton';",
@@ -51,6 +52,7 @@ async function screen(t) {
     '@/lib/useNfcBridge':'export const useNfcLeitura=(active,cb)=>{globalThis.__receptionTest.bridge={active,cb};};',
     '@/lib/useWebNfc':'export const useWebNfc=()=>globalThis.__receptionTest.web;',
     '@/lib/format':"export const fmtBRL=n=>'R$ '+Number(n).toFixed(2);export const FORMAS_PAGAMENTO=[{valor:'pix',label:'Pix'},{valor:'dinheiro',label:'Dinheiro'}];",
+    '@/lib/print':'export const printReceipt=globalThis.__receptionTest.printReceipt;',
   };
   let source=readFileSync('src/pages/RecepcaoPage.tsx','utf8');
   for(const[name,mock]of Object.entries(mocks))source=source.replaceAll(`'${name}'`,JSON.stringify(module(mock)));
@@ -101,4 +103,40 @@ test('Recepção ignora retorno de modal cancelado e bloqueia duas leituras simu
   assert.equal(f.find('Modal','Cadastrar comanda individual').props.open,true);
   assert.ok(f.text(f.find('Modal','Cadastrar comanda individual')).includes('04A224B1C2D381'));
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM comandas').first().n,0,'leitura por si só não abre conta');
+});
+
+test('fechamento NFC ajusta taxa, imprime antes e após pagar, preservando a conta se o cartão for reutilizado',async t=>{
+  const f=await screen(t),uid='04A224B1C2D380';
+  const a=await f.call('/api/cartoes/cadastrar',{uid,cliente_nome:'Ana',mesa_id:1,chave:crypto.randomUUID()});
+  await f.call('/api/cartoes/usar',{uid,acao:'lancar',chave:crypto.randomUUID(),itens:[{produto_id:1,quantidade:2}]});
+  f.db.prepare('UPDATE comandas SET taxa_garcom_pct=10 WHERE id=?').bind(a.comanda_id).run();
+  await f.click('Cadastrar ou consultar cartão');f.find('NfcScanButton').props.onRead({uid,payload:''});await f.flush();
+  await f.click('Fechar comanda');
+  const change=value=>{f.find('Field','Porcentagem do garçom').props.children[0].props.onChange({target:{value}});f.render();};
+  for(const invalid of ['', '-1', '101']) {
+    change(invalid);
+    assert.equal(f.find('Button','Confirmar pagamento').props.disabled,true);
+    assert.equal(f.find('Button','Imprimir conta').props.disabled,true);
+  }
+  change('5.5');
+  assert.ok(f.text(f.find('Modal','Fechar comanda individual')).includes('Total: R$ 42.20'));
+  await f.click('Imprimir conta');
+  let preview=f.find('Modal','Conta individual para impressão');assert.equal(preview.props.open,true);
+  assert.match(f.text(preview),/GARÇOM \(5.5%\)/);assert.match(f.text(preview),/STATUS: PENDENTE/);
+  await f.click('Imprimir');assert.match(f.text(f.events.find(e=>e.print).print),/PESSOA: Ana/);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM vendas').first().n,0,'imprimir não fecha a conta');
+  await f.click('Voltar');
+  assert.equal(f.find('Field','Porcentagem do garçom').props.children[0].props.value,'5.5');
+  await f.click('Sem taxa de serviço');
+  assert.ok(f.text(f.find('Modal','Fechar comanda individual')).includes('Total: R$ 40.00'));
+  await f.click('Confirmar pagamento e liberar cartão');
+  assert.equal(f.find('Modal','Comanda encerrada').props.open,true);
+  assert.equal(f.db.prepare('SELECT total FROM vendas').first().total,40);
+  await f.call('/api/cartoes/cadastrar',{uid,cliente_nome:'Bruno',mesa_id:1,chave:crypto.randomUUID()});
+  await f.click('Imprimir conta');preview=f.find('Modal','Conta individual para impressão');
+  assert.match(f.text(preview),/PESSOA: Ana/);assert.doesNotMatch(f.text(preview),/Bruno/);
+  assert.match(f.text(preview),/GARÇOM \(0%\)/);assert.match(f.text(preview),/STATUS: PAGO/);
+  await f.click('Imprimir');assert.equal(f.events.filter(e=>e.print).length,2);
+  await f.click('Voltar');await f.click('Concluir');
+  assert.equal(f.find('Modal','Comanda encerrada').props.open,false);
 });

@@ -18,7 +18,7 @@ async function fixture(t) {
   const call=(path,body,loja=1,method='POST')=>handle({req:{path,method,json:async()=>body,query:()=>undefined,header:name=>name==='cookie'?`simplesx_session=sessao-${loja}`:undefined},json:(data,status=200)=>({data,status})},{DB:db});
   const register=(uid=UID_A,nome='Ana',mesa=1,extra={})=>call('/api/cartoes/cadastrar',{uid,cliente_nome:nome,mesa_id:mesa,chave:crypto.randomUUID(),...extra});
   const order=(uid=UID_A,qtd=1,extra={})=>call('/api/cartoes/usar',{uid,acao:'lancar',chave:crypto.randomUUID(),itens:[{produto_id:1,quantidade:qtd}],...extra});
-  const close=(a,total)=>call(`/api/cartoes/${a.id}/fechar`,{forma:'pix',total});
+  const close=(a,total,extra={})=>call(`/api/cartoes/${a.id}/fechar`,{forma:'pix',total,...extra});
   const lookup=async(uid=UID_A)=>(await call('/api/cartoes/consultar',{uid})).data.atendimento;
   return {db,call,register,order,close,lookup};
 }
@@ -91,6 +91,54 @@ test('encerrar sem consumo não gera venda; total alterado exige nova confirmaç
   assert.equal(f.db.prepare('SELECT status FROM mesas WHERE id=1').first().status,'livre');
 });
 
+for(const taxa of [0,5.5]) test(`conta NFC imprime e paga com taxa individual de ${taxa}%, preservando demais clientes e comprovante após reuso`,async t=>{
+  const f=await fixture(t),a=(await f.register()).data,b=(await f.register(UID_B,'Bruno')).data;
+  await f.order(UID_A,2);await f.order(UID_B);
+  f.db.prepare('UPDATE comandas SET taxa_garcom_pct=10 WHERE id=?').bind(a.comanda_id).run();
+  const total=40+40*taxa/100;
+  const before=await f.call(`/api/cartoes/${a.id}/conta`,{taxa_garcom_pct:taxa});
+  assert.equal(before.status,200,JSON.stringify(before));assert.equal(before.data.total,total);
+  assert.equal(before.data.subtotal,40);assert.equal(before.data.taxa_garcom_pct,taxa);
+  assert.match(before.data.impressao,/PESSOA: Ana/);assert.match(before.data.impressao,/STATUS: PENDENTE/);
+  assert.doesNotMatch(before.data.impressao,/Bruno/);assert.ok(before.data.impressao.includes(`GARÇOM (${taxa}%):`));
+  assert.ok(before.data.impressao.includes(`CARTÃO: ${UID_A}`));
+  assert.equal((await f.lookup()).id,a.id,'impressão não libera o cartão');
+  const closed=await f.close(a,total,{taxa_garcom_pct:taxa});assert.equal(closed.status,200,JSON.stringify(closed));
+  assert.equal(closed.data.total,total);assert.equal(closed.data.taxa_garcom_pct,taxa);
+  assert.equal(f.db.prepare('SELECT taxa_garcom_pct FROM comandas WHERE id=?').first(a.comanda_id).taxa_garcom_pct,10);
+  const saved=f.db.prepare('SELECT c.* FROM comanda_pessoas p JOIN comandas c ON c.id=p.comanda_id WHERE p.id=?').first(a.pessoa_id);
+  assert.equal(saved.taxa_garcom_pct,taxa);assert.equal(saved.status,'fechada');
+  assert.equal(f.db.prepare('SELECT total FROM vendas').first().total,total);
+  assert.equal(f.db.prepare('SELECT SUM(valor) total FROM pagamentos').first().total,total);
+  assert.equal(f.db.prepare('SELECT SUM(valor) total FROM caixa').first().total,total);
+  const novo=(await f.register(UID_A,'Carla',2)).data;await f.order(UID_A,3);
+  const after=await f.call(`/api/cartoes/${a.id}/conta`,{taxa_garcom_pct:99});
+  assert.equal(after.data.total,total);assert.equal(after.data.taxa_garcom_pct,taxa);
+  assert.match(after.data.impressao,/PESSOA: Ana/);assert.match(after.data.impressao,/STATUS: PAGO/);
+  assert.doesNotMatch(after.data.impressao,/Carla|Bruno/);assert.match(after.data.impressao,/2x Prato/);
+  const replay=await f.close(a,0,{taxa_garcom_pct:99});assert.equal(replay.data.repetido,true);
+  assert.equal(replay.data.total,total);assert.equal(replay.data.taxa_garcom_pct,taxa);
+  assert.equal((await f.lookup()).id,novo.id);
+  assert.equal((await f.close(b,22)).status,200,'outro cliente conserva a taxa da mesa');
+});
+
+test('taxa inválida e total divergente não geram baixa; impressão e pagamento arredondam os mesmos centavos',async t=>{
+  const f=await fixture(t),a=(await f.register()).data;
+  f.db.prepare('UPDATE produtos SET preco=0.335 WHERE id=1').run();await f.order(UID_A,3);
+  for(const taxa_garcom_pct of [-1,101,null,'', '10',NaN,Infinity]) {
+    assert.equal((await f.close(a,1,{taxa_garcom_pct})).status,400);
+    assert.equal((await f.call(`/api/cartoes/${a.id}/conta`,{taxa_garcom_pct})).status,400);
+  }
+  assert.equal((await f.close(a,1,{taxa_garcom_pct:10})).status,409);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM vendas').first().n,0);
+  assert.equal((await f.lookup()).id,a.id);
+  const before=await f.call(`/api/cartoes/${a.id}/conta`,{taxa_garcom_pct:10});
+  assert.equal(before.data.subtotal,1.01);assert.equal(before.data.total,1.11);
+  const closed=await f.close(a,before.data.total,{taxa_garcom_pct:10});assert.equal(closed.status,200,JSON.stringify(closed));
+  const after=await f.call(`/api/cartoes/${a.id}/conta`,{});assert.equal(after.data.total,closed.data.total);
+  assert.equal(f.db.prepare('SELECT total FROM vendas').first().total,after.data.total);
+});
+
 test('pré-fechamento mantém cartão e bloqueia novos cadastros; baixa total libera cartão',async t=>{
   const f=await fixture(t),a=(await f.register()).data; await f.order();
   assert.equal((await f.call(`/api/comandas/${a.comanda_id}/fechar`,{tipo:'unica',pre_fechar:true})).status,200);
@@ -119,9 +167,12 @@ test('consulta/cadastro/baixa isolam lojas e exigem sessão e área de vendas',a
   assert.equal((await f.call('/api/cartoes/consultar',{uid:UID_A},2)).data.atendimento,null);
   assert.deepEqual((await f.call('/api/cartoes',null,2,'GET')).data,[]);
   assert.equal((await f.call(`/api/cartoes/${a.id}/fechar`,{forma:'pix',total:0},2)).status,404);
+  assert.equal((await f.call(`/api/cartoes/${a.id}/conta`,{},2)).status,404);
+  assert.equal((await f.call(`/api/cartoes/${a.id}/conta`,{},99)).status,401);
   assert.equal((await f.call('/api/cartoes/cadastrar',{uid:UID_A,cliente_nome:'Loja B',mesa_id:3,chave:crypto.randomUUID()},2)).status,201);
   f.db.prepare("UPDATE funcionarios SET modulos='gestor,area:financeiro' WHERE id=1").run();
   assert.equal((await f.call('/api/cartoes',null,1,'GET')).status,403); assert.equal((await f.call('/api/cartoes/consultar',{uid:UID_A},99)).status,401);
+  assert.equal((await f.call(`/api/cartoes/${a.id}/conta`,{})).status,403);
 });
 
 test('conta antiga permanece acessível para fechar sem migrar seu saldo',async t=>{

@@ -285,7 +285,8 @@ export const cartaoApi = {
   list: () => api.get<CartaoAtendimento[]>('/cartoes'),
   consultar: (b: { uid: string; payload?: string }) => api.post<{ cartao: string; atendimento: CartaoAtendimento | null }>('/cartoes/consultar', b),
   cadastrar: (b: { uid: string; payload?: string; cliente_nome: string; mesa_id: number; chave: string; garcom_nome?: string }) => api.post<CartaoAtendimento>('/cartoes/cadastrar', b),
-  fechar: (id: string, b: { forma: string; total: number }) => api.post<{ ok: boolean; total?: number; venda_id: number | null; sem_consumo?: boolean; repetido?: boolean }>(`/cartoes/${id}/fechar`, b),
+  fechar: (id: string, b: { forma: string; total: number; taxa_garcom_pct?: number }) => api.post<{ ok: boolean; total: number; subtotal?: number; taxa_garcom_pct?: number; venda_id: number | null; sem_consumo?: boolean; repetido?: boolean }>(`/cartoes/${id}/fechar`, b),
+  conta: (id: string, b: { taxa_garcom_pct?: number } = {}) => api.post<{ impressao: string; total: number; subtotal: number; taxa_garcom_pct: number }>(`/cartoes/${id}/conta`, b),
   usar: (b: {
     acao: 'abrir' | 'lancar' | 'fechar';
     uid: string;

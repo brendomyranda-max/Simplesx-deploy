@@ -7,6 +7,7 @@ import { now, num, fmtBRL, getConfig, getConfigValue, modulosFromString, modulos
 import { SIGNUP_POLICY } from './signup-policy.js';
 import { createDeviceTask } from './handlers-devices.js';
 import { dispatchOrders } from './order-printing.js';
+import { calcularContaIndividual } from './conta-individual.js';
 
 const LOGIN_LIMIT = 8;
 const LOGIN_TTL = 15 * 60;
@@ -489,12 +490,16 @@ export async function imprimirPessoaComandaHandler(c, env) {
     .bind(com.id, pessoa.id)
     .all();
   const individual = com.individual_valores ? JSON.parse(com.individual_valores) : null;
-  const sub = itens.results.reduce((s, i) => s + num(i.quantidade) * num(i.preco_unitario), 0);
-  const taxa = num(com.taxa_garcom_pct);
+  // Uma conta já paga sempre usa a taxa registrada no fechamento.
+  const taxa = pessoa.status === 'baixado' || com.status === 'fechada' || b.taxa_garcom_pct === undefined
+    ? num(com.taxa_garcom_pct) : b.taxa_garcom_pct;
+  const conta = calcularContaIndividual(itens.results.reduce((s, i) => s + num(i.quantidade) * num(i.preco_unitario), 0),taxa);
+  const sub = conta.subtotal;
   const valor =
     individual?.valores?.[pessoa.id] !== undefined
       ? num(individual.valores[pessoa.id])
-      : num((sub * (1 + taxa / 100)).toFixed(2));
+      : conta.total;
+  const cartao = await env.DB.prepare('SELECT cartao FROM cartao_atendimentos WHERE pessoa_id=? ORDER BY criado_em DESC LIMIT 1').bind(pessoa.id).first();
   const config = await getConfig(env);
   const empresa = config.empresa_nome || String(c.req.query('empresa') || 'MEU NEGÓCIO');
   const cnpj = config.empresa_cnpj || '';
@@ -506,6 +511,7 @@ export async function imprimirPessoaComandaHandler(c, env) {
     linha(),
     `CONTA INDIVIDUAL  Nº ${com.id}`,
     `PESSOA: ${pessoa.nome || '-'}`,
+    ...(cartao ? [`CARTÃO: ${cartao.cartao}`] : []),
     `MESA ORIGEM: ${mesaOrigem}`,
     `GARÇOM: ${com.garcom_nome || '-'}`,
     linha('-'),
@@ -513,7 +519,8 @@ export async function imprimirPessoaComandaHandler(c, env) {
       (i) => `${num(i.quantidade)}x ${i.nome}  ${fmtBRL(num(i.quantidade) * num(i.preco_unitario))}`
     ),
     linha('-'),
-    taxa > 0 ? `GARÇOM (${taxa}%): ${fmtBRL(sub * (taxa / 100))}` : '',
+    `Subtotal: ${fmtBRL(sub)}`,
+    `GARÇOM (${taxa}%): ${fmtBRL(conta.taxa_servico)}`,
     `TOTAL: ${fmtBRL(valor)}`,
     `STATUS: ${pessoa.status === 'baixado' ? 'PAGO' : 'PENDENTE'}`,
     linha(),
@@ -523,7 +530,7 @@ export async function imprimirPessoaComandaHandler(c, env) {
     .filter((l) => l !== '')
     .join('\n');
 
-  return c.json({ impressao: txt, pessoa, total: valor });
+  return c.json({ impressao: txt, pessoa, total: valor, subtotal: sub, taxa_garcom_pct: taxa });
 }
 
 export async function imprimirEtiquetaHandler(c, env) {
