@@ -61,6 +61,7 @@ export function ComandaPage() {
   const setTaxa = (valor: string) => setTaxaEditada({ comandaId, valor });
   const [forma, setForma] = useState('dinheiro');
   const [finalizando, setFinalizando] = useState(false);
+  const finalizandoRef = useRef(false);
   const [enviandoCozinha, setEnviandoCozinha] = useState(false);
   const [imprimir, setImprimir] = useState<{ impressao: string; setor: string } | null>(null);
   const [addProduto, setAddProduto] = useState<Produto | null>(null);
@@ -453,7 +454,11 @@ export function ComandaPage() {
   }, [fechar, taxa, comandaId]);
 
   const abrirFechamento = () => {
-    if (transferenciaRef.current) return;
+    if (transferenciaRef.current || finalizandoRef.current) return;
+    if (adicionandoRef.current || pendingRef.current || enviandoRef.current) {
+      toast('info', 'Aguarde a confirmação do pedido e do envio antes de fechar a conta.');
+      return;
+    }
     iniciaValores();
     setFechar(true);
   };
@@ -461,9 +466,19 @@ export function ComandaPage() {
   const totalAplicado = Object.values(valoresIndiv).reduce((s, v) => s + (Number(v) || 0), 0);
   const dif = totalComTaxa - totalAplicado;
 
-  const finalizar = async () => {
-    if (!comanda) return;
+  const iniciarFechamento = () => {
+    if (finalizandoRef.current) return false;
+    if (adicionandoRef.current || pendingRef.current || enviandoRef.current || transferenciaRef.current) {
+      toast('info', 'Aguarde a confirmação do pedido e do envio antes de fechar a conta.');
+      return false;
+    }
+    finalizandoRef.current = true;
     setFinalizando(true);
+    return true;
+  };
+
+  const finalizar = async () => {
+    if (!comanda || !iniciarFechamento()) return;
     try {
       const r = await comandaApi.fechar(comandaId, {
         tipo,
@@ -476,14 +491,15 @@ export function ComandaPage() {
       navigate('/restaurante');
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao fechar comanda');
+      await loadComanda();
     } finally {
+      finalizandoRef.current = false;
       setFinalizando(false);
     }
   };
 
   const preFechar = async () => {
-    if (!comanda) return;
-    setFinalizando(true);
+    if (!comanda || !iniciarFechamento()) return;
     try {
       const r = await comandaApi.fechar(comandaId, {
         tipo,
@@ -493,13 +509,19 @@ export function ComandaPage() {
         pre_fechar: true,
       });
       setFechar(false);
-      loadComanda();
-      const imp = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
-      setImprimir({ impressao: imp.impressao, setor: imp.setor });
-      toast('success', `${r.mensagem || 'Conta pré-fechada'} · ${imp.jobs?.length || 0} impressão(ões) enviada(s)`);
+      await loadComanda();
+      try {
+        const imp = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
+        setImprimir({ impressao: imp.impressao, setor: imp.setor });
+        toast('success', `${r.mensagem || 'Conta pré-fechada'} · ${imp.jobs?.length || 0} impressão(ões) enviada(s)`);
+      } catch (err: any) {
+        toast('error', `Conta pré-fechada, mas a impressão não foi confirmada: ${err?.error || 'falha de conexão'}. Use Imprimir para tentar novamente.`);
+      }
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao pré-fechar');
+      await loadComanda();
     } finally {
+      finalizandoRef.current = false;
       setFinalizando(false);
     }
   };
@@ -511,8 +533,7 @@ export function ComandaPage() {
   };
 
   const finalizarBaixa = async () => {
-    if (!comanda) return;
-    setFinalizando(true);
+    if (!comanda || !iniciarFechamento()) return;
     try {
       const r = await comandaApi.fechar(comandaId, {
         tipo: (comanda.fechamento_tipo || 'unica') as any,
@@ -525,7 +546,9 @@ export function ComandaPage() {
       navigate('/restaurante');
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao baixar conta');
+      await loadComanda();
     } finally {
+      finalizandoRef.current = false;
       setFinalizando(false);
     }
   };
@@ -542,7 +565,7 @@ export function ComandaPage() {
   };
 
   const finalizarIndividual = async () => {
-    if (!comanda) return;
+    if (!comanda || finalizandoRef.current) return;
     const pessoas_valores = Object.entries(valoresIndiv)
       .filter(([, v]) => {
         const n = Number(v);
@@ -550,7 +573,7 @@ export function ComandaPage() {
       })
       .map(([k, v]) => ({ pessoa_id: k === 'geral' ? null : Number(k.slice(1)), valor: Number(v) }));
     if (!pessoas_valores.length) return toast('error', 'Aplique ao menos um valor a pagar');
-    setFinalizando(true);
+    if (!iniciarFechamento()) return;
     try {
       const r = await comandaApi.fechar(comandaId, {
         tipo: 'individual',
@@ -569,7 +592,9 @@ export function ComandaPage() {
       }
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao gerar contas individuais');
+      await loadComanda();
     } finally {
+      finalizandoRef.current = false;
       setFinalizando(false);
     }
   };
@@ -927,7 +952,7 @@ export function ComandaPage() {
         onClose={() => setTransferencia(null)} onTransfer={transferirItem} />}
 
       {/* Fechamento */}
-      <Modal open={fechar} onClose={() => setFechar(false)} title="Fechamento da comanda" width="max-w-2xl">
+      <Modal open={fechar} onClose={() => { if (!finalizandoRef.current) setFechar(false); }} title="Fechamento da comanda" width="max-w-2xl">
         <div className="space-y-4">
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">1. Tipo de pagamento</p>
@@ -1083,7 +1108,7 @@ export function ComandaPage() {
       </Modal>
 
       {/* Baixar conta pré-fechada */}
-      <Modal open={baixar} onClose={() => setBaixar(false)} title="Baixar conta paga" width="max-w-md">
+      <Modal open={baixar} onClose={() => { if (!finalizandoRef.current) setBaixar(false); }} title="Baixar conta paga" width="max-w-md">
         <div className="space-y-4">
           <div className="rounded-xl bg-slate-50 p-3 text-center">
             <p className="text-xs text-slate-400">Total da conta</p>

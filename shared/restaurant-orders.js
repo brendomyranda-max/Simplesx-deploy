@@ -1,4 +1,4 @@
-import { estabelecimentoId, getProdutoFull, buscarProdutoPorCodigo, httpError, now, sha256 } from './util.js';
+import { estabelecimentoId, httpError, now, sha256 } from './util.js';
 import { idsAcrescimo, observacaoComAcrescimos, precoComAcrescimos, selecionarAcrescimos } from './acrescimos.js';
 
 // A chave pertence à intenção do cliente e sobrevive a timeout/reenvio.
@@ -33,11 +33,26 @@ export async function saveOrderItems(c, env, body) {
 
   const command = await env.DB.prepare("SELECT id FROM comandas WHERE id=? AND status='aberta' AND comanda_origem_id IS NULL").bind(c.params.id).first();
   if (!command) throw httpError(409, 'A comanda não está aberta para novos pedidos');
+  // Para lançar não é necessário expandir ficha, códigos ou estoque possível.
+  // Busque cada produto/acréscimo uma vez, mesmo com observações por unidade.
+  const codes = [...new Set(input.map((b) => b.codigo.trim()).filter(Boolean))];
+  const barcodes = codes.length ? (await env.DB.prepare(`SELECT codigo,produto_id FROM produto_codigos_barras
+    WHERE codigo IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(codes)).all()).results : [];
+  const productIds = [...new Set([...input.map((b) => b.produto_id).filter(Boolean), ...barcodes.map((b) => b.produto_id)])];
+  const products = (await env.DB.prepare(`SELECT * FROM produtos WHERE id IN (SELECT value FROM json_each(?))
+    OR codigo_interno IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(productIds), JSON.stringify(codes)).all()).results;
+  const extras = (await env.DB.prepare(`SELECT a.produto_id,a.insumo_id,p.preco AS valor,p.nome AS insumo_nome
+    FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco>0
+    WHERE a.produto_id IN (SELECT value FROM json_each(?)) ORDER BY a.ordem,a.id`)
+    .bind(JSON.stringify(products.map((p) => p.id))).all()).results;
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const byCode = new Map(products.filter((p) => p.codigo_interno).map((p) => [p.codigo_interno, p]));
+  for (const barcode of barcodes) byCode.set(barcode.codigo, byId.get(barcode.produto_id));
   const items = [];
   for (const b of input) {
-    const product = b.produto_id ? await getProdutoFull(env, b.produto_id) : b.codigo ? await buscarProdutoPorCodigo(env, b.codigo) : null;
+    const product = b.produto_id ? byId.get(b.produto_id) : b.codigo ? byCode.get(b.codigo.trim()) : null;
     if ((b.produto_id || b.codigo) && (!product || !product.ativo)) throw httpError(400, 'Produto não encontrado ou inativo');
-    const escolhidos = selecionarAcrescimos(b.acrescimos, product?.acrescimos || []);
+    const escolhidos = selecionarAcrescimos(b.acrescimos, extras.filter((extra) => extra.produto_id === product?.id));
     const preco = escolhidos.length
       ? precoComAcrescimos(product?.preco, escolhidos)
       : (b.preco_unitario ?? Number(product?.preco || 0));

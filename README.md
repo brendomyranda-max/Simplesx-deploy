@@ -153,6 +153,22 @@ Antes de publicar o backend, aplique `0022_transferencias_pedidos.sql` usando
 `npm run db:migrate`. A migração adiciona o histórico, a versão dos itens e a
 reserva temporária durante o fechamento, preservando os pedidos existentes.
 
+Lançamentos em lote buscam produtos e acréscimos juntos, sem expandir a ficha
+técnica de cada unidade. O fechamento carrega as receitas uma única vez e soma
+o consumo de cada insumo, inclusive em receitas encadeadas. Venda, itens,
+pagamentos, estoque, movimentos, financeiro e liberação da mesa são gravados
+em uma transação. Falhas não deixam uma venda parcialmente concluída.
+
+A criação das contas individuais também é transacional. A baixa por pessoa
+tem reserva de concorrência para impedir duas vendas do mesmo pagamento.
+Comandas antigas que já tenham uma venda concluída, mas ainda estejam abertas,
+exigem conferência do histórico antes de outra baixa; não são reparadas
+automaticamente nem recebem novo desconto de estoque.
+
+Os testes de carga cobrem 10 e 50 drinks, 50 produtos distintos, reenvio,
+fechamentos simultâneos, estoque compartilhado e falhas durante a gravação.
+Essas correções não exigem migração de banco nem atualização dos instaladores.
+
 ## Taxa de serviço, despesas e CMV
 
 No fechamento ou na baixa da comanda, informe **0** na taxa de serviço ou use
