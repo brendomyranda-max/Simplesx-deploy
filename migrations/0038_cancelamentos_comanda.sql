@@ -1,5 +1,6 @@
 -- Cancelar a ocupação não apaga nem estorna vendas já registradas.
-CREATE TABLE comanda_cancelamentos (
+-- Algumas instalações já receberam a estrutura antes do registro da migração.
+CREATE TABLE IF NOT EXISTS comanda_cancelamentos (
   id TEXT PRIMARY KEY,
   estabelecimento_id INTEGER NOT NULL,
   chave TEXT NOT NULL,
@@ -13,4 +14,4 @@ CREATE TABLE comanda_cancelamentos (
   criado_em TEXT NOT NULL,
   UNIQUE (estabelecimento_id, chave)
 );
-CREATE INDEX idx_cancelamentos_comanda ON comanda_cancelamentos(estabelecimento_id, comanda_id);
+CREATE INDEX IF NOT EXISTS idx_cancelamentos_comanda ON comanda_cancelamentos(estabelecimento_id, comanda_id);
