@@ -85,4 +85,24 @@ test('delivery só usa estoque e o painel separa salão, delivery e prioridade',
   const vazio = await painelPedidosHandler(context(), adminEnv);
   assert.equal(vazio.data.delivery.length, 0);
   assert.equal(vazio.data.prioridade.some((item) => item.canal === 'delivery'), false);
+  assert.equal(vazio.data.delivery_entregues.length, 0, 'cancelados não entram nos entregues');
+
+  const novo = await createPublicOrderHandler(context({
+    chave: 'pedido-publico-0005', cliente_nome: 'Bia', telefone: '11988887777',
+    tipo_entrega: 'entrega', endereco: 'Rua Central, 25', forma_pagamento: 'maquininha',
+    itens: [{ cardapio_produto_id: publicado.data.id, quantidade: 1 }],
+  }, { slug: 'brasa-pao' }), { DB: raw });
+  await atualizarPedidoOnlineHandler(context({ status: 'confirmado' }, { id: String(novo.data.id) }), adminEnv);
+  await atualizarPedidoOnlineHandler(context({ status: 'saiu_entrega' }, { id: String(novo.data.id) }), adminEnv);
+  const aCaminho = await painelPedidosHandler(context(), adminEnv);
+  assert.equal(aCaminho.data.delivery.some((item) => item.id === novo.data.id), true);
+  assert.equal(aCaminho.data.delivery_entregues.length, 0);
+  await atualizarPedidoOnlineHandler(context({ status: 'entregue' }, { id: String(novo.data.id) }), adminEnv);
+  const entregue = await painelPedidosHandler(context(), adminEnv);
+  assert.equal(entregue.data.delivery.length, 0);
+  assert.equal(entregue.data.delivery_entregues[0].cliente_nome, 'Bia');
+  assert.equal(entregue.data.delivery_entregues[0].itens.length, 1);
+  raw.prepare("UPDATE comandas SET status='fechada' WHERE id=?").bind(novo.data.comanda_id).run();
+  const fechado = await painelPedidosHandler(context(), adminEnv);
+  assert.equal(fechado.data.delivery_entregues[0].etapa, 'entregue', 'o histórico permanece após fechar a comanda');
 });

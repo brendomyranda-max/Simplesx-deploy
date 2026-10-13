@@ -91,3 +91,34 @@ test('impressão sem destino explícito mantém o Android padrão', async (t) =>
   assert.ok(response.data.task_id);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM gestor_jobs').first().n, 0);
 });
+
+test('delivery usa a rota da categoria e imprime dados de entrega no servidor', async (t) => {
+  const f = fixture(t, 'desktop', 'Termica USB');
+  f.db.prepare("UPDATE mesas SET tipo='online' WHERE id=1").run();
+  f.db.prepare(`INSERT INTO pedidos_online
+    (estabelecimento_id,chave,comanda_id,mesa_id,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,criado_em)
+    VALUES (1,'pedido-delivery-0001',1,1,'Ana Souza','11999990000','entrega','Rua das Flores, 123','dinheiro','2026-10-13')`).run();
+  const result = await dispatchOrders(f.context(), f.env, { comanda_id: 1 });
+  assert.equal(result.itens, 1);
+  assert.equal(result.sem_rota.length, 0);
+  const job = f.db.prepare('SELECT conteudo,impressora FROM gestor_jobs').first();
+  assert.equal(job.impressora, 'Termica USB');
+  assert.match(job.conteudo, /PEDIDO DELIVERY #1 - ENTREGA/);
+  assert.match(job.conteudo, /CLIENTE: Ana Souza/);
+  assert.match(job.conteudo, /ENDERECO: Rua das Flores, 123/);
+  assert.doesNotMatch(job.conteudo, /MESA:/);
+  const repetido = await dispatchOrders(f.context(), f.env, { comanda_id: 1 });
+  assert.equal(repetido.itens, 0, 'repetir não duplica a impressão');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM gestor_jobs').first().n, 1);
+});
+
+test('delivery sem impressora vinculada não imprime nem marca o item como enviado', async (t) => {
+  const f = fixture(t, 'desktop');
+  f.db.prepare("UPDATE mesas SET tipo='online' WHERE id=1").run();
+  f.db.prepare('UPDATE categorias SET impressora_agente_id=NULL WHERE id=1').run();
+  const result = await dispatchOrders(f.context(), f.env, { comanda_id: 1 });
+  assert.deepEqual(result.sem_rota, ['Prato']);
+  assert.equal(result.itens, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM gestor_jobs').first().n, 0);
+  assert.equal(f.db.prepare('SELECT status FROM comanda_itens WHERE id=1').first().status, 'novo');
+});

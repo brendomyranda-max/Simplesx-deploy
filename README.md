@@ -12,10 +12,10 @@ instalações, os dados e os endereços existentes.
 
 ## Versão da aplicação
 
-**DoixP 0.1.0-beta.1 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
+**DoixP 0.1.0-beta.2 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
 A versão exibida na aplicação vem do `package.json`, sincronizado com o
 `package-lock.json`. As próximas versões de pré-lançamento seguem
-`0.1.0-beta.2`, `0.1.0-beta.3` e assim por diante. Cada publicação recebe uma tag
+`0.1.0-beta.3`, `0.1.0-beta.4` e assim por diante. Cada publicação recebe uma tag
 `doixp-v<VERSÃO>` e uma release marcada como pré-lançamento no GitHub.
 Ao liberar a versão estável, retire o sufixo beta e a identificação de
 pré-lançamento da interface.
@@ -216,7 +216,47 @@ Aplique `0024_produtos_sem_vencimento.sql` antes de publicar o backend:
 `npm run db:migrate`. O comando `npm run deploy` já aplica as migrações antes da
 publicação. Produtos existentes continuam com a opção desmarcada.
 
+## Apenas cardápio online
+
+Em **Delivery → Cardápio online** (ou **Estoque → Delivery**), selecione
+**Apenas cardápio online**. A escolha é salva ao clicar. Também está disponível
+na aba **Configurar** do site da própria loja.
+
+O link da loja continua exibindo produtos, fotos, descrições e preços. Nesse
+modo, a loja fica fora da vitrine DoixP Delivery e não oferece sacola, checkout
+nem criação de pedidos pela API. Para liberar o link aos clientes, publique
+a loja em **Dados da loja** ou no configurador do site.
+
+Selecione **Delivery** para voltar a receber pedidos. As configurações de
+entrega e a escolha entre vitrine e pedidos somente pelo link são preservadas.
+Pedidos já recebidos continuam disponíveis para acompanhamento e atendimento.
+
+Aplique `0042_cardapio_somente_consulta.sql` antes de publicar o backend usando
+`npm run db:migrate`. `npm run deploy` já aplica as migrações antes da publicação.
+No servidor local, as migrações são aplicadas na próxima inicialização.
+Lojas existentes continuam recebendo pedidos até a opção ser alterada.
+
+Na página **/pedido**, o cliente pode informar seu endereço ou usar a localização
+do aparelho para encontrar restaurantes próximos. A vitrine apresenta as
+categorias Promoção, Lanches, Pizza, Açaí e Marmitas antes das lojas.
+
+O nome e a foto de perfil do restaurante podem ser alterados em **Dados da loja**
+ou na aba **Configurar** do site da loja. Na vitrine **/pedido**, o proprietário
+também pode usar **Editar nome e foto**; a foto aparece junto ao nome da loja e
+no card visto pelos clientes. O link público segue o nome, como
+`https://doixp.com/pedido/acai-da-praca`; ao renomear, os links anteriores
+continuam abrindo a mesma loja. `npm run deploy` aplica a migração
+`0043_lojas_links_anteriores.sql` e atualiza os links das lojas existentes.
+
 ## Pedidos do restaurante
+
+Cada produto do cardápio pode ter um **preço normal no delivery** e um
+**preço promocional** opcional, configurados em **Produtos do cardápio → Editar**
+ou na aba **Configurar** do site da loja. O preço promocional deve ser menor que
+o normal. O cliente vê o valor anterior riscado, paga o valor com desconto e
+encontra a loja na categoria **Promoção** enquanto houver ofertas disponíveis.
+Apagar o preço promocional encerra a oferta sem alterar pedidos já recebidos.
+`npm run deploy` aplica a migração `0044_preco_promocional_delivery.sql`.
 
 O cardápio permite navegar por categorias e subcategorias, buscar pelo nome e
 ver todos os produtos da categoria principal. A tela do restaurante não usa EAN.

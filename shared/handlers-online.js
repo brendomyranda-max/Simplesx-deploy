@@ -10,6 +10,8 @@ import { estabelecimentoId, getFichaCompleta, httpError, kvGet, kvPut, now, num 
 import { areaDaLoja, cobrancaEntrega, coordenadaValida, distanciaKm, dentroDoRaio, kmExibido, localizar } from './localizacao.js';
 import { vincularInsumosOpcoes } from './acrescimos.js';
 import { copiaColaPix, normalizarChavePix, textoPix } from './pix.js';
+import { categoriaPrincipalDelivery } from './categorias-delivery.js';
+import { escolherSlugLoja, reservarLinkLoja } from './loja-slug.js';
 
 const MAX_ITEMS = 30;
 const MAX_CATEGORIAS_LOJA = 6;
@@ -90,6 +92,14 @@ function corPublica(value) {
   return /^#[0-9a-f]{6}$/.test(texto) ? texto : null;
 }
 
+function whatsappDaLoja(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const digits = String(value).replace(/\D/g, '');
+  const nacional = digits.startsWith('55') && digits.length >= 12 ? digits.slice(2) : digits;
+  if (!/^[1-9]\d{9,10}$/.test(nacional)) throw httpError(400, 'Informe um WhatsApp com DDD e 10 ou 11 dígitos');
+  return nacional;
+}
+
 function safeImageUrl(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string') throw httpError(400, 'Foto inválida');
@@ -109,6 +119,8 @@ function safeImageUrl(value) {
 }
 
 function productView(row, options = []) {
+  const preco = row.preco == null ? (row.produto_preco == null ? null : num(row.produto_preco)) : num(row.preco);
+  const precoPromocional = row.preco_promocional == null ? null : num(row.preco_promocional);
   return {
     id: num(row.id),
     produto_id: num(row.produto_id),
@@ -117,7 +129,8 @@ function productView(row, options = []) {
     nome: row.nome_exibicao || row.produto_nome,
     descricao: row.descricao || row.produto_observacoes || '',
     foto_url: row.foto_url || null,
-    preco: row.preco == null ? (row.produto_preco == null ? null : num(row.produto_preco)) : num(row.preco),
+    preco,
+    preco_promocional: preco != null && precoPromocional != null && precoPromocional < preco ? precoPromocional : null,
     ordem: num(row.ordem),
     disponivel: num(row.disponivel),
     ativo: num(row.ativo),
@@ -132,10 +145,13 @@ async function ensureStore(env) {
   if (store) return store;
   const business = await env.rawDB.prepare('SELECT nome FROM estabelecimentos WHERE id=?').bind(tenant).first();
   const timestamp = now();
+  const nome = business?.nome || 'Meu restaurante';
+  const slug = await escolherSlugLoja(env.rawDB, nome, tenant);
   await env.DB.prepare(
     `INSERT INTO lojas_online (slug,nome,descricao,taxa_entrega,aceita_entrega,aceita_retirada,ativo,criado_em,atualizado_em)
      VALUES (?,?,?,?,?,?,?,?,?)`
-  ).bind(`loja-${tenant}`, business?.nome || 'Meu restaurante', null, 0, 1, 1, 0, timestamp, timestamp).run();
+  ).bind(slug, nome, null, 0, 1, 1, 0, timestamp, timestamp).run();
+  await reservarLinkLoja(env.rawDB, slug, tenant).run();
   store = await env.DB.prepare('SELECT * FROM lojas_online WHERE estabelecimento_id=?').bind(tenant).first();
   return store;
 }
@@ -317,8 +333,13 @@ function idOuNulo(value) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-function catalogPayload(body, previous = {}) {
+function catalogPayload(body, previous = {}, precoEstoque = null) {
   const price = body.preco === undefined ? nulo(previous.preco) : optionalNumber(body.preco, 'Preço online', { min: 0, max: 100000 });
+  const promocional = body.preco_promocional === undefined ? nulo(previous.preco_promocional) : optionalNumber(body.preco_promocional, 'Preço promocional', { min: 0, max: 100000 });
+  const precoNormal = price == null ? precoEstoque : price;
+  if (promocional != null && (precoNormal == null || promocional >= precoNormal)) {
+    throw httpError(400, 'O preço promocional deve ser menor que o preço normal do delivery');
+  }
   return {
     categoria_id: body.categoria_id === undefined ? idOuNulo(previous.categoria_id) : idOuNulo(body.categoria_id),
     cardapio_categoria_id: body.cardapio_categoria_id === undefined ? idOuNulo(previous.cardapio_categoria_id) : idOuNulo(body.cardapio_categoria_id),
@@ -326,6 +347,7 @@ function catalogPayload(body, previous = {}) {
     descricao: body.descricao === undefined ? nulo(previous.descricao) : (cleanText(body.descricao, 700, 'Descrição') || null),
     foto_url: body.foto_url === undefined ? nulo(previous.foto_url) : safeImageUrl(body.foto_url),
     preco: nulo(price),
+    preco_promocional: nulo(promocional),
     ordem: body.ordem === undefined ? num(previous.ordem) : (Number.isInteger(Number(body.ordem)) && Number(body.ordem) >= 0 && Number(body.ordem) <= 100000 ? Number(body.ordem) : (() => { throw httpError(400, 'Ordem inválida'); })()),
     disponivel: flag(body.disponivel, previous.disponivel ?? 1),
     ativo: flag(body.ativo, previous.ativo ?? 1),
@@ -341,9 +363,11 @@ export async function getOnlineStoreHandler(c, env) {
 export async function updateOnlineStoreHandler(c, env) {
   const current = await ensureStore(env);
   const body = await c.req.json();
-  const slug = body.slug === undefined ? current.slug : cleanText(body.slug, 60, 'Endereço da loja', true).toLocaleLowerCase();
-  if (!SITE_SLUG.test(slug)) return c.json({ error: 'Use 3 a 60 caracteres: letras minúsculas, números e hífen.' }, 400);
   const nome = body.nome === undefined ? current.nome : cleanText(body.nome, 120, 'Nome da loja', true);
+  const slug = body.slug === undefined
+    ? (body.nome === undefined ? current.slug : await escolherSlugLoja(env.rawDB, nome, estabelecimentoId(env)))
+    : cleanText(body.slug, 60, 'Endereço da loja', true).toLocaleLowerCase();
+  if (!SITE_SLUG.test(slug)) return c.json({ error: 'Use 3 a 60 caracteres: letras minúsculas, números e hífen.' }, 400);
   if (body.nome !== undefined) {
     const outras = await env.rawDB.prepare('SELECT nome FROM lojas_online WHERE estabelecimento_id!=?').bind(estabelecimentoId(env)).all();
     const chave = nomeLojaChave(nome);
@@ -366,7 +390,10 @@ export async function updateOnlineStoreHandler(c, env) {
   const min = body.tempo_min_entrega === undefined ? current.tempo_min_entrega : optionalNumber(body.tempo_min_entrega, 'Tempo mínimo', { min: 0, max: 1440 });
   const max = body.tempo_max_entrega === undefined ? current.tempo_max_entrega : optionalNumber(body.tempo_max_entrega, 'Tempo máximo', { min: 0, max: 1440 });
   if (min !== null && max !== null && min > max) return c.json({ error: 'O tempo mínimo não pode ser maior que o máximo' }, 400);
-  const duplicate = await env.rawDB.prepare('SELECT estabelecimento_id FROM lojas_online WHERE slug=? AND estabelecimento_id!=?').bind(slug, estabelecimentoId(env)).first();
+  const duplicate = await env.rawDB.prepare(
+    `SELECT estabelecimento_id FROM lojas_online WHERE slug=? AND estabelecimento_id!=?
+     UNION ALL SELECT estabelecimento_id FROM lojas_online_links WHERE slug=? AND estabelecimento_id!=? LIMIT 1`
+  ).bind(slug, estabelecimentoId(env), slug, estabelecimentoId(env)).first();
   if (duplicate) return c.json({ error: 'Este endereço já está em uso por outra loja' }, 409);
   const local = await localDaLoja(env, body, current);
   if (local.erro) return c.json({ error: local.erro }, 400);
@@ -390,15 +417,27 @@ export async function updateOnlineStoreHandler(c, env) {
   } catch (error) {
     return c.json({ error: error?.message || 'Chave Pix inválida' }, error?.status || 400);
   }
-  await env.DB.prepare(
+  let whatsappSuporte;
+  try {
+    whatsappSuporte = body.whatsapp_suporte === undefined ? current.whatsapp_suporte : whatsappDaLoja(body.whatsapp_suporte);
+  } catch (error) {
+    return c.json({ error: error?.message || 'WhatsApp inválido' }, error?.status || 400);
+  }
+  const atualizar = env.DB.prepare(
     `UPDATE lojas_online SET slug=?,nome=?,descricao=?,logo_url=?,capa_url=?,cor_capa=?,taxa_entrega=?,tempo_min_entrega=?,tempo_max_entrega=?,
-     aceita_entrega=?,aceita_retirada=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,atualizado_em=? WHERE estabelecimento_id=?`
+     aceita_entrega=?,aceita_retirada=?,aceita_pedidos_online=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,whatsapp_suporte=?,atualizado_em=? WHERE estabelecimento_id=?`
   ).bind(
     slug, nome, nulo(descricao), logo, capa, cor,
     taxa, min, max, flag(body.aceita_entrega, current.aceita_entrega), flag(body.aceita_retirada, current.aceita_retirada),
+    flag(body.aceita_pedidos_online, current.aceita_pedidos_online),
     flag(body.ativo, current.ativo), nulo(local.endereco), nulo(local.latitude), nulo(local.longitude), nulo(local.raio),
-    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), now(), estabelecimentoId(env)
-  ).run();
+    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), nulo(whatsappSuporte), now(), estabelecimentoId(env)
+  );
+  await env.DB.batch([
+    reservarLinkLoja(env.rawDB, current.slug, estabelecimentoId(env)),
+    reservarLinkLoja(env.rawDB, slug, estabelecimentoId(env)),
+    atualizar,
+  ]);
   return c.json(await storeResponse(env));
 }
 
@@ -590,7 +629,7 @@ export async function upsertOnlineCatalogProductHandler(c, env) {
     return c.json({ error: 'O delivery só publica produto simples ou composto que já está no estoque' }, 400);
   }
   const existing = await env.DB.prepare('SELECT * FROM cardapio_online_produtos WHERE produto_id=?').bind(productId).first();
-  const data = catalogPayload(body, existing || { categoria_id: product.categoria_id, preco: product.preco, disponivel: 1, ativo: 1, ordem: 0 });
+  const data = catalogPayload(body, existing || { categoria_id: product.categoria_id, preco: product.preco, disponivel: 1, ativo: 1, ordem: 0 }, product.preco);
   if (existing && num(existing.ativo) === 0 && body.ativo === undefined) data.ativo = 1;
   if (!existing && product.tipo === 'composto') data.descricao = await descricaoComIngredientes(env, product.id, data.descricao);
   if (data.categoria_id) {
@@ -604,15 +643,15 @@ export async function upsertOnlineCatalogProductHandler(c, env) {
   const timestamp = now();
   if (existing) {
     await env.DB.prepare(
-      `UPDATE cardapio_online_produtos SET categoria_id=?,cardapio_categoria_id=?,nome_exibicao=?,descricao=?,foto_url=?,preco=?,ordem=?,disponivel=?,ativo=?,atualizado_em=? WHERE id=?`
-    ).bind(data.categoria_id, data.cardapio_categoria_id, data.nome_exibicao, data.descricao, data.foto_url, data.preco, data.ordem, data.disponivel, data.ativo, timestamp, existing.id).run();
+      `UPDATE cardapio_online_produtos SET categoria_id=?,cardapio_categoria_id=?,nome_exibicao=?,descricao=?,foto_url=?,preco=?,preco_promocional=?,ordem=?,disponivel=?,ativo=?,atualizado_em=? WHERE id=?`
+    ).bind(data.categoria_id, data.cardapio_categoria_id, data.nome_exibicao, data.descricao, data.foto_url, data.preco, data.preco_promocional, data.ordem, data.disponivel, data.ativo, timestamp, existing.id).run();
     await saveOptions(env, existing.id, options);
     return c.json(await catalogProduct(env, existing.id));
   }
   const created = await env.DB.prepare(
-    `INSERT INTO cardapio_online_produtos (produto_id,categoria_id,cardapio_categoria_id,nome_exibicao,descricao,foto_url,preco,ordem,disponivel,ativo,criado_em,atualizado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).bind(productId, data.categoria_id, data.cardapio_categoria_id, data.nome_exibicao, data.descricao, data.foto_url, data.preco, data.ordem, data.disponivel, data.ativo, timestamp, timestamp).run();
+    `INSERT INTO cardapio_online_produtos (produto_id,categoria_id,cardapio_categoria_id,nome_exibicao,descricao,foto_url,preco,preco_promocional,ordem,disponivel,ativo,criado_em,atualizado_em)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(productId, data.categoria_id, data.cardapio_categoria_id, data.nome_exibicao, data.descricao, data.foto_url, data.preco, data.preco_promocional, data.ordem, data.disponivel, data.ativo, timestamp, timestamp).run();
   await saveOptions(env, created.meta.last_row_id, options);
   return c.json(await catalogProduct(env, created.meta.last_row_id), 201);
 }
@@ -621,7 +660,8 @@ export async function updateOnlineCatalogProductHandler(c, env) {
   const existing = await env.DB.prepare('SELECT * FROM cardapio_online_produtos WHERE id=?').bind(c.params.id).first();
   if (!existing) return c.json({ error: 'Produto do cardápio não encontrado' }, 404);
   const body = await c.req.json();
-  const data = catalogPayload(body, existing);
+  const product = await env.DB.prepare('SELECT preco FROM produtos WHERE id=?').bind(existing.produto_id).first();
+  const data = catalogPayload(body, existing, product?.preco);
   if (data.categoria_id) {
     const category = await env.DB.prepare('SELECT id FROM categorias WHERE id=?').bind(data.categoria_id).first();
     if (!category) return c.json({ error: 'Categoria não encontrada' }, 400);
@@ -631,8 +671,8 @@ export async function updateOnlineCatalogProductHandler(c, env) {
   const options = await opcoesInformadas(env, body.opcoes);
   if (options?.erro) return c.json({ error: options.erro }, options.status || 400);
   await env.DB.prepare(
-    `UPDATE cardapio_online_produtos SET categoria_id=?,cardapio_categoria_id=?,nome_exibicao=?,descricao=?,foto_url=?,preco=?,ordem=?,disponivel=?,ativo=?,atualizado_em=? WHERE id=?`
-  ).bind(data.categoria_id, data.cardapio_categoria_id, data.nome_exibicao, data.descricao, data.foto_url, data.preco, data.ordem, data.disponivel, data.ativo, now(), existing.id).run();
+    `UPDATE cardapio_online_produtos SET categoria_id=?,cardapio_categoria_id=?,nome_exibicao=?,descricao=?,foto_url=?,preco=?,preco_promocional=?,ordem=?,disponivel=?,ativo=?,atualizado_em=? WHERE id=?`
+  ).bind(data.categoria_id, data.cardapio_categoria_id, data.nome_exibicao, data.descricao, data.foto_url, data.preco, data.preco_promocional, data.ordem, data.disponivel, data.ativo, now(), existing.id).run();
   await saveOptions(env, existing.id, options);
   return c.json(await catalogProduct(env, existing.id));
 }
@@ -682,18 +722,28 @@ function itemPedido(row) {
 }
 
 export async function painelPedidosHandler(c, env) {
-  const deliveryRows = await env.DB.prepare(
+  const deliverySelect =
     `SELECT po.id, po.comanda_id, po.mesa_id, po.cliente_nome, po.telefone, po.tipo_entrega,
        po.endereco, po.forma_pagamento, po.troco_para, po.observacao, po.status, po.etapa,
        po.subtotal, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.total, po.criado_em, c.status AS comanda_status
      FROM pedidos_online po
-     LEFT JOIN comandas c ON c.id=po.comanda_id
+     LEFT JOIN comandas c ON c.id=po.comanda_id`;
+  const deliveryRows = await env.DB.prepare(
+    `${deliverySelect}
      WHERE po.status IN ('recebido','confirmado')
+       AND COALESCE(po.etapa,'recebido') NOT IN ('entregue','cancelado')
        AND (c.id IS NULL OR c.status IN ('aberta','pre_fechamento'))
      ORDER BY po.criado_em ASC, po.id ASC
      LIMIT 100`
   ).all();
-  const deliveryIds = deliveryRows.results.map((row) => num(row.id));
+  const deliveredRows = await env.DB.prepare(
+    `${deliverySelect}
+     WHERE po.status IN ('recebido','confirmado','finalizado')
+       AND (po.etapa='entregue' OR po.status='finalizado' OR c.status='fechada')
+     ORDER BY COALESCE(po.atualizado_em,po.criado_em) DESC, po.id DESC
+     LIMIT 100`
+  ).all();
+  const deliveryIds = [...deliveryRows.results, ...deliveredRows.results].map((row) => num(row.id));
   const deliveryItems = deliveryIds.length
     ? (await env.DB.prepare(
       `SELECT id, pedido_online_id, nome, quantidade, observacao, preco_unitario, total
@@ -748,8 +798,7 @@ export async function painelPedidosHandler(c, env) {
      LIMIT 200`
   ).all();
 
-  return c.json({
-    delivery: deliveryRows.results.map((row) => ({
+  const mapDelivery = (row) => ({
       id: num(row.id),
       comanda_id: row.comanda_id == null ? null : num(row.comanda_id),
       mesa_id: row.mesa_id == null ? null : num(row.mesa_id),
@@ -761,7 +810,7 @@ export async function painelPedidosHandler(c, env) {
       troco_para: row.troco_para == null || row.troco_para === '' ? null : num(row.troco_para),
       observacao: row.observacao || '',
       status: row.status,
-      etapa: etapaPainel(row),
+      etapa: etapaCliente(row),
       comanda_status: row.comanda_status || null,
       subtotal: num(row.subtotal),
       taxa_entrega: num(row.taxa_entrega),
@@ -773,7 +822,10 @@ export async function painelPedidosHandler(c, env) {
       criado_em: row.criado_em,
       espera_min: esperaMinutos(row.criado_em),
       itens: itensDelivery.get(num(row.id)) || [],
-    })),
+    });
+  return c.json({
+    delivery: deliveryRows.results.map(mapDelivery),
+    delivery_entregues: deliveredRows.results.map(mapDelivery),
     restaurante: restauranteRows.results.map((row) => {
       const itens = itensRestaurante.get(num(row.id)) || [];
       return {
@@ -1030,8 +1082,9 @@ async function lojaPorSlug(env, slug, exigirAtiva) {
   if (!SITE_SLUG.test(normalized)) throw httpError(404, 'Loja não encontrada');
   const store = await env.DB.prepare(
     `SELECT l.*, e.nome AS empresa_nome FROM lojas_online l JOIN estabelecimentos e ON e.id=l.estabelecimento_id
-     WHERE l.slug=? AND e.ativo=1${exigirAtiva ? ' AND l.ativo=1' : ''}`
-  ).bind(normalized).first();
+     WHERE (l.slug=? OR EXISTS (SELECT 1 FROM lojas_online_links links WHERE links.estabelecimento_id=l.estabelecimento_id AND links.slug=?))
+       AND e.ativo=1${exigirAtiva ? ' AND l.ativo=1' : ''}`
+  ).bind(normalized, normalized).first();
   if (!store) throw httpError(404, exigirAtiva ? 'Loja não encontrada ou indisponível' : 'Loja não encontrada');
   return store;
 }
@@ -1092,9 +1145,9 @@ export async function listPublicStoresHandler(c, env) {
   const lojas = await env.DB.prepare(
     `SELECT l.estabelecimento_id, l.slug, l.nome, l.descricao, l.logo_url, l.capa_url, l.cor_capa,
        l.taxa_entrega, l.tempo_min_entrega, l.tempo_max_entrega, l.aceita_entrega, l.aceita_retirada,
-       l.latitude, l.longitude, l.raio_entrega_km, l.valor_por_km, l.modo_entrega
+       l.latitude, l.longitude, l.raio_entrega_km, l.valor_por_km, l.modo_entrega, l.whatsapp_suporte
      FROM lojas_online l JOIN estabelecimentos e ON e.id=l.estabelecimento_id
-     WHERE l.ativo=1 AND e.ativo=1 AND COALESCE(l.modo_publicacao, 'marketplace')='marketplace'
+     WHERE l.ativo=1 AND e.ativo=1 AND l.aceita_pedidos_online=1 AND COALESCE(l.modo_publicacao, 'marketplace')='marketplace'
      ORDER BY l.nome COLLATE NOCASE, l.estabelecimento_id
      LIMIT 200`
   ).all();
@@ -1106,6 +1159,16 @@ export async function listPublicStoresHandler(c, env) {
        ORDER BY nome COLLATE NOCASE, id`
     ).bind(...ids).all()).results
     : [];
+  const promocoes = ids.length
+    ? (await env.DB.prepare(
+      `SELECT DISTINCT cp.estabelecimento_id FROM cardapio_online_produtos cp
+       JOIN produtos p ON p.id=cp.produto_id AND p.estabelecimento_id=cp.estabelecimento_id
+       WHERE cp.estabelecimento_id IN (${ids.map(() => '?').join(',')})
+         AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1 AND p.tipo IN ('produto','composto')
+         AND cp.preco_promocional IS NOT NULL AND cp.preco_promocional < COALESCE(cp.preco,p.preco)`
+    ).bind(...ids).all()).results
+    : [];
+  const lojasEmPromocao = new Set(promocoes.map((row) => num(row.estabelecimento_id)));
   const porLoja = new Map();
   for (const row of categorias) {
     const id = num(row.estabelecimento_id);
@@ -1113,7 +1176,10 @@ export async function listPublicStoresHandler(c, env) {
     porLoja.get(id).push(row);
   }
   let lista = lojas.results.map((row) => {
-    const daLoja = porLoja.get(num(row.estabelecimento_id)) || [];
+    const daLoja = [...(porLoja.get(num(row.estabelecimento_id)) || [])];
+    if (lojasEmPromocao.has(num(row.estabelecimento_id)) && !daLoja.some((item) => categoriaPrincipalDelivery(item.nome_busca) === 'promocao')) {
+      daLoja.push({ nome: 'Promoção', nome_busca: 'promocao' });
+    }
     return {
       slug: row.slug,
       nome: row.nome || '',
@@ -1121,6 +1187,7 @@ export async function listPublicStoresHandler(c, env) {
       logo_url: row.logo_url || null,
       capa_url: row.capa_url || null,
       cor_capa: corPublica(row.cor_capa),
+      whatsapp_suporte: row.whatsapp_suporte || null,
       taxa_entrega: num(row.taxa_entrega),
       tempo_min_entrega: row.tempo_min_entrega == null ? null : num(row.tempo_min_entrega),
       tempo_max_entrega: row.tempo_max_entrega == null ? null : num(row.tempo_max_entrega),
@@ -1133,16 +1200,14 @@ export async function listPublicStoresHandler(c, env) {
   });
   if (soRegiao) lista = lista.filter((loja) => loja.entrega_na_regiao === 1);
   const naRegiao = lista;
-  if (categoria) lista = lista.filter((loja) => loja.buscas.includes(categoria));
+  if (categoria) lista = lista.filter((loja) => loja.buscas.some((busca) => categoriaPrincipalDelivery(busca) === categoriaPrincipalDelivery(categoria)));
   if (termo) {
     lista = lista.filter((loja) => buscaCategoria(`${loja.nome} ${loja.descricao} ${loja.segmentos.join(' ')}`).includes(termo));
   }
   if (ponto) {
     lista.sort((a, b) => (a.distancia_km ?? 9999) - (b.distancia_km ?? 9999) || a.nome.localeCompare(b.nome, 'pt-BR'));
   }
-  const categoriasVisiveis = soRegiao
-    ? naRegiao.flatMap((loja) => loja.buscas.map((busca, index) => ({ nome: loja.segmentos[index], nome_busca: busca })))
-    : categorias;
+  const categoriasVisiveis = naRegiao.flatMap((loja) => loja.buscas.map((busca, index) => ({ nome: loja.segmentos[index], nome_busca: busca })));
   return c.json({
     categorias: agruparCategorias(categoriasVisiveis),
     lojas: lista.map(({ buscas, ...loja }) => loja),
@@ -1178,6 +1243,7 @@ export async function getPublicOrderHandler(c, env) {
     criado_em: row.criado_em,
     atualizado_em: row.atualizado_em || row.criado_em,
     loja: store.nome || store.empresa_nome,
+    whatsapp_suporte: store.whatsapp_suporte || null,
     itens: itens.results.map((item) => ({ nome: item.nome, quantidade: num(item.quantidade) })),
   });
 }
@@ -1228,7 +1294,9 @@ export async function getPublicStoreHandler(c, env) {
       slug: store.slug, nome: store.nome || store.empresa_nome, descricao: store.descricao || '', logo_url: store.logo_url || null, capa_url: store.capa_url || null, cor_capa: corPublica(store.cor_capa),
       taxa_entrega: num(store.taxa_entrega), tempo_min_entrega: store.tempo_min_entrega, tempo_max_entrega: store.tempo_max_entrega,
       aceita_entrega: num(store.aceita_entrega), aceita_retirada: num(store.aceita_retirada),
+      aceita_pedidos_online: num(store.aceita_pedidos_online), ativo: num(store.ativo), modo_publicacao: store.modo_publicacao,
       pix_disponivel: store.pix_chave ? 1 : 0,
+      whatsapp_suporte: store.whatsapp_suporte || null,
       ...areaDaLoja(store, pontoDaConsulta(c)),
       segmentos: segmentos.results.map((row) => row.nome),
     },
@@ -1248,6 +1316,9 @@ function orderNote(note, selected) {
 
 export async function createPublicOrderHandler(c, env) {
   const store = await publicStore(env, c.params.slug);
+  if (store.aceita_pedidos_online === 0) {
+    return c.json({ error: 'Este estabelecimento disponibiliza apenas o cardápio online e não recebe pedidos pelo site.' }, 403);
+  }
   const body = await c.req.json();
   const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'anon';
   const rateKey = `online-order:${store.estabelecimento_id}:${ip}`;
@@ -1306,9 +1377,10 @@ export async function createPublicOrderHandler(c, env) {
   const parsedItems = body.itens.map((item) => ({
     cardapio_produto_id: Number(item?.cardapio_produto_id), quantidade: Number(item?.quantidade || 1),
     opcoes_ids: Array.isArray(item?.opcoes_ids) ? item.opcoes_ids.map(Number) : [], observacao: cleanText(item?.observacao, 400, 'Observação do item'),
+    preco_unitario_esperado: item?.preco_unitario_esperado == null ? null : Number(item.preco_unitario_esperado),
   }));
   for (const item of parsedItems) {
-    if (!Number.isInteger(item.cardapio_produto_id) || item.cardapio_produto_id <= 0 || !Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 30 || item.opcoes_ids.length > 25 || item.opcoes_ids.some((id) => !Number.isInteger(id) || id <= 0)) return c.json({ error: 'Itens do pedido inválidos' }, 400);
+    if (!Number.isInteger(item.cardapio_produto_id) || item.cardapio_produto_id <= 0 || !Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 30 || item.opcoes_ids.length > 25 || item.opcoes_ids.some((id) => !Number.isInteger(id) || id <= 0) || (item.preco_unitario_esperado != null && (!Number.isFinite(item.preco_unitario_esperado) || item.preco_unitario_esperado < 0))) return c.json({ error: 'Itens do pedido inválidos' }, 400);
   }
   const catalogIds = [...new Set(parsedItems.map((item) => item.cardapio_produto_id))];
   const placeholders = catalogIds.map(() => '?').join(',');
@@ -1333,7 +1405,13 @@ export async function createPublicOrderHandler(c, env) {
     const catalogProduct = catalogById.get(item.cardapio_produto_id);
     const options = item.opcoes_ids.map((id) => optionsById.get(id));
     if (options.some((option) => !option || num(option.cardapio_produto_id) !== num(catalogProduct.id))) throw httpError(400, 'Uma opção não pertence a este produto');
-    const unitPrice = Math.round(((catalogProduct.preco == null ? num(catalogProduct.produto_preco) : num(catalogProduct.preco)) + options.filter((option) => option.tipo === 'adicional').reduce((sum, option) => sum + num(option.preco_adicional), 0)) * 100) / 100;
+    const precoNormal = catalogProduct.preco == null ? num(catalogProduct.produto_preco) : num(catalogProduct.preco);
+    const promocional = catalogProduct.preco_promocional == null ? null : num(catalogProduct.preco_promocional);
+    const precoDelivery = promocional != null && promocional < precoNormal ? promocional : precoNormal;
+    const unitPrice = Math.round((precoDelivery + options.filter((option) => option.tipo === 'adicional').reduce((sum, option) => sum + num(option.preco_adicional), 0)) * 100) / 100;
+    if (item.preco_unitario_esperado != null && Math.round(item.preco_unitario_esperado * 100) !== Math.round(unitPrice * 100)) {
+      throw httpError(409, 'O preço de um produto mudou. Atualize o cardápio e tente novamente.');
+    }
     return {
       cardapio_produto_id: num(catalogProduct.id), produto_id: num(catalogProduct.produto_id), nome: catalogProduct.nome_exibicao || catalogProduct.produto_nome,
       quantidade: item.quantidade, preco_unitario: unitPrice, observacao: orderNote(item.observacao, options),

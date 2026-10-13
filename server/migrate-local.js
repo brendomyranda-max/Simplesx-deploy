@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SqliteDb from './sqlite-db.js';
 import { loadLocalEnv, localDatabasePath } from './env.js';
+import { migrarSlugsLojas } from '../shared/loja-slug.js';
 
 loadLocalEnv();
 
@@ -16,6 +17,7 @@ const DB_FILE = localDatabasePath(ROOT);
 
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 const db = new SqliteDb(DB_FILE);
+await migrarSlugsLojas(db);
 const rows = db.prepare('SELECT file, aplicada_em FROM _migrations ORDER BY file').all();
 console.log('Migrações aplicadas:');
 for (const r of rows.results) console.log(`  - ${r.file} (${r.aplicada_em})`);

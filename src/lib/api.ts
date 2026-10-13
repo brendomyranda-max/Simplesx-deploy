@@ -404,7 +404,7 @@ export const onlinePublicApi = {
   order: (slug: string, body: {
     chave: string; cliente_nome: string; telefone: string; tipo_entrega: 'entrega' | 'retirada'; endereco?: string;
     forma_pagamento: 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
-    itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; observacao?: string }[];
+    itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; preco_unitario_esperado?: number; observacao?: string }[];
   }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
   track: (slug: string, chave: string) => api.get<{
     id: number;
@@ -422,6 +422,7 @@ export const onlinePublicApi = {
     criado_em: string;
     atualizado_em: string;
     loja: string;
+    whatsapp_suporte?: string | null;
     itens: { nome: string; quantidade: number }[];
   }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos/${encodeURIComponent(chave)}`),
 };

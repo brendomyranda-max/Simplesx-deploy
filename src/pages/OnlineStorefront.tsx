@@ -1,5 +1,5 @@
 /**
- * Site público de delivery.
+ * Site público de delivery e cardápio para consulta.
  * O cliente só vê produtos publicados a partir do estoque.
  * Quem entra com o módulo Gestor da DoixP ganha a aba Configurar.
  */
@@ -9,7 +9,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, ChevronRight, Flame, Heart, MapPin, Minus, Plus,
   Search, ShoppingBag, Settings2, Store, X, Check, Bike,
-  CreditCard, UtensilsCrossed, PackagePlus,
+  BookOpen, CreditCard, Eye, UtensilsCrossed, PackagePlus,
 } from 'lucide-react';
 import { toDataURL } from 'qrcode';
 import { fmtBRL } from '@/lib/format';
@@ -18,9 +18,12 @@ import type { AreaEntrega, CategoriaCardapio, CategoriaLoja, ModoEntrega, Online
 import { fmtKm, lerPontoCliente, previaEntrega, taxaDaSacola, textoCobrancaCliente, textoEntrega } from '@/lib/localizacao-cliente';
 import { Marketplace } from '@/pages/Marketplace';
 import { BrandLogo } from '@/components/BrandLogo';
+import { gravarUltimoPedido, lerUltimoPedido, SUPORTE_DOIXP_URL, whatsappDaLoja } from '@/lib/delivery-cliente';
 import { FotoGaleria } from '@/components/FotoGaleria';
+import { ConfiguracaoCardapioOnline } from '@/components/ModoCardapioOnline';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
+import { CATEGORIAS_DELIVERY } from '../../shared/categorias-delivery.js';
 import './online-storefront.css';
 
 type Product = {
@@ -29,6 +32,7 @@ type Product = {
   name: string;
   description: string;
   price: number;
+  originalPrice: number | null;
   photo: string | null;
   available: boolean;
   ingredients: { id: number; name: string }[];
@@ -49,14 +53,17 @@ type Aba = 'cardapio' | 'configurar';
 
 const addOnPrice = (item: CartItem) => item.additions.reduce((total, name) => total + (item.product.additions.find((add) => add.name === name)?.price || 0), 0);
 
-function paraCardapio(produto: OnlineCatalogProduct): Product {
+function paraCardapio(produto: OnlineCatalogProduct, aceitarPromocao = true): Product {
   const preco = Number(produto.preco);
+  const promocional = produto.preco_promocional == null ? null : Number(produto.preco_promocional);
+  const emPromocao = aceitarPromocao && promocional != null && Number.isFinite(promocional) && promocional >= 0 && promocional < preco;
   return {
     id: produto.id,
     category: produto.categoria_nome || 'Outros',
     name: produto.nome,
     description: produto.descricao || '',
-    price: Number.isFinite(preco) ? preco : 0,
+    price: emPromocao ? promocional : Number.isFinite(preco) ? preco : 0,
+    originalPrice: emPromocao ? preco : null,
     photo: produto.foto_url,
     available: produto.disponivel === 1 && produto.ativo !== 0,
     ingredients: produto.opcoes.filter((opcao) => opcao.tipo === 'removivel').map((opcao) => ({ id: opcao.id, name: opcao.nome })),
@@ -119,6 +126,14 @@ function LojaOnline() {
   const [estoqueAberto, setEstoqueAberto] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const somenteConsulta = loja?.aceita_pedidos_online === 0;
+
+  useEffect(() => {
+    setCart([]);
+    setCustomizing(null);
+    setCartOpen(false);
+    setCheckoutOpen(false);
+  }, [slugRota, somenteConsulta]);
 
   useEffect(() => {
     let ativo = true;
@@ -170,6 +185,10 @@ function LojaOnline() {
         const ponto = lerPontoCliente();
         const publico = await onlinePublicApi.store(slugRota, ponto ? { lat: ponto.latitude, lng: ponto.longitude } : undefined);
         if (!ativo) return;
+        if (publico.loja.slug !== slugRota) {
+          navigate(`/pedido/${publico.loja.slug}${configurarNaUrl ? '?configurar=1' : ''}`, { replace: true });
+          return;
+        }
         setLoja(publico.loja);
         setCatalogo(publico.produtos);
         setEstado('pronto');
@@ -184,13 +203,14 @@ function LojaOnline() {
 
   const visiveis = useMemo(() => catalogo
     .filter((produto) => aba === 'configurar' || (produto.preco != null && produto.disponivel === 1 && produto.ativo !== 0))
-    .map(paraCardapio), [catalogo, aba]);
+    .map((produto) => paraCardapio(produto, !somenteConsulta)), [catalogo, aba, somenteConsulta]);
 
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
   const subtotal = cart.reduce((total, item) => total + (item.product.price + addOnPrice(item)) * item.quantity, 0);
   const taxaSacola = taxaDaSacola(loja);
 
   const addToCart = (item: Omit<CartItem, 'key' | 'quantity'>, quantity = 1) => {
+    if (somenteConsulta) return;
     setCart((current) => {
       const found = current.find((cartItem) =>
         cartItem.product.id === item.product.id &&
@@ -221,6 +241,11 @@ function LojaOnline() {
     setCatalogo(produtosAdmin.filter((produto) => produto.ativo !== 0));
     setCategoriasCardapio(secoes);
     setEstoque(produtosEstoque.filter((produto) => produto.ativo && (produto.tipo === 'produto' || produto.tipo === 'composto')));
+  };
+
+  const atualizarLoja = (proxima: OnlineStore) => {
+    setLoja(proxima);
+    if (proxima.slug !== slugRota) navigate(`/pedido/${proxima.slug}${aba === 'configurar' ? '?configurar=1' : ''}`, { replace: true });
   };
 
   const publicarDoEstoque = async (produto: Produto) => {
@@ -309,9 +334,11 @@ function LojaOnline() {
     await recarregarDono();
   };
 
-  const salvarConfiguracao = async (produto: OnlineCatalogProduct, draft: { preco: string; descricao: string; ingredientes: string; foto: string; disponivel: boolean; acrescimos: LinhaAcrescimo[]; categoriaId: number | null }) => {
+  const salvarConfiguracao = async (produto: OnlineCatalogProduct, draft: { preco: string; precoPromocional: string; descricao: string; ingredientes: string; foto: string; disponivel: boolean; acrescimos: LinhaAcrescimo[]; categoriaId: number | null }) => {
     const preco = Number(draft.preco.replace(',', '.'));
-    if (!Number.isFinite(preco) || preco < 0) throw new Error('Informe o preço do delivery');
+    const precoPromocional = draft.precoPromocional.trim() ? Number(draft.precoPromocional.replace(',', '.')) : null;
+    if (!draft.preco.trim() || !Number.isFinite(preco) || preco < 0) throw new Error('Informe o preço do delivery');
+    if (precoPromocional != null && (!Number.isFinite(precoPromocional) || precoPromocional < 0 || precoPromocional >= preco)) throw new Error('O preço promocional deve ser menor que o preço normal');
     const lidos = lerAcrescimos(draft.acrescimos, draft.acrescimos.map((linha) => ({ id: Number(linha.insumo_id), nome: linha.nome || '', preco: linha.preco })));
     if (lidos.erro) throw new Error(lidos.erro);
     const removiveis = [...new Set(draft.ingredientes.split(',').map((item) => item.trim()).filter(Boolean))]
@@ -328,7 +355,7 @@ function LojaOnline() {
       ? catalogo.filter((item) => item.id !== produto.id && (item.cardapio_categoria_id ?? null) === draft.categoriaId).reduce((maximo, item) => Math.max(maximo, item.ordem), -1) + 1
       : produto.ordem;
     const atualizado = await onlineApi.updateProduct(produto.id, {
-      preco, descricao: draft.descricao, foto_url: draft.foto || null, disponivel: draft.disponivel ? 1 : 0,
+      preco, preco_promocional: precoPromocional, descricao: draft.descricao, foto_url: draft.foto || null, disponivel: draft.disponivel ? 1 : 0,
       cardapio_categoria_id: draft.categoriaId, ordem, opcoes,
     });
     setCatalogo((atual) => atual.map((item) => item.id === atualizado.id ? { ...atualizado, vendidos: atualizado.vendidos ?? item.vendidos } : item));
@@ -338,6 +365,7 @@ function LojaOnline() {
 
   const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null }) => {
     if (!loja?.slug) throw new Error('Loja indisponível');
+    if (somenteConsulta) throw new Error('Este cardápio está disponível apenas para consulta.');
     const chave = `web${crypto.randomUUID().replace(/-/g, '')}`;
     await onlinePublicApi.order(loja.slug, {
       chave,
@@ -350,6 +378,7 @@ function LojaOnline() {
       itens: cart.map((item) => ({
         cardapio_produto_id: item.product.id,
         quantidade: item.quantity,
+        preco_unitario_esperado: Math.round((item.product.price + addOnPrice(item)) * 100) / 100,
         opcoes_ids: [
           ...item.product.ingredients.filter((ingrediente) => item.removed.includes(ingrediente.name)).map((ingrediente) => ingrediente.id),
           ...item.product.additions.filter((adicional) => item.additions.includes(adicional.name)).map((adicional) => adicional.id),
@@ -359,12 +388,14 @@ function LojaOnline() {
     });
     setCart([]);
     setCheckoutOpen(false);
-    navigate(`/pedido/${loja.slug}/acompanhar/${chave}`);
+    const caminho = `/pedido/${loja.slug}/acompanhar/${chave}`;
+    gravarUltimoPedido(caminho);
+    navigate(caminho);
   };
 
   const prazo = loja ? tempoEntrega(loja) : null;
   const configurandoAgora = podeConfigurar && aba === 'configurar';
-  const resumoLoja = loja ? [
+  const resumoLoja = somenteConsulta ? 'Cardápio online · Consulte nossos produtos e preços.' : loja ? [
     loja.ativo ? 'Aceitando pedidos' : 'Cardápio do estabelecimento',
     prazo,
     loja.aceita_entrega ? textoEntrega(loja) : 'Retirada no balcão',
@@ -374,25 +405,30 @@ function LojaOnline() {
   const enderecoTopo = pontoCliente?.endereco
     ? (pontoCliente.endereco.length > 42 ? `${pontoCliente.endereco.slice(0, 42)}…` : pontoCliente.endereco)
     : '';
+  const suporteLojaUrl = whatsappDaLoja(loja?.whatsapp_suporte);
 
   return (
     <div className="online-storefront min-h-viewport">
       <header className="online-topbar">
-        <Link className="online-brand" to="/pedido" aria-label="Voltar para o DoixP Delivery">
+        {somenteConsulta ? <span className="online-brand">{loja?.nome}</span> : <Link className="online-brand" to="/pedido" aria-label="Voltar para o DoixP Delivery">
           {!loja?.nome && <span className="online-brand-mark"><BrandLogo aria-hidden="true" alt="" /></span>}
           <span>{loja?.nome || 'DoixP Delivery'}</span>
-        </Link>
-        <Link className="online-market-back" to="/pedido">Todas as lojas</Link>
-        <div className="online-address"><MapPin aria-hidden="true" /><span>Entregar em</span><b>{enderecoTopo || (loja?.aceita_entrega ? 'Informar no pedido' : 'Retirada no balcão')}</b><ChevronRight aria-hidden="true" /></div>
-        {aba === 'cardapio' && <button className="online-cart-trigger" type="button" onClick={() => setCartOpen(true)} aria-label={`Abrir sacola, ${cartCount} itens`}>
+        </Link>}
+        {!somenteConsulta && <Link className="online-market-back" to="/pedido">Todas as lojas</Link>}
+        {!somenteConsulta && <div className="online-address"><MapPin aria-hidden="true" /><span>Entregar em</span><b>{enderecoTopo || (loja?.aceita_entrega ? 'Informar no pedido' : 'Retirada no balcão')}</b><ChevronRight aria-hidden="true" /></div>}
+        {!somenteConsulta && aba === 'cardapio' && <button className="online-cart-trigger" type="button" onClick={() => setCartOpen(true)} aria-label={`Abrir sacola, ${cartCount} itens`}>
           <ShoppingBag aria-hidden="true" /><span>Sacola</span>{cartCount > 0 && <em>{cartCount}</em>}
         </button>}
       </header>
 
       <main id="inicio" className="online-main">
         <section className={`online-menu-section${configurandoAgora ? '' : ' online-menu-direto'}`} aria-labelledby="menu-title">
+          {!somenteConsulta && <nav className="online-customer-links" aria-label="Suporte do delivery">
+            {suporteLojaUrl && <a href={suporteLojaUrl} target="_blank" rel="noopener noreferrer">Falar com a loja no WhatsApp</a>}
+            <a href={SUPORTE_DOIXP_URL} target="_blank" rel="noopener noreferrer">Suporte DoixP</a>
+          </nav>}
           {podeConfigurar && (
-            <div className="online-config-switch" role="tablist" aria-label="Modo do delivery">
+            <div className="online-config-switch" role="tablist" aria-label="Modo do cardápio online">
               <button type="button" className={aba === 'cardapio' ? 'active' : ''} onClick={() => setAba('cardapio')}>Cardápio</button>
               <button type="button" className={aba === 'configurar' ? 'active' : ''} onClick={() => setAba('configurar')}>Configurar</button>
             </div>
@@ -401,23 +437,26 @@ function LojaOnline() {
             <div className="online-section-heading">
               <div>
                 <p>SÓ QUEM TEM O GESTOR</p>
-                <h2 id="menu-title">Configurar delivery</h2>
+                <h2 id="menu-title">Configurar {somenteConsulta ? 'cardápio online' : 'delivery'}</h2>
               </div>
               <label className="online-search"><Search aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar no cardápio" /></label>
             </div>
           ) : (
             <header className="online-loja-cabecalho">
-              <div>
-                <h1 id="menu-title">{loja?.nome || 'Delivery'}</h1>
-                {resumoLoja && <p className="online-loja-resumo">{resumoLoja}</p>}
+              <div className="online-loja-identidade">
+                {loja?.logo_url && <img className="online-loja-foto" src={loja.logo_url} alt={`Foto de perfil de ${loja.nome}`} />}
+                <div><h1 id="menu-title">{loja?.nome || 'Delivery'}</h1>
+                {resumoLoja && <p className="online-loja-resumo">{resumoLoja}</p>}</div>
               </div>
               <label className="online-search"><Search aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar no cardápio" /></label>
             </header>
           )}
           {configurandoAgora && <p className="online-config-note">O cliente vê o nome da loja, os mais vendidos e todas as categorias. Publique só item do estoque que estiver disponível.</p>}
-          {configurandoAgora && <CategoriasDaLoja onChange={(nomes) => setLoja((atual) => atual ? { ...atual, segmentos: nomes } : atual)} />}
-          {configurandoAgora && loja && <NomeDaLoja loja={loja} onSaved={setLoja} />}
-          {configurandoAgora && loja && <AreaDaLoja loja={loja} onSaved={setLoja} />}
+          {configurandoAgora && loja && <section className="online-category-box"><ConfiguracaoCardapioOnline loja={loja} onSaved={atualizarLoja} /></section>}
+          {configurandoAgora && !somenteConsulta && <CategoriasDaLoja onChange={(nomes) => setLoja((atual) => atual ? { ...atual, segmentos: nomes } : atual)} />}
+          {configurandoAgora && loja && <NomeDaLoja loja={loja} onSaved={atualizarLoja} />}
+          {configurandoAgora && !somenteConsulta && loja && <SuporteDaLoja loja={loja} onSaved={atualizarLoja} />}
+          {configurandoAgora && !somenteConsulta && loja && <AreaDaLoja loja={loja} onSaved={atualizarLoja} />}
           {estado === 'carregando' && <div className="online-empty"><b>Carregando o cardápio…</b></div>}
           {estado === 'vazio' && <div className="online-empty"><Store /><b>Abra o link da loja</b><span>O cliente entra pelo endereço publicado pelo estabelecimento.</span></div>}
           {estado === 'erro' && <div className="online-empty"><Store /><b>Loja indisponível</b><span>{mensagem}</span></div>}
@@ -445,35 +484,38 @@ function LojaOnline() {
               />
             </>
           ) : (
-            <CardapioRolavel produtos={visiveis} busca={search} onSelect={setCustomizing} />
+            <CardapioRolavel produtos={visiveis} busca={search} somenteConsulta={somenteConsulta} onSelect={setCustomizing} />
           ))}
         </section>
 
-        <section className="online-benefits">
+        {somenteConsulta ? <section className="online-benefits online-benefits-consulta" aria-label="Sobre o cardápio">
+          <div><BookOpen /><span><b>Cardápio online</b><small>Consulte produtos, fotos, descrições e preços.</small></span></div>
+          <div><Store /><span><b>Atendimento no estabelecimento</b><small>Para fazer seu pedido, fale com a equipe da loja.</small></span></div>
+        </section> : <section className="online-benefits">
           <div><Bike /><span><b>Entrega</b><small>{loja?.aceita_entrega ? (loja.raio_entrega_km != null ? `Até ${fmtKm(loja.raio_entrega_km)} do estabelecimento.` : 'No endereço informado no pedido.') : 'Esta loja não está aceitando entrega.'}</small></span></div>
           <div><CreditCard /><span><b>Pagamento</b><small>Dinheiro ou maquininha na entrega ou retirada.</small></span></div>
           <div><Heart /><span><b>Cardápio real</b><small>Só entra o que foi cadastrado no estoque.</small></span></div>
-        </section>
+        </section>}
       </main>
 
-      <footer className="online-footer"><span className="online-brand">{loja?.nome || 'DoixP Delivery'}</span><p>Seu pedido, do seu jeito.</p><small>Uma experiência de pedidos com DoixP</small></footer>
+      <footer className="online-footer"><span className="online-brand">{loja?.nome || 'DoixP Delivery'}</span><p>{somenteConsulta ? 'Nosso cardápio, sempre à mão.' : 'Seu pedido, do seu jeito.'}</p><small>{somenteConsulta ? 'Cardápio online com DoixP' : 'Uma experiência de pedidos com DoixP'}</small></footer>
 
-      {aba === 'cardapio' && cartCount > 0 && <button className="online-mobile-cart" type="button" onClick={() => setCartOpen(true)}><ShoppingBag /><span><b>Ver sacola</b><small>{cartCount} {cartCount === 1 ? 'item' : 'itens'}</small></span><strong>{fmtBRL(subtotal)}</strong></button>}
-      {customizing && <ProductCustomizer product={customizing} onClose={() => setCustomizing(null)} onAdd={addToCart} />}
+      {!somenteConsulta && aba === 'cardapio' && cartCount > 0 && <button className="online-mobile-cart" type="button" onClick={() => setCartOpen(true)}><ShoppingBag /><span><b>Ver sacola</b><small>{cartCount} {cartCount === 1 ? 'item' : 'itens'}</small></span><strong>{fmtBRL(subtotal)}</strong></button>}
+      {customizing && <ProductCustomizer product={customizing} somenteConsulta={somenteConsulta} onClose={() => setCustomizing(null)} onAdd={addToCart} />}
       {configurando && <ConfigurarProduto produto={configurando} categorias={categoriasCardapio} composto={estoque.some((item) => item.id === configurando.produto_id && item.tipo === 'composto')} onClose={() => setConfigurando(null)} onSave={salvarConfiguracao} onRemover={removerDoCardapio} />}
       {estoqueAberto && <EstoquePicker produtos={estoque.filter((produto) => !catalogo.some((item) => item.produto_id === produto.id))} onClose={() => setEstoqueAberto(false)} onPick={publicarDoEstoque} />}
-      {cartOpen && <CartDrawer cart={cart} subtotal={subtotal} deliveryFee={taxaSacola} onClose={() => setCartOpen(false)} onChange={changeQuantity} onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }} />}
-      {checkoutOpen && loja && <CheckoutModal loja={loja} totalBase={subtotal} onClose={() => setCheckoutOpen(false)} onSubmit={enviarPedido} />}
+      {!somenteConsulta && cartOpen && <CartDrawer cart={cart} subtotal={subtotal} deliveryFee={taxaSacola} onClose={() => setCartOpen(false)} onChange={changeQuantity} onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }} />}
+      {!somenteConsulta && checkoutOpen && loja && <CheckoutModal loja={loja} totalBase={subtotal} onClose={() => setCheckoutOpen(false)} onSubmit={enviarPedido} />}
     </div>
   );
 }
 
 function FotoProduto({ product, grande = false }: { product: Product; grande?: boolean }) {
   const classe = grande ? 'online-customizer-image' : 'online-product-image';
-  return <div className={`${classe} ${product.photo ? 'tem-foto' : 'burger'}`}>{product.photo ? <img src={product.photo} alt="" /> : <span aria-hidden="true">🍽️</span>}{!product.available && <b>Pausado</b>}</div>;
+  return <div className={`${classe} ${product.photo ? 'tem-foto' : 'burger'}`}>{product.photo ? <img src={product.photo} alt="" /> : <span aria-hidden="true">🍽️</span>}{!product.available ? <b>Pausado</b> : product.originalPrice != null ? <b className="online-promo-badge">Promoção</b> : null}</div>;
 }
 
-const SUGESTOES = ['Hambúrgueres', 'Pizzaria', 'Comida japonesa'];
+const SUGESTOES = CATEGORIAS_DELIVERY.map((categoria) => categoria.nome);
 
 function CategoriasDaLoja({ onChange }: { onChange: (nomes: string[]) => void }) {
   const [lista, setLista] = useState<CategoriaLoja[]>([]);
@@ -701,7 +743,7 @@ function GestorCardapio({
   </div>;
 }
 
-function CardapioRolavel({ produtos, busca, onSelect }: { produtos: Product[]; busca: string; onSelect: (product: Product) => void }) {
+function CardapioRolavel({ produtos, busca, somenteConsulta, onSelect }: { produtos: Product[]; busca: string; somenteConsulta: boolean; onSelect: (product: Product) => void }) {
   const termo = busca.trim().toLocaleLowerCase('pt-BR');
   const raiz = useRef<HTMLDivElement>(null);
   const lista = termo
@@ -722,13 +764,14 @@ function CardapioRolavel({ produtos, busca, onSelect }: { produtos: Product[]; b
       .sort((a, b) => b.sold - a.sold || a.name.localeCompare(b.name, 'pt-BR'))
       .slice(0, 8)
   ), [produtos, termo]);
-  const [ativa, setAtiva] = useState(maisVendidos[0] ? 'Mais vendidos' : (grupos[0]?.nome || ''));
+  const promocoes = useMemo(() => termo ? [] : produtos.filter((produto) => produto.originalPrice != null), [produtos, termo]);
+  const [ativa, setAtiva] = useState(promocoes.length ? 'Promoções' : maisVendidos[0] ? 'Mais vendidos' : (grupos[0]?.nome || ''));
 
   useEffect(() => {
     if (termo) return;
-    const nomes = [...(maisVendidos.length ? ['Mais vendidos'] : []), ...grupos.map((grupo) => grupo.nome)];
+    const nomes = [...(promocoes.length ? ['Promoções'] : []), ...(maisVendidos.length ? ['Mais vendidos'] : []), ...grupos.map((grupo) => grupo.nome)];
     setAtiva((atual) => (nomes.includes(atual) ? atual : (nomes[0] || '')));
-  }, [termo, grupos, maisVendidos.length]);
+  }, [termo, grupos, promocoes.length, maisVendidos.length]);
 
   useEffect(() => {
     const root = raiz.current;
@@ -742,7 +785,7 @@ function CardapioRolavel({ produtos, busca, onSelect }: { produtos: Product[]; b
     }, { rootMargin: '-20% 0px -60% 0px', threshold: [0, 0.15] });
     secoes.forEach((secao) => observer.observe(secao));
     return () => observer.disconnect();
-  }, [termo, grupos, maisVendidos.length]);
+  }, [termo, grupos, promocoes.length, maisVendidos.length]);
 
   const ir = (nome: string, id: string) => {
     setAtiva(nome);
@@ -760,21 +803,30 @@ function CardapioRolavel({ produtos, busca, onSelect }: { produtos: Product[]; b
     <div ref={raiz}>
       {!termo && (
         <div className="online-categories online-categories-fixas" aria-label="Categorias">
+          {promocoes.length > 0 && <button type="button" className={ativa === 'Promoções' ? 'active' : ''} onClick={() => ir('Promoções', 'secao-promocoes')}>Promoções</button>}
           {maisVendidos.length > 0 && <button type="button" className={ativa === 'Mais vendidos' ? 'active' : ''} onClick={() => ir('Mais vendidos', 'secao-mais-vendidos')}>Mais vendidos</button>}
           {grupos.map((grupo) => <button key={grupo.id} type="button" className={ativa === grupo.nome ? 'active' : ''} onClick={() => ir(grupo.nome, grupo.id)}>{grupo.nome}</button>)}
         </div>
       )}
       {termo ? (
         <div className="online-product-grid">
-          {lista.map((product) => <ProductCard key={product.id} product={product} configurar={false} onSelect={() => onSelect(product)} />)}
+          {lista.map((product) => <ProductCard key={product.id} product={product} somenteConsulta={somenteConsulta} onSelect={() => onSelect(product)} />)}
         </div>
       ) : (
         <>
+          {promocoes.length > 0 && (
+            <section id="secao-promocoes" data-secao="Promoções" className="online-categoria" aria-labelledby="titulo-promocoes">
+              <h2 id="titulo-promocoes">Promoções no delivery</h2>
+              <div className="online-best">
+                {promocoes.map((product) => <ProductCard key={`promocao-${product.id}`} product={product} somenteConsulta={somenteConsulta} onSelect={() => onSelect(product)} />)}
+              </div>
+            </section>
+          )}
           {maisVendidos.length > 0 && (
             <section id="secao-mais-vendidos" data-secao="Mais vendidos" className="online-categoria" aria-labelledby="titulo-mais-vendidos">
               <h2 id="titulo-mais-vendidos">Mais vendidos</h2>
               <div className="online-best">
-                {maisVendidos.map((product) => <ProductCard key={`venda-${product.id}`} product={product} configurar={false} onSelect={() => onSelect(product)} />)}
+                {maisVendidos.map((product) => <ProductCard key={`venda-${product.id}`} product={product} somenteConsulta={somenteConsulta} onSelect={() => onSelect(product)} />)}
               </div>
             </section>
           )}
@@ -782,7 +834,7 @@ function CardapioRolavel({ produtos, busca, onSelect }: { produtos: Product[]; b
             <section key={grupo.id} id={grupo.id} data-secao={grupo.nome} className="online-categoria" aria-labelledby={`${grupo.id}-titulo`}>
               <h2 id={`${grupo.id}-titulo`}>{grupo.nome}</h2>
               <div className="online-product-grid">
-                {grupo.itens.map((product) => <ProductCard key={product.id} product={product} configurar={false} onSelect={() => onSelect(product)} />)}
+                {grupo.itens.map((product) => <ProductCard key={product.id} product={product} somenteConsulta={somenteConsulta} onSelect={() => onSelect(product)} />)}
               </div>
             </section>
           ))}
@@ -792,17 +844,17 @@ function CardapioRolavel({ produtos, busca, onSelect }: { produtos: Product[]; b
   );
 }
 
-function ProductCard({ product, configurar, onSelect }: { product: Product; configurar: boolean; onSelect: () => void }) {
+function ProductCard({ product, somenteConsulta, onSelect }: { product: Product; somenteConsulta: boolean; onSelect: () => void }) {
   return <article className="online-product-card">
     <FotoProduto product={product} />
     <div className="online-product-body">
-      <h3>{product.name}</h3><p>{product.description || 'Produto cadastrado no estoque.'}</p>
-      <div className="online-product-bottom"><span><strong>{fmtBRL(product.price)}</strong></span><button type="button" onClick={onSelect} aria-label={configurar ? `Configurar ${product.name}` : `Adicionar ${product.name}`}>{configurar ? <Settings2 /> : <Plus />}</button></div>
+      <h3>{product.name}</h3><p>{product.description || 'Confira este item do nosso cardápio.'}</p>
+      <div className="online-product-bottom"><span>{product.originalPrice != null && <del>{fmtBRL(product.originalPrice)}</del>}<strong className={product.originalPrice != null ? 'online-promo-price' : ''}>{fmtBRL(product.price)}</strong></span><button type="button" onClick={onSelect} aria-label={somenteConsulta ? `Ver detalhes de ${product.name}` : `Adicionar ${product.name}`}>{somenteConsulta ? <Eye /> : <Plus />}</button></div>
     </div>
   </article>;
 }
 
-function ProductCustomizer({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (item: Omit<CartItem, 'key' | 'quantity'>, quantity?: number) => void }) {
+function ProductCustomizer({ product, somenteConsulta, onClose, onAdd }: { product: Product; somenteConsulta: boolean; onClose: () => void; onAdd: (item: Omit<CartItem, 'key' | 'quantity'>, quantity?: number) => void }) {
   const [removed, setRemoved] = useState<string[]>([]);
   const [additions, setAdditions] = useState<string[]>([]);
   const [note, setNote] = useState('');
@@ -814,18 +866,24 @@ function ProductCustomizer({ product, onClose, onAdd }: { product: Product; onCl
       <button className="online-close" type="button" onClick={onClose} aria-label="Fechar"><X /></button>
       <FotoProduto product={product} grande />
       <div className="online-customizer-content">
-        <p className="online-eyebrow">PERSONALIZE SEU PEDIDO</p><h2 id="customizer-title">{product.name}</h2><p>{product.description}</p><strong className="online-customizer-price">{fmtBRL(product.price)}</strong>
+        <p className="online-eyebrow">{somenteConsulta ? 'DETALHES DO PRODUTO' : 'PERSONALIZE SEU PEDIDO'}</p><h2 id="customizer-title">{product.name}</h2><p>{product.description}</p><div className="online-customizer-prices">{product.originalPrice != null && <><span>Promoção exclusiva no delivery</span><del>{fmtBRL(product.originalPrice)}</del></>}<strong className={`online-customizer-price ${product.originalPrice != null ? 'online-promo-price' : ''}`}>{fmtBRL(product.price)}</strong></div>
+        {somenteConsulta ? <>
+          {product.ingredients.length > 0 && <p>Ingredientes removíveis: {product.ingredients.map((item) => item.name).join(', ')}.</p>}
+          {product.additions.length > 0 && <fieldset><legend>Adicionais disponíveis</legend>{product.additions.map((addition) => <div key={addition.id} className="online-choice"><span>{addition.name}</span><b>+ {fmtBRL(addition.price)}</b></div>)}</fieldset>}
+        </> : <>
         {product.ingredients.length > 0 && <fieldset><legend>Quer tirar algum ingrediente? <small>opcional</small></legend>{product.ingredients.map((ingredient) => <label key={ingredient.id} className="online-choice"><span><input type="checkbox" checked={removed.includes(ingredient.name)} onChange={() => toggle(ingredient.name, removed, setRemoved)} /><i /> Tirar {ingredient.name}</span></label>)}</fieldset>}
         {product.additions.length > 0 && <fieldset><legend>Acréscimo de produto <small>opcional</small></legend>{product.additions.map((addition) => <label key={addition.name} className="online-choice"><span><input type="checkbox" checked={additions.includes(addition.name)} onChange={() => toggle(addition.name, additions, setAdditions)} /><i /> {addition.name}</span><b>+ {fmtBRL(addition.price)}</b></label>)}</fieldset>}
         <label className="online-note">Alguma observação?<textarea value={note} maxLength={140} onChange={(event) => setNote(event.target.value)} placeholder="Ex.: ponto da carne, alergias..." /><small>{note.length}/140</small></label>
+        </>}
       </div>
-      <div className="online-customizer-footer"><div className="online-quantity"><button type="button" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)}><Minus /></button><b>{quantity}</b><button type="button" onClick={() => setQuantity((value) => value + 1)}><Plus /></button></div><button className="online-add-button" type="button" onClick={() => onAdd({ product, removed, additions, note }, quantity)}>Adicionar <strong>{fmtBRL(total)}</strong></button></div>
+      {!somenteConsulta && <div className="online-customizer-footer"><div className="online-quantity"><button type="button" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)}><Minus /></button><b>{quantity}</b><button type="button" onClick={() => setQuantity((value) => value + 1)}><Plus /></button></div><button className="online-add-button" type="button" onClick={() => onAdd({ product, removed, additions, note }, quantity)}>Adicionar <strong>{fmtBRL(total)}</strong></button></div>}
     </div>
   </div>;
 }
 
-function ConfigurarProduto({ produto, categorias, composto = false, onClose, onSave, onRemover }: { produto: OnlineCatalogProduct; categorias: CategoriaCardapio[]; composto?: boolean; onClose: () => void; onSave: (produto: OnlineCatalogProduct, draft: { preco: string; descricao: string; ingredientes: string; foto: string; disponivel: boolean; acrescimos: LinhaAcrescimo[]; categoriaId: number | null }) => Promise<void>; onRemover: (produto: OnlineCatalogProduct) => Promise<void> }) {
+function ConfigurarProduto({ produto, categorias, composto = false, onClose, onSave, onRemover }: { produto: OnlineCatalogProduct; categorias: CategoriaCardapio[]; composto?: boolean; onClose: () => void; onSave: (produto: OnlineCatalogProduct, draft: { preco: string; precoPromocional: string; descricao: string; ingredientes: string; foto: string; disponivel: boolean; acrescimos: LinhaAcrescimo[]; categoriaId: number | null }) => Promise<void>; onRemover: (produto: OnlineCatalogProduct) => Promise<void> }) {
   const [preco, setPreco] = useState(produto.preco == null ? '' : String(produto.preco));
+  const [precoPromocional, setPrecoPromocional] = useState(produto.preco_promocional == null ? '' : String(produto.preco_promocional));
   const [categoriaId, setCategoriaId] = useState(produto.cardapio_categoria_id ? String(produto.cardapio_categoria_id) : '');
   const [descricao, setDescricao] = useState(produto.descricao || '');
   const [ingredientes, setIngredientes] = useState(produto.opcoes.filter((opcao) => opcao.tipo === 'removivel').map((opcao) => opcao.nome).join(', '));
@@ -836,7 +894,7 @@ function ConfigurarProduto({ produto, categorias, composto = false, onClose, onS
   useEffect(() => { produtoApi.insumos().then(setInsumos).catch(() => {}); }, []);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
-  const visual = paraCardapio({ ...produto, preco: Number(preco.replace(',', '.')) || 0, descricao, foto_url: foto, disponivel: disponivel ? 1 : 0 });
+  const visual = paraCardapio({ ...produto, preco: Number(preco.replace(',', '.')) || 0, preco_promocional: precoPromocional.trim() ? Number(precoPromocional.replace(',', '.')) : null, descricao, foto_url: foto, disponivel: disponivel ? 1 : 0 });
   return <div className="online-overlay" role="dialog" aria-modal="true" aria-labelledby="config-title">
     <div className="online-customizer">
       <button className="online-close" type="button" onClick={onClose} aria-label="Fechar"><X /></button>
@@ -847,7 +905,7 @@ function ConfigurarProduto({ produto, categorias, composto = false, onClose, onS
         setErro('');
         try {
           await onSave(produto, {
-            preco, descricao, ingredientes, foto, disponivel, categoriaId: categoriaId ? Number(categoriaId) : null,
+            preco, precoPromocional, descricao, ingredientes, foto, disponivel, categoriaId: categoriaId ? Number(categoriaId) : null,
             acrescimos: acrescimos.map((linha) => {
               const insumo = insumos.find((item) => item.id === Number(linha.insumo_id));
               return { ...linha, nome: insumo?.nome || linha.nome, preco: insumo?.preco ?? linha.preco ?? null };
@@ -862,7 +920,8 @@ function ConfigurarProduto({ produto, categorias, composto = false, onClose, onS
         <p>Foto da galeria, descrição e preço. O nome vem do estoque.</p>
         <div className="online-config-fields">
           <label>Foto da galeria<FotoGaleria value={foto} onChange={setFoto} /></label>
-          <label>Preço no delivery<input inputMode="decimal" value={preco} onChange={(event) => setPreco(event.target.value)} /></label>
+          <label>Preço normal no delivery<input inputMode="decimal" value={preco} onChange={(event) => setPreco(event.target.value)} /></label>
+          <label>Preço promocional (opcional)<input inputMode="decimal" value={precoPromocional} onChange={(event) => setPrecoPromocional(event.target.value)} placeholder="Sem promoção" /><small>O cliente verá o preço normal riscado e pagará este valor.</small></label>
           <label>Categoria no cardápio<select value={categoriaId} onChange={(event) => setCategoriaId(event.target.value)}><option value="">Sem categoria</option>{categorias.map((categoria) => <option key={categoria.id} value={categoria.id}>{categoria.nome}</option>)}</select></label>
           <AcrescimoCadastro linhas={acrescimos} onChange={setAcrescimos} insumos={insumos.filter((item) => item.id !== produto.produto_id)} />
           <label>Descrição{composto ? <small> Os ingredientes da ficha já estão escritos. Acrescente algo a mais se quiser.</small> : null}<textarea value={descricao} onChange={(event) => setDescricao(event.target.value)} rows={3} /></label>
@@ -894,17 +953,20 @@ function EstoquePicker({ produtos, onClose, onPick }: { produtos: Produto[]; onC
 
 function CartDrawer({ cart, subtotal, deliveryFee, onClose, onChange, onCheckout }: { cart: CartItem[]; subtotal: number; deliveryFee: number | null; onClose: () => void; onChange: (key: string, delta: number) => void; onCheckout: () => void }) {
   const taxaTexto = deliveryFee == null ? 'No endereço' : deliveryFee === 0 ? 'Grátis' : fmtBRL(deliveryFee);
-  return <div className="online-overlay online-cart-overlay" role="dialog" aria-modal="true" aria-labelledby="cart-title"><aside className="online-cart-drawer"><header><div><p>SEU PEDIDO</p><h2 id="cart-title">Sua sacola</h2></div><button className="online-close" type="button" onClick={onClose} aria-label="Fechar sacola"><X /></button></header>{cart.length === 0 ? <div className="online-cart-empty"><ShoppingBag /><b>Sua sacola está vazia</b><span>Escolha um produto cadastrado.</span><button type="button" onClick={onClose}>Ver cardápio</button></div> : <><div className="online-cart-list">{cart.map((item) => <div className="online-cart-item" key={item.key}><div className={`online-cart-thumb ${item.product.photo ? 'tem-foto' : 'burger'}`}>{item.product.photo ? <img src={item.product.photo} alt="" /> : '🍽️'}</div><div><b>{item.product.name}</b>{item.removed.length > 0 && <small>Sem {item.removed.join(', ')}</small>}{item.additions.length > 0 && <small>+ {item.additions.join(', ')}</small>}{item.note && <small>“{item.note}”</small>}<strong>{fmtBRL((item.product.price + addOnPrice(item)) * item.quantity)}</strong></div><div className="online-mini-quantity"><button type="button" onClick={() => onChange(item.key, -1)}><Minus /></button><b>{item.quantity}</b><button type="button" onClick={() => onChange(item.key, 1)}><Plus /></button></div></div>)}</div><div className="online-summary"><p><span>Subtotal</span><b>{fmtBRL(subtotal)}</b></p><p><span>Taxa de entrega</span><b>{taxaTexto}</b></p><p className="online-total"><span>Total</span><b>{fmtBRL(subtotal + (deliveryFee || 0))}</b></p></div><button className="online-checkout-button" type="button" onClick={onCheckout}>Continuar <ChevronRight /></button></>}</aside></div>;
+  const ultimoPedido = lerUltimoPedido();
+  return <div className="online-overlay online-cart-overlay" role="dialog" aria-modal="true" aria-labelledby="cart-title"><aside className="online-cart-drawer"><header><div><p>SEU PEDIDO</p><h2 id="cart-title">Sua sacola</h2></div><button className="online-close" type="button" onClick={onClose} aria-label="Fechar sacola"><X /></button></header>{cart.length === 0 ? <div className="online-cart-empty"><ShoppingBag />{ultimoPedido ? <><b>Acompanhe seu pedido</b><span>Veja o andamento do seu último pedido neste navegador.</span><Link className="online-cart-track-link" to={ultimoPedido}>Acompanhar meu pedido</Link></> : <><b>Sua sacola está vazia</b><span>Escolha um produto cadastrado.</span></>}<button type="button" onClick={onClose}>Ver cardápio</button></div> : <><div className="online-cart-list">{cart.map((item) => <div className="online-cart-item" key={item.key}><div className={`online-cart-thumb ${item.product.photo ? 'tem-foto' : 'burger'}`}>{item.product.photo ? <img src={item.product.photo} alt="" /> : '🍽️'}</div><div><b>{item.product.name}</b>{item.removed.length > 0 && <small>Sem {item.removed.join(', ')}</small>}{item.additions.length > 0 && <small>+ {item.additions.join(', ')}</small>}{item.note && <small>“{item.note}”</small>}<strong>{fmtBRL((item.product.price + addOnPrice(item)) * item.quantity)}</strong></div><div className="online-mini-quantity"><button type="button" onClick={() => onChange(item.key, -1)}><Minus /></button><b>{item.quantity}</b><button type="button" onClick={() => onChange(item.key, 1)}><Plus /></button></div></div>)}</div><div className="online-summary"><p><span>Subtotal</span><b>{fmtBRL(subtotal)}</b></p><p><span>Taxa de entrega</span><b>{taxaTexto}</b></p><p className="online-total"><span>Total</span><b>{fmtBRL(subtotal + (deliveryFee || 0))}</b></p></div><button className="online-checkout-button" type="button" onClick={onCheckout}>Continuar <ChevronRight /></button></>}</aside></div>;
 }
 
 function NomeDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
   const [nome, setNome] = useState(loja.nome || '');
+  const [foto, setFoto] = useState(loja.logo_url || '');
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
 
   useEffect(() => {
     setNome(loja.nome || '');
-  }, [loja.nome]);
+    setFoto(loja.logo_url || '');
+  }, [loja.nome, loja.logo_url]);
 
   const salvar = async () => {
     const texto = nome.trim();
@@ -915,9 +977,9 @@ function NomeDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
     setOcupado(true);
     setErro('');
     try {
-      onSaved(await onlineApi.updateStore({ nome: texto }));
+      onSaved(await onlineApi.updateStore({ nome: texto, logo_url: foto || null }));
     } catch (error: any) {
-      setErro(error?.error || 'Não foi possível salvar o nome');
+      setErro(error?.error || 'Não foi possível salvar o perfil');
     } finally {
       setOcupado(false);
     }
@@ -925,18 +987,44 @@ function NomeDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
 
   return (
     <section className="online-category-box online-aparencia">
-      <p className="online-eyebrow">NOME DA LOJA</p>
-      <h3>Como o cliente vê a loja</h3>
-      <p>No cardápio aparece este nome. Outra loja não pode usar o mesmo nome, nem trocando maiúsculas por minúsculas.</p>
+      <p className="online-eyebrow">PERFIL DO RESTAURANTE</p>
+      <h3>Nome e foto da loja</h3>
+      <p>Esta foto e este nome aparecem para os clientes na vitrine e no cardápio.</p>
+      <div><span>Foto de perfil</span><FotoGaleria value={foto} onChange={setFoto} /></div>
       <label>Nome da loja
         <input value={nome} maxLength={120} onChange={(event) => setNome(event.target.value)} />
       </label>
+      <p>Seu link: <Link to={`/pedido/${loja.slug}`}>doixp.com/pedido/{loja.slug}</Link></p>
       <div className="online-where-actions">
-        <button type="button" onClick={salvar} disabled={ocupado}>{ocupado ? 'Salvando…' : 'Salvar nome'}</button>
+        <button type="button" onClick={salvar} disabled={ocupado}>{ocupado ? 'Salvando…' : 'Salvar perfil'}</button>
       </div>
       {erro && <p className="online-erro">{erro}</p>}
     </section>
   );
+}
+
+function SuporteDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
+  const [numero, setNumero] = useState(loja.whatsapp_suporte || '');
+  const [erro, setErro] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  useEffect(() => { setNumero(loja.whatsapp_suporte || ''); }, [loja.whatsapp_suporte]);
+
+  const salvar = async () => {
+    setOcupado(true);
+    setErro('');
+    try { onSaved(await onlineApi.updateStore({ whatsapp_suporte: numero.trim() || null })); }
+    catch (error: any) { setErro(error?.error || 'Não foi possível salvar o WhatsApp.'); }
+    finally { setOcupado(false); }
+  };
+
+  return <section className="online-category-box online-aparencia">
+    <p className="online-eyebrow">SUPORTE AO CLIENTE</p>
+    <h3>WhatsApp do estabelecimento</h3>
+    <p>O cliente poderá falar com a loja no cardápio e no acompanhamento do pedido.</p>
+    <label>Número com DDD<input type="tel" inputMode="tel" value={numero} onChange={(event) => setNumero(event.target.value)} placeholder="(11) 99999-9999" maxLength={20} /></label>
+    <div className="online-where-actions"><button type="button" onClick={salvar} disabled={ocupado}>{ocupado ? 'Salvando…' : 'Salvar WhatsApp'}</button></div>
+    {erro && <p className="online-erro" role="alert">{erro}</p>}
+  </section>;
 }
 
 function PixDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
@@ -1165,6 +1253,7 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         <button className="online-close" type="button" onClick={onClose} aria-label="Voltar"><ArrowLeft /></button>
         <p className="online-eyebrow">QUASE LÁ</p>
         <h2 id="checkout-title">Finalizar pedido</h2>
+        <p className="online-config-note">Cadastro com CPF e código de confirmação: em breve. Por enquanto, informe seus dados para esta compra e acompanhe o pedido pelo link.</p>
         <label>Seu nome<input required value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Como podemos te chamar?" /></label>
         <label>WhatsApp<input required inputMode="tel" value={telefone} onChange={(event) => setTelefone(event.target.value)} placeholder="(00) 00000-0000" /></label>
         <fieldset className="online-delivery-choice">
@@ -1261,37 +1350,48 @@ function AcompanharPedido() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [copiado, setCopiado] = useState(false);
+  const [atualizando, setAtualizando] = useState(false);
+  const atualizarRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let ativo = true;
-    let visto = false;
-    let timer = 0;
+    let buscando = false;
+    let encerrado = false;
     const buscar = async () => {
+      if (!ativo || buscando || encerrado) return;
+      buscando = true;
+      setAtualizando(true);
       try {
         const dados = await onlinePublicApi.track(slug, chave);
         if (!ativo) return;
-        visto = true;
         setPedido(dados);
         setErro('');
-        if (dados.etapa === 'cancelado' || dados.etapa === 'entregue') return;
-        timer = window.setTimeout(buscar, 8000);
+        encerrado = dados.etapa === 'cancelado' || dados.etapa === 'entregue';
       } catch (error: any) {
         if (!ativo) return;
-        if (!visto) setErro(error?.error || 'Não foi possível acompanhar este pedido');
-        else timer = window.setTimeout(buscar, 8000);
+        setErro(error?.error || 'Sem conexão para atualizar o pedido.');
       } finally {
-        if (ativo) setCarregando(false);
+        buscando = false;
+        if (ativo) { setCarregando(false); setAtualizando(false); }
       }
     };
+    atualizarRef.current = buscar;
+    const aoVoltar = () => { if (!document.hidden) buscar(); };
+    const timer = window.setInterval(() => { if (!document.hidden) buscar(); }, 5000);
+    document.addEventListener('visibilitychange', aoVoltar);
+    window.addEventListener('focus', aoVoltar);
     buscar();
     return () => {
       ativo = false;
-      window.clearTimeout(timer);
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', aoVoltar);
+      window.removeEventListener('focus', aoVoltar);
     };
   }, [slug, chave]);
 
   const passos = pedido?.tipo_entrega === 'retirada' ? PASSOS_RETIRADA : PASSOS_ENTREGA;
   const indice = pedido ? passos.findIndex((passo) => passo.id === pedido.etapa) : -1;
+  const suporteLojaUrl = pedido ? whatsappDaLoja(pedido.whatsapp_suporte, pedido.id) : null;
   const copiar = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -1314,7 +1414,7 @@ function AcompanharPedido() {
         {erro && !pedido && (
           <div className="online-empty">
             <Store />
-            <b>Pedido não encontrado</b>
+            <b>Não foi possível abrir o pedido</b>
             <span>{erro}</span>
             <Link to={`/pedido/${slug}`}>Voltar ao cardápio</Link>
           </div>
@@ -1324,6 +1424,7 @@ function AcompanharPedido() {
             <p className="online-eyebrow">{pedido.etapa === 'cancelado' ? 'PEDIDO ENCERRADO' : pedido.etapa === 'aguardando_pix' ? 'PAGUE COM PIX' : 'ACOMPANHAR PEDIDO'}</p>
             <h1>Pedido #{pedido.id}</h1>
             <p className="online-track-loja">{pedido.loja} · {pedido.tipo_entrega === 'retirada' ? 'Retirada no balcão' : 'Entrega'}</p>
+            {erro && <p className="online-erro" role="status">Não foi possível atualizar agora. {erro}</p>}
             {pedido.etapa === 'aguardando_pix' && pedido.pix_copia_cola && <PixDoPedido codigo={pedido.pix_copia_cola} loja={pedido.loja} aguardando />}
             {pedido.etapa === 'cancelado' ? (
               <div className="online-track-cancel">
@@ -1363,9 +1464,12 @@ function AcompanharPedido() {
             {pedido.tipo_entrega === 'entrega' && pedido.modo_entrega !== 'gratis' && pedido.entrega_gratis !== 1 && (pedido.taxa_entrega || 0) > 0 && (
               <p className="online-track-note">Entrega {fmtBRL(pedido.taxa_entrega)} inclusa no total.{pedido.modo_entrega === 'dividido' && pedido.valor_entrega != null ? ' A loja paga a outra parte.' : ''}</p>
             )}
-            <p className="online-track-note">Esta página atualiza sozinha. O link vale só para este pedido, nesta loja.</p>
+            <p className="online-track-note">{pedido.etapa === 'cancelado' || pedido.etapa === 'entregue' ? 'Pedido encerrado.' : 'Atualização automática a cada 5 segundos.'} O link vale só para este pedido, nesta loja.</p>
             <div className="online-track-actions">
+              {pedido.etapa !== 'cancelado' && pedido.etapa !== 'entregue' && <button type="button" onClick={() => atualizarRef.current()} disabled={atualizando}>{atualizando ? 'Atualizando…' : 'Atualizar agora'}</button>}
               <button type="button" onClick={copiar}>{copiado ? 'Link copiado' : 'Copiar link'}</button>
+              {suporteLojaUrl && <a href={suporteLojaUrl} target="_blank" rel="noopener noreferrer">Falar com a loja</a>}
+              <a href={SUPORTE_DOIXP_URL} target="_blank" rel="noopener noreferrer">Suporte DoixP</a>
               <Link to={`/pedido/${slug}`}>Voltar ao cardápio</Link>
             </div>
           </section>

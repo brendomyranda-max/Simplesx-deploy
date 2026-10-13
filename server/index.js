@@ -11,6 +11,7 @@ import SqliteDb from './sqlite-db.js';
 import { handle } from '../shared/router.js';
 import { loadLocalEnv, serverEnv, localDatabasePath } from './env.js';
 import { instaladorGestor, arquivoAtualizacaoGestor } from '../shared/gestor-releases.js';
+import { migrarSlugsLojas } from '../shared/loja-slug.js';
 
 loadLocalEnv();
 const config = serverEnv();
@@ -22,6 +23,7 @@ const PORT = Number(process.env.PORT || 3001);
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 
 const db = new SqliteDb(DB_FILE);
+await migrarSlugsLojas(db);
 const env = {
   DB: db,
   ...config,

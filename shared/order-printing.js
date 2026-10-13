@@ -14,6 +14,9 @@ export async function dispatchOrders(c, env, body) {
   if (!command) throw httpError(404, 'Comanda não encontrada');
   if (command.status !== 'aberta' || command.comanda_origem_id) throw httpError(409, 'Somente comandas abertas podem enviar pedidos');
   if (command.fechamento_bloqueado_ate > now()) throw httpError(409, 'A conta está sendo fechada. Aguarde a confirmação antes de enviar.');
+  const onlineOrder = command.mesa_tipo === 'online'
+    ? await env.DB.prepare('SELECT id, tipo_entrega, cliente_nome, telefone, endereco FROM pedidos_online WHERE comanda_id=?').bind(comandaId).first()
+    : null;
   if (body.itens_ids !== undefined && (!Array.isArray(body.itens_ids) || !body.itens_ids.length || body.itens_ids.some((id) => !Number.isInteger(id) || id <= 0))) {
     throw httpError(400, 'Selecione os itens do pedido');
   }
@@ -59,7 +62,13 @@ export async function dispatchOrders(c, env, body) {
       ].join('\n')) })));
       const header = ascii([
         '='.repeat(32), String(config.empresa_nome || 'MEU NEGÓCIO').toUpperCase(),
-        `MESA: ${command.mesa_tipo === 'cartao' && command.nfc_uid ? command.nfc_uid : command.numero}  GARÇOM: ${actorName}`, `DESTINO: ${route.nome}`,
+        ...(onlineOrder ? [
+          `PEDIDO DELIVERY #${onlineOrder.id} - ${onlineOrder.tipo_entrega === 'retirada' ? 'RETIRADA' : 'ENTREGA'}`,
+          `CLIENTE: ${onlineOrder.cliente_nome || command.cliente_nome || '-'}`,
+          `TELEFONE: ${onlineOrder.telefone || '-'}`,
+          ...(onlineOrder.tipo_entrega === 'entrega' && onlineOrder.endereco ? [`ENDERECO: ${onlineOrder.endereco}`] : []),
+        ] : [`MESA: ${command.mesa_tipo === 'cartao' && command.nfc_uid ? command.nfc_uid : command.numero}  GARÇOM: ${actorName}`]),
+        `DESTINO: ${route.nome}`,
         `PEDIDO: ${batchId.slice(0, 8)}`, '-'.repeat(32), '',
       ].join('\n'));
       const footer = ascii(`\n${'='.repeat(32)}\nEmitida: ${timestamp}\n`);

@@ -1,7 +1,7 @@
 {
   "name": "doixp",
   "private": true,
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "criar-token": "node server/criar-token.js",
     "tokens": "node server/gerenciar-tokens.js",
-    "deploy": "wrangler d1 migrations apply simplesx-db --remote && npm run build && wrangler pages deploy dist --project-name simplesx-projeto-beta",
+    "deploy": "npm run build && wrangler d1 migrations apply simplesx-db --remote && wrangler pages deploy dist --project-name simplesx-projeto-beta && node server/migrar-lojas-slugs.js --remote",
     "db:create": "wrangler d1 create simplesx-db",
     "db:migrate": "wrangler d1 migrations apply simplesx-db --remote",
     "db:migrate:local": "node server/migrate-local.js",

@@ -108,3 +108,22 @@ test('a loja publica nome, logo e capa ou cor', async (t) => {
   assert.equal(pagina.data.loja.logo_url, foto);
   assert.equal(pagina.data.loja.estabelecimento_id, undefined);
 });
+
+test('categorias principais filtram lojas que usam nomes anteriores equivalentes', async (t) => {
+  const raw = new SqliteDb(':memory:');
+  t.after(() => raw.close());
+  const grupos = [
+    ['Hambúrgueres', 'lanches'], ['Pizzaria', 'pizza'], ['Açaí', 'acai'], ['Marmitex', 'marmitas'], ['Promoções', 'promocao'],
+  ];
+  for (const [index, [nome]] of grupos.entries()) {
+    const id = index + 1;
+    raw.prepare('INSERT INTO estabelecimentos (id,nome,ativo) VALUES (?,?,1)').bind(id, `Loja ${id}`).run();
+    const env = { DB: new TenantDb(raw, id), rawDB: raw, estabelecimentoId: id };
+    await updateOnlineStoreHandler(context({ nome: `Restaurante ${id}`, ativo: 1 }), env);
+    await addStoreCategoryHandler(context({ nome }), env);
+  }
+  for (const [index, [, categoria]] of grupos.entries()) {
+    const resultado = await listPublicStoresHandler(context({}, {}, { categoria }), { DB: raw });
+    assert.deepEqual(resultado.data.lojas.map((loja) => loja.nome), [`Restaurante ${index + 1}`]);
+  }
+});

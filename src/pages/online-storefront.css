@@ -115,7 +115,48 @@
 .online-track-actions button { border: 0; background: var(--online-lime); color: var(--online-ink); }
 .online-track-actions a, .online-track-page .online-empty a { border: 1px solid var(--online-line); background: white; color: var(--online-green); }
 .online-market-back { margin-left: 8px; color: var(--online-green); font-size: 12px; font-weight: 800; text-decoration: none; }
+.online-customer-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 22px; padding: 12px 14px; border: 1px solid var(--online-line); border-radius: 12px; background: #fafafa; font-size: 12px; }
+.online-customer-links a { color: var(--online-green); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
+.online-customer-links span { color: var(--online-muted); }
+.online-customer-links .online-track-shortcut, .online-cart-empty .online-cart-track-link { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border-radius: 10px; background: var(--online-ink); color: white; font-size: 13px; font-weight: 800; text-decoration: none; }
+.online-cart-empty .online-cart-track-link { width: 100%; max-width: 270px; margin-top: 16px; }
+.online-market-cart-trigger { margin-left: auto; }
+.online-cart-trigger.online-market-cart-trigger span { display: inline; }
+.online-track-actions button:disabled { opacity: .55; cursor: wait; }
 .online-market { width: min(100% - 32px, 1168px); margin: 28px auto 72px; }
+.online-market .online-market-location { margin-top: 0; background: #fafafa; }
+.online-market-explore { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin: 38px 0 28px; }
+.online-market-explore .online-market-search { flex: 0 1 360px; margin: 0; }
+.online-market-category-section > h2, .online-market-stores-heading h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.6px; }
+.online-market-categories { display: flex; gap: 14px; overflow-x: auto; padding: 16px 2px 8px; scroll-snap-type: x proximity; }
+.online-market-categories button { flex: 0 0 142px; display: grid; justify-items: center; gap: 12px; min-height: 140px; padding: 18px 12px; border: 1px solid var(--online-line); border-radius: 18px; background: white; color: var(--online-ink); scroll-snap-align: start; transition: border-color .15s, background .15s; }
+.online-market-categories button > span { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 18px; background: #f5f5f5; }
+.online-market-categories button svg { width: 30px; height: 30px; stroke-width: 1.7; }
+.online-market-categories button b { font-size: 13px; font-weight: 700; }
+.online-market-categories button:hover, .online-market-categories button.active { border-color: #171717; background: #fafafa; }
+.online-market-categories button.active { box-shadow: inset 0 0 0 1px #171717; }
+.online-market-categories button[data-categoria="promocao"] > span { background: #fff1e7; color: #bd4b16; }
+.online-market-categories button[data-categoria="lanches"] > span { background: #fff5db; color: #986918; }
+.online-market-categories button[data-categoria="pizza"] > span { background: #fff0eb; color: #b5432b; }
+.online-market-categories button[data-categoria="acai"] > span { background: #f2ebfa; color: #75449b; }
+.online-market-categories button[data-categoria="marmitas"] > span { background: #edf5e8; color: #507636; }
+.online-market-stores { margin-top: 32px; }
+.online-market-stores-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.online-market-stores-heading p { margin: 5px 0 0; color: var(--online-muted); font-size: 13px; }
+.online-market-stores-heading > button { flex-shrink: 0; min-height: 38px; border: 1px solid var(--online-line); border-radius: 10px; padding: 8px 12px; background: white; color: var(--online-ink); font-size: 12px; font-weight: 700; }
+.online-market button:focus-visible, .online-market input:focus-visible { outline: 2px solid #171717; outline-offset: 3px; }
+.online-loja-identidade { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.online-loja-foto { width: 76px; height: 76px; flex-shrink: 0; object-fit: cover; border: 1px solid var(--online-line); border-radius: 20px; }
+@media (max-width: 760px) {
+  .online-market-explore { display: grid; gap: 18px; margin: 28px 0 24px; }
+  .online-market-explore .online-market-search { width: 100%; }
+  .online-market-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; overflow: visible; }
+  .online-market-categories button { min-width: 0; min-height: 122px; padding: 14px 5px; }
+  .online-market-categories button > span { width: 50px; height: 50px; border-radius: 15px; }
+  .online-market-categories button svg { width: 27px; height: 27px; }
+  .online-market-stores-heading { align-items: start; flex-wrap: wrap; }
+  .online-loja-foto { width: 58px; height: 58px; border-radius: 16px; }
+}
 .online-market h1 { margin: 0; font-family: Georgia, serif; font-size: clamp(36px, 5vw, 58px); letter-spacing: -2.4px; line-height: .98; }
 .online-market-lead { max-width: 640px; margin: 12px 0 0; color: #526059; font-size: 15px; line-height: 1.55; }
 .online-where { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid var(--online-line); border-radius: 16px; background: white; }
@@ -140,15 +181,42 @@
 .online-market-search { width: min(100%, 420px); display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 12px; border: 1px solid var(--online-line); border-radius: 12px; background: white; }
 .online-market-search svg { width: 16px; color: #8b948f; }
 .online-market-search input { min-width: 0; width: 100%; border: 0; outline: 0; font-size: 13px; }
-.online-market-owner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: #e9f2e9; }
-.online-market-owner b { display: block; }
-.online-market-owner span { display: block; margin-top: 3px; color: #526059; font-size: 12px; }
+.online-market-owner { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; overflow: hidden; margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(110deg, #244b40, #52734d); color: white; }
+.online-market-owner-backdrop { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(24px) saturate(1.35); transform: scale(1.12); pointer-events: none; }
+.online-market-owner::before { content: ''; position: absolute; inset: 0; z-index: 1; background: linear-gradient(90deg, rgb(12 28 23 / 78%), rgb(12 28 23 / 56%)); pointer-events: none; }
+.online-market-owner > :not(.online-market-owner-backdrop) { position: relative; z-index: 2; }
+.online-market-owner-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.online-market-owner-identity > div:last-child { min-width: 0; }
+.online-market-owner-photo { display: grid; place-items: center; width: 54px; height: 54px; flex: 0 0 54px; overflow: hidden; border: 2px solid rgb(255 255 255 / 80%); border-radius: 14px; background: white; color: var(--online-ink); font-family: Georgia, serif; font-size: 26px; }
+.online-market-owner-photo img { width: 100%; height: 100%; object-fit: cover; }
+.online-market-owner-identity b { display: block; }
+.online-market-owner-identity span { display: block; margin-top: 3px; color: rgb(255 255 255 / 86%); font-size: 12px; }
+.online-market-owner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.online-market-owner-actions > button { min-height: 38px; padding: 0 12px; border: 1px solid var(--online-line); border-radius: 10px; background: white; color: var(--online-ink); font-size: 12px; font-weight: 800; }
 .online-market-owner a { min-height: 38px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 10px; background: var(--online-lime); color: var(--online-ink); font-size: 12px; font-weight: 800; text-decoration: none; }
+.online-market-owner-form { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; width: 100%; padding: 16px; border: 1px solid var(--online-line); border-radius: 12px; background: white; }
+.online-market-owner-form > label { display: grid; gap: 6px; flex: 1 1 220px; color: #314038; font-size: 12px; font-weight: 800; }
+.online-market-owner-form > label input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--online-line); border-radius: 10px; font-size: 14px; font-weight: 500; }
+.online-market-owner-form > div { flex: 2 1 280px; }
+.online-market-owner-form > div > b { display: block; margin-bottom: 8px; color: #314038; font-size: 12px; }
+.online-market-owner-form > button { min-height: 42px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--online-lime); color: var(--online-ink); font-size: 13px; font-weight: 800; }
+.online-market-owner-form > button:disabled { opacity: .55; }
+.online-market-owner-form > .online-erro { width: 100%; margin: 0; }
+.online-product-image .online-promo-badge, .online-customizer-image .online-promo-badge { position: absolute; top: 12px; left: 12px; z-index: 2; border-radius: 7px; padding: 6px 9px; background: #bc332a; color: white; font-size: 11px; font-weight: 800; }
+.online-product-bottom .online-promo-price, .online-customizer-prices .online-promo-price { color: #a52c25; }
+.online-customizer-prices { display: grid; justify-items: start; gap: 3px; margin: 14px 0 23px; }
+.online-customizer-prices > span { color: #a52c25; font-size: 12px; font-weight: 800; }
+.online-customizer-prices del { color: var(--online-muted); font-size: 13px; }
+.online-customizer-prices .online-customizer-price { margin: 0; }
 .online-market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 8px; }
 .online-market-card { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--online-line); border-radius: 16px; background: white; color: inherit; text-decoration: none; }
 .online-market-card:hover { transform: translateY(-2px); box-shadow: 0 14px 24px rgb(27 46 34 / 10%); }
 .online-market-logo { height: 120px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; background: #f4cd75; font-size: 48px; }
 .online-market-logo img { width: 100%; height: 100%; object-fit: cover; }
+.online-market-logo.tem-foto { position: relative; background: #244b40; }
+.online-market-logo .online-market-logo-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; filter: blur(20px) brightness(.72) saturate(1.3); transform: scale(1.15); }
+.online-market-logo .online-market-logo-avatar { position: relative; z-index: 1; width: 96px; height: 96px; border: 2px solid white; border-radius: 18px; box-shadow: 0 6px 20px rgb(0 0 0 / 20%); }
+.online-market-logo.tem-cor { background: linear-gradient(125deg, #244b40, #648354); }
 .online-market-logo.tem-cor img { width: 72px; height: 72px; object-fit: contain; border-radius: 18px; background: white; padding: 6px; }
 .online-market-logo.tem-cor em { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 18px; background: white; color: #18251f; font-family: Georgia, serif; font-size: 36px; font-style: normal; }
 .online-market-logo.tem-capa { position: relative; background: #1b2e22; }
@@ -228,7 +296,7 @@
 .online-search:focus-within, .online-note textarea:focus, .online-checkout > label input:focus { border-color: #525252; box-shadow: 0 0 0 3px rgb(23 23 23 / 10%); }
 .online-categories button:hover { border-color: #a3a3a3; }
 .online-product-card:hover, .online-market-card:hover { box-shadow: 0 14px 24px rgb(23 23 23 / 10%); }
-.online-benefits, .online-market-owner { background: #f5f5f5; }
+.online-benefits { background: #f5f5f5; }
 .online-benefits > div + div { border-color: #d4d4d4; }
 .online-benefits small { color: #626262; }
 .online-overlay { background: rgb(23 23 23 / 56%); }
@@ -256,7 +324,9 @@
 .online-brand-mark { width: 42px; height: 42px; border-radius: 12px 12px 16px 16px; }
 .online-hero-logo-grande { width: min(54%, 270px); padding: 8px; }
 .online-footer .online-brand-mark { width: 36px; height: 36px; }
+.online-benefits-consulta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 760px) {
+  .online-benefits-consulta { grid-template-columns: 1fr; }
   .online-topbar { height: 70px; }
   .online-brand-mark { width: 34px; height: 34px; }
 }

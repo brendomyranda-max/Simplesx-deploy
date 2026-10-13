@@ -109,6 +109,7 @@ export interface OnlineCatalogProduct {
   descricao: string;
   foto_url: string | null;
   preco: number | null;
+  preco_promocional: number | null;
   ordem: number;
   disponivel: number;
   ativo: number;
@@ -120,6 +121,7 @@ export interface OnlineStore {
   estabelecimento_id?: number;
   slug: string;
   nome: string;
+  whatsapp_suporte?: string | null;
   descricao: string | null;
   logo_url: string | null;
   capa_url: string | null;
@@ -129,6 +131,7 @@ export interface OnlineStore {
   tempo_max_entrega: number | null;
   aceita_entrega: number;
   aceita_retirada: number;
+  aceita_pedidos_online?: number;
   ativo: number;
   endereco?: string | null;
   latitude?: number | null;
@@ -313,6 +316,7 @@ export interface PedidoPrioridade {
 
 export interface PainelPedidos {
   delivery: PedidoDelivery[];
+  delivery_entregues: PedidoDelivery[];
   restaurante: PedidoRestaurante[];
   prioridade: PedidoPrioridade[];
 }

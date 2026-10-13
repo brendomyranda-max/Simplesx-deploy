@@ -35,8 +35,11 @@ test('catálogo online público cria uma comanda de delivery com preço e adicio
     VALUES (10,1,'Smash da Casa','SMASH-01',29.9,1,1,0,'produto',1,'2026-10-07T00:00:00.000Z')`).run();
   const adminEnv = { DB: new TenantDb(raw, 1), rawDB: raw, estabelecimentoId: 1 };
 
-  const store = await updateOnlineStoreHandler(context({ slug: 'brasa-pao', nome: 'Brasa & Pão', ativo: true, taxa_entrega: 5.9 }), adminEnv);
+  const store = await updateOnlineStoreHandler(context({ slug: 'brasa-pao', nome: 'Brasa & Pão', ativo: true, taxa_entrega: 5.9, whatsapp_suporte: '(11) 93941-7895' }), adminEnv);
   assert.equal(store.status, 200);
+  assert.equal(store.data.whatsapp_suporte, '11939417895');
+  const invalido = await updateOnlineStoreHandler(context({ whatsapp_suporte: 'sem número' }), adminEnv);
+  assert.equal(invalido.status, 400);
   const registered = await upsertOnlineCatalogProductHandler(context({
     produto_id: 10,
     descricao: 'Pão, carne e cheddar.',
@@ -52,6 +55,7 @@ test('catálogo online público cria uma comanda de delivery com preço e adicio
   const publicEnv = { DB: raw };
   const menu = await getPublicStoreHandler(context({}, { slug: 'brasa-pao' }), publicEnv);
   assert.equal(menu.status, 200);
+  assert.equal(menu.data.loja.whatsapp_suporte, '11939417895');
   assert.equal(menu.data.produtos.length, 1);
   assert.equal(menu.data.produtos[0].preco, 31.9);
 
@@ -68,6 +72,9 @@ test('catálogo online público cria uma comanda de delivery com preço e adicio
   }, { slug: 'brasa-pao' }), publicEnv);
 
   assert.equal(order.status, 201);
+  const acompanhamento = await getPublicOrderHandler(context({}, { slug: 'brasa-pao', chave: 'pedido-publico-0001' }), publicEnv);
+  assert.equal(acompanhamento.data.whatsapp_suporte, '11939417895');
+  assert.equal(acompanhamento.data.etapa, 'recebido');
   assert.equal(order.data.total, 79.7);
   const saved = raw.prepare('SELECT * FROM pedidos_online').first();
   assert.equal(saved.comanda_id, order.data.comanda_id);

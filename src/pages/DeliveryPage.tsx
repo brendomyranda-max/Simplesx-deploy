@@ -2,17 +2,16 @@
  * Pedidos do site e o acesso ao DoixP Delivery.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bike, ExternalLink, Printer } from 'lucide-react';
+import { Bike, BookOpen, ExternalLink, Printer } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestauranteAbas } from '@/components/RestauranteAbas';
 import { Badge, Button, Card, EmptyState, useToast } from '@/components/ui';
-import { impressoraApi, pedidosApi } from '@/lib/api';
+import { impressoraApi, pedidosApi, retryOrder } from '@/lib/api';
 import type { PainelPedidos, PedidoDelivery } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
 import { fmtKm } from '@/lib/localizacao-cliente';
-import { printReceipt } from '@/lib/print';
 
 function espera(minutos: number) {
   if (minutos < 1) return 'agora';
@@ -44,10 +43,10 @@ function etapaDelivery(pedido: PedidoDelivery) {
 export function DeliveryPage() {
   const toast = useToast();
   const navigate = useNavigate();
-  const [painel, setPainel] = useState<PainelPedidos>({ delivery: [], restaurante: [], prioridade: [] });
+  const [painel, setPainel] = useState<PainelPedidos>({ delivery: [], delivery_entregues: [], restaurante: [], prioridade: [] });
   const [load, setLoad] = useState(true);
   const [ocupado, setOcupado] = useState('');
-  const etiquetaRef = useRef<HTMLPreElement>(null);
+  const [filtro, setFiltro] = useState<'pendentes' | 'entregues'>('pendentes');
 
   const carregar = async (silencioso = false) => {
     if (!silencioso) setLoad(true);
@@ -66,36 +65,23 @@ export function DeliveryPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const imprimirEtiqueta = async (comandaId: number, chave: string) => {
+  const imprimirPedido = async (comandaId: number, chave: string) => {
     setOcupado(chave);
     try {
-      const resultado = await pedidosApi.etiqueta({ comanda_id: comandaId });
-      if (etiquetaRef.current) {
-        etiquetaRef.current.textContent = resultado.impressao;
-        await printReceipt(etiquetaRef.current, undefined, 'Etiqueta do pedido');
-      }
-      const falha = (resultado.jobs || []).find((job) => job.ok === false);
-      toast(falha ? 'error' : 'success', falha?.error || 'Etiqueta do pedido enviada');
+      const resultado = await retryOrder(() => impressoraApi.imprimirComanda(comandaId, { tipo: 'cozinha' }));
+      if (resultado.sem_rota?.length) toast('error', `Sem impressora vinculada: ${resultado.sem_rota.join(', ')}`);
+      else if (resultado.falhas?.length) toast('error', `Fila incompleta: ${resultado.falhas[0].impressora}: ${resultado.falhas[0].erro}`);
+      else if (resultado.itens) toast('success', `${resultado.itens} item(ns) enviado(s) para a impressora do servidor`);
+      else toast('info', 'Estes itens já foram enviados ou não há itens novos para imprimir');
+      await carregar(true);
     } catch (error: any) {
-      toast('error', error?.error || 'Não foi possível imprimir a etiqueta');
+      toast('error', error?.error || 'Não foi possível enviar o pedido para a impressora');
     } finally {
       setOcupado('');
     }
   };
 
-  const enviarCozinha = async (comandaId: number, chave: string) => {
-    setOcupado(chave);
-    try {
-      const resultado = await impressoraApi.imprimirComanda(comandaId, { tipo: 'cozinha' });
-      if (resultado.sem_rota?.length) toast('error', `Sem impressora: ${resultado.sem_rota.join(', ')}`);
-      else toast('success', 'Pedido enviado para a cozinha');
-      await carregar(true);
-    } catch (error: any) {
-      toast('error', error?.error || 'Não foi possível enviar para a cozinha');
-    } finally {
-      setOcupado('');
-    }
-  };
+  const pedidosVisiveis = filtro === 'pendentes' ? painel.delivery : painel.delivery_entregues;
 
   const mudarStatus = async (id: number, status: 'confirmado' | 'cancelado' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'pix_recebido') => {
     const chave = `status-${id}`;
@@ -128,15 +114,21 @@ export function DeliveryPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RestauranteAbas atual="delivery" />
+          <Button variant="secondary" icon={<BookOpen className="h-4 w-4" />} onClick={() => navigate('/estoque?aba=delivery')}>Cardápio online</Button>
           <Button variant="secondary" icon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open('/pedido', '_blank', 'noopener,noreferrer')}>Ver o DoixP Delivery</Button>
         </div>
       </div>
 
-      {load ? <Card className="p-8 text-center text-sm text-slate-500">Carregando pedidos…</Card> : painel.delivery.length === 0 ? (
-        <Card><EmptyState icon={<Bike className="h-8 w-8" />} title="Nenhum pedido de delivery em aberto" subtitle="Quando um cliente pedir pelo site, o pedido aparece aqui. O DoixP Delivery mostra os outros restaurantes publicados." /></Card>
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar pedidos do delivery">
+        <Button type="button" variant={filtro === 'pendentes' ? 'primary' : 'secondary'} onClick={() => setFiltro('pendentes')}>Para entregar ({painel.delivery.length})</Button>
+        <Button type="button" variant={filtro === 'entregues' ? 'primary' : 'secondary'} onClick={() => setFiltro('entregues')}>Já entregues ({painel.delivery_entregues.length})</Button>
+      </div>
+
+      {load ? <Card className="p-8 text-center text-sm text-slate-500">Carregando pedidos…</Card> : pedidosVisiveis.length === 0 ? (
+        <Card><EmptyState icon={<Bike className="h-8 w-8" />} title={filtro === 'pendentes' ? 'Nenhum pedido para entregar' : 'Nenhum pedido entregue ainda'} subtitle={filtro === 'pendentes' ? 'Quando um cliente pedir pelo site, o pedido aparece aqui.' : 'Os pedidos concluídos aparecem aqui, mesmo depois do fechamento da comanda.'} /></Card>
       ) : (
         <div className="space-y-3">
-          {painel.delivery.map((pedido) => {
+          {pedidosVisiveis.map((pedido) => {
             const etapa = etapaDelivery(pedido);
             return (
               <Card key={pedido.id} className="p-4">
@@ -169,10 +161,9 @@ export function DeliveryPage() {
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'entrega' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'saiu_entrega')} loading={ocupado === `status-${pedido.id}`}>Saiu para entrega</Button>}
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'retirada' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pronto_retirada')} loading={ocupado === `status-${pedido.id}`}>Pronto para retirada</Button>}
                     {(pedido.etapa === 'saiu_entrega' || pedido.etapa === 'pronto_retirada') && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'entregue')} loading={ocupado === `status-${pedido.id}`}>{pedido.tipo_entrega === 'retirada' ? 'Marcar retirado' : 'Marcar entregue'}</Button>}
-                    {pedido.comanda_id && <Button size="sm" variant="secondary" onClick={() => enviarCozinha(pedido.comanda_id!, `cozinha-${pedido.id}`)} loading={ocupado === `cozinha-${pedido.id}`}>Enviar à cozinha</Button>}
-                    {pedido.comanda_id && <Button size="sm" variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => imprimirEtiqueta(pedido.comanda_id!, `etiqueta-${pedido.id}`)} loading={ocupado === `etiqueta-${pedido.id}`}>Etiqueta</Button>}
-                    {pedido.comanda_id && <Button size="sm" variant="secondary" onClick={() => navigate(`/restaurante/comanda/${pedido.comanda_id!}`)}>Abrir comanda</Button>}
-                    {pedido.etapa !== 'entregue' && <Button size="sm" variant="danger" onClick={() => mudarStatus(pedido.id, 'cancelado')} loading={ocupado === `status-${pedido.id}`}>Cancelar</Button>}
+                    {filtro === 'pendentes' && pedido.comanda_id && pedido.comanda_status === 'aberta' && pedido.etapa !== 'aguardando_pix' && <Button size="sm" variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => imprimirPedido(pedido.comanda_id!, `impressao-${pedido.id}`)} loading={ocupado === `impressao-${pedido.id}`}>Imprimir pedido</Button>}
+                    {pedido.comanda_id && pedido.comanda_status !== 'fechada' && <Button size="sm" variant="secondary" onClick={() => navigate(`/restaurante/comanda/${pedido.comanda_id!}`)}>Abrir comanda</Button>}
+                    {filtro === 'pendentes' && pedido.etapa !== 'entregue' && <Button size="sm" variant="danger" onClick={() => mudarStatus(pedido.id, 'cancelado')} loading={ocupado === `status-${pedido.id}`}>Cancelar</Button>}
                   </div>
                 </div>
                 <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm text-slate-700">
@@ -185,7 +176,6 @@ export function DeliveryPage() {
         </div>
       )}
 
-      <pre ref={etiquetaRef} className="absolute -left-[9999px] top-0 w-72 whitespace-pre-wrap font-mono text-xs" />
     </AnimatedPage>
   );
 }
