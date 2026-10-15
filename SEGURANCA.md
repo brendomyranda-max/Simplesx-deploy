@@ -8,7 +8,7 @@
 | `TURNSTILE_SECRET_KEY` | Mesmos arquivos, com chave pública de teste | Secret do Cloudflare ou ambiente privado do servidor |
 | `SIMPLEXSA_SENHA_DONO` | `.env` ou variável exportada, somente durante a criação do dono | Ambiente privado do terminal administrativo; remover após uso |
 | `SIMPLEXSA_TOKEN`, `SIMPLEXSA_USUARIO`, `SIMPLEXSA_SENHA`, `SIMPLEXSA_URL` | `.env`, somente para o importador de cardápio | Ambiente privado do script, quando necessário |
-| `PAGBANK_API_TOKEN`, `PAGBANK_TAPON_APP_KEY`, `PAGBANK_SIMPLEXSA_ACCOUNT_ID` | `.dev.vars` para a futura integração | Secrets do Cloudflare; ver [configuração PagBank](./PAGBANK_CONFIGURACAO.md) |
+| `EFI_CLIENT_ID`, `EFI_CLIENT_SECRET` | `.dev.vars` para homologação | Secrets do Cloudflare; ver [configuração Efí](./EFI_CONFIGURACAO.md) |
 | `SIMPLEXSA_DB`, `HOST`, `PORT`, `NODE_ENV` | `.env` | Ambiente do servidor; use `NODE_ENV=production` |
 | IDs D1 e KV | `wrangler.toml` local, copiado do modelo | Recursos da própria conta Cloudflare |
 

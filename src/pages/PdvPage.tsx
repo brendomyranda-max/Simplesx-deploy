@@ -15,11 +15,17 @@ import { printReceipt } from '@/lib/print';
 import { observarEstoqueAtualizado } from '@/lib/estoqueSync';
 import { useBarcodeScanner } from '@/lib/useBarcodeScanner';
 import { useNfcLeitura } from '@/lib/useNfcBridge';
+import { ComboEscolha, adicionalCombo, comboCompleto, resumoEscolhasCombo } from '@/components/ComboFields';
 
 interface CartItem {
   produto: Produto;
   qtd: number;
+  comboChoices?: number[][];
 }
+
+const gruposCombo = (produto: Produto) => produto.tipo === 'combo' ? JSON.parse(produto.combo_grupos_json || '[]') as NonNullable<Produto['combo_grupos']> : [];
+const chaveItem = (item: CartItem) => `${item.produto.id}:${JSON.stringify(item.comboChoices || [])}`;
+const precoItem = (item: CartItem) => Number(item.produto.preco || 0) + adicionalCombo(gruposCombo(item.produto), item.comboChoices || []);
 
 type ProdutoBalanca = Produto & { quantidade_balanca?: number; codigo_etiqueta?: string };
 
@@ -42,7 +48,10 @@ export function PdvPage() {
   const toast = useToast();
   const [config, setConfig] = useState<ConfigEmpresa | null>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [opcoesCombo, setOpcoesCombo] = useState<Produto[]>([]);
   const [cart, setCart] = useState<CartItem[]>(carregarCarrinho);
+  const [comboSelecionado, setComboSelecionado] = useState<{ produto: Produto; quantidade: number } | null>(null);
+  const [comboChoices, setComboChoices] = useState<number[][]>([]);
   const [codigo, setCodigo] = useState('');
   const [garcons, setGarcons] = useState<string[]>([]);
 
@@ -100,9 +109,10 @@ export function PdvPage() {
     if (!coarse) bipRef.current?.focus();
     configApi.get().then(setConfig).catch(() => {});
     produtoApi.list(undefined, 'mercado').then(setProdutos).catch(() => {});
+    produtoApi.list().then(setOpcoesCombo).catch(() => {});
   }, []);
 
-  const subtotal = useMemo(() => cart.reduce((s, i) => s + i.produto.preco! * i.qtd, 0), [cart]);
+  const subtotal = useMemo(() => cart.reduce((s, i) => s + precoItem(i) * i.qtd, 0), [cart]);
   const descValor = useMemo(() => Math.min(Number(desconto || 0), subtotal), [desconto, subtotal]);
   const total = Math.max(0, subtotal - descValor);
   const totalItens = useMemo(() => cart.reduce((s, i) => s + i.qtd, 0), [cart]);
@@ -121,9 +131,10 @@ export function PdvPage() {
     }
   };
 
-  const disponivel = (p: Produto) => (p.tipo === 'composto' ? (p.estoque_possivel ?? 0) : p.estoque_atual);
+  const disponivel = (p: Produto) => (p.tipo === 'combo' ? Infinity : p.tipo === 'composto' ? (p.estoque_possivel ?? 0) : p.estoque_atual);
 
   const adicionar = (p: Produto, quantidade = 1) => {
+    if (p.tipo === 'combo') { setComboSelecionado({ produto: p, quantidade }); setComboChoices([]); return; }
     if (p.preco == null) {
       toast('error', `${p.nome} não tem preço cadastrado`);
       return;
@@ -143,6 +154,19 @@ export function PdvPage() {
       if (ex) return c.map((i) => (i.produto.id === p.id ? { ...i, qtd: i.qtd + quantidade } : i));
       return [...c, { produto: p, qtd: quantidade }];
     });
+  };
+
+  const adicionarCombo = () => {
+    if (!comboSelecionado) return;
+    const item: CartItem = { produto: comboSelecionado.produto, qtd: comboSelecionado.quantidade, comboChoices };
+    if (!comboCompleto(gruposCombo(item.produto), comboChoices)) return;
+    setCart((atual) => {
+      const chave = chaveItem(item);
+      const existente = atual.find((i) => chaveItem(i) === chave);
+      return existente ? atual.map((i) => chaveItem(i) === chave ? { ...i, qtd: i.qtd + item.qtd } : i) : [...atual, item];
+    });
+    setUltimoProduto(item.produto);
+    setComboSelecionado(null);
   };
 
   const adicionarPorCodigo = (valor: string) => {
@@ -175,13 +199,13 @@ export function PdvPage() {
     if (codigo) void adicionarPorCodigo(codigo);
   }, true);
 
-  const mudarQtd = (id: number, delta: number) => {
-    const item = cart.find((i) => i.produto.id === id);
+  const mudarQtd = (id: string, delta: number) => {
+    const item = cart.find((i) => chaveItem(i) === id);
     if (item && delta > 0 && item.qtd >= disponivel(item.produto)) return;
     if (item) setUltimoProduto(item.produto);
     setCart((c) =>
       c
-        .map((i) => (i.produto.id === id ? { ...i, qtd: i.qtd + delta } : i))
+        .map((i) => (chaveItem(i) === id ? { ...i, qtd: i.qtd + delta } : i))
         .filter((i) => i.qtd > 0)
     );
   };
@@ -217,7 +241,7 @@ export function PdvPage() {
     setSalvando(true);
     try {
       const pagamentos = pgFormas.filter((f) => Number(f.valor) > 0);
-      const itens = cart.map((i) => ({ produto_id: i.produto.id, quantidade: i.qtd }));
+      const itens = cart.map((i) => ({ produto_id: i.produto.id, quantidade: i.qtd, ...(i.comboChoices ? { combo_escolhas: i.comboChoices } : {}) }));
       const pagamentosNorm = pagamentos.map((f) => ({ forma: f.forma, valor: Number(f.valor) }));
       const r: any = vendaReaberta
         ? await vendaApi.ajustar(vendaReaberta.id, {
@@ -239,7 +263,7 @@ export function PdvPage() {
       setCart([]);
       setDesconto('');
       setPgFormas([{ forma: 'dinheiro', valor: '' }]);
-      if (vendaReaberta) {
+      if (vendaReaberta || cart.some((i) => i.produto.tipo === 'combo')) {
         produtoApi.list(undefined, 'mercado').then(setProdutos).catch(() => {});
       } else {
         setProdutos((prev) =>
@@ -268,11 +292,15 @@ export function PdvPage() {
     setSalvando(true);
     try {
       const venda = await vendaApi.reabrir(vendaId);
+      if ((venda.itens || []).some((item) => item.combo_escolhas_json)) {
+        toast('info', 'Para alterar uma venda com combo, cancele a venda e registre outra com as novas escolhas.');
+        return;
+      }
       const itensCart: CartItem[] = [];
       for (const item of venda.itens || []) {
         if (!item.produto_id) continue;
         const produto = produtos.find((p) => p.id === item.produto_id) || await produtoApi.get(item.produto_id);
-        itensCart.push({ produto, qtd: item.quantidade });
+        itensCart.push({ produto, qtd: item.quantidade, comboChoices: item.combo_escolhas_json ? JSON.parse(item.combo_escolhas_json) : undefined });
       }
       setVendaReaberta(venda);
       setCart(itensCart);
@@ -402,7 +430,8 @@ export function PdvPage() {
                 >
                   <p className="line-clamp-2 text-sm font-bold leading-snug text-slate-800">{p.nome}</p>
                   <p className="text-[11px] text-slate-400">
-                    {p.tipo === 'composto'
+                    {p.tipo === 'combo' ? 'Escolha os itens do combo'
+                      : p.tipo === 'composto'
                       ? p.produto_balanca ? `disponível ${fmtNum(disponivel(p))} ${p.unidade}` : `disponível p/ ${fmtNum(disponivel(p))} un`
                       : `estoque ${fmtNum(disponivel(p))} ${p.unidade}`}
                   </p>
@@ -435,7 +464,7 @@ export function PdvPage() {
               <AnimatePresence initial={false}>
                 {cart.map((i, index) => (
                   <motion.div
-                    key={i.produto.id}
+                    key={chaveItem(i)}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
@@ -445,25 +474,26 @@ export function PdvPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-slate-800"><span className="mr-2 font-mono text-xs text-slate-400">{String(index + 1).padStart(3, '0')}</span>{i.produto.nome}</p>
                       <p className="mt-0.5 font-mono text-[10px] text-slate-400">{i.produto.codigo_interno}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">{fmtNum(i.qtd)} {i.produto.unidade} × {fmtBRL(i.produto.preco)}</p>
+                      {i.comboChoices?.map((grupo, j) => <p key={j} className="text-xs text-slate-500">{gruposCombo(i.produto)[j]?.nome}: {resumoEscolhasCombo({ ...gruposCombo(i.produto)[j], opcoes: gruposCombo(i.produto)[j].opcoes.map((o) => ({ ...o, nome: opcoesCombo.find((p) => p.id === o.produto_id)?.nome })) }, grupo)}</p>)}
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{fmtNum(i.qtd)} {i.produto.unidade} × {fmtBRL(precoItem(i))}</p>
                     </div>
                     <div className="flex flex-col items-end justify-between gap-2">
-                      <p className="text-base font-extrabold text-slate-800">{fmtBRL(Number(i.produto.preco) * i.qtd)}</p>
+                      <p className="text-base font-extrabold text-slate-800">{fmtBRL(precoItem(i) * i.qtd)}</p>
                       <div className="flex items-center gap-1.5">
                       {!i.produto.produto_balanca && <>
-                      <button onClick={() => mudarQtd(i.produto.id, -1)} className="rounded-lg bg-white p-1 shadow-sm hover:bg-slate-100">
+                      <button onClick={() => mudarQtd(chaveItem(i), -1)} className="rounded-lg bg-white p-1 shadow-sm hover:bg-slate-100">
                         <Minus className="h-3.5 w-3.5 text-slate-600" />
                       </button>
                       <span className="w-7 text-center text-sm font-bold">{i.qtd}</span>
                       <button
-                        onClick={() => mudarQtd(i.produto.id, 1)}
+                        onClick={() => mudarQtd(chaveItem(i), 1)}
                         disabled={i.qtd >= disponivel(i.produto)}
                         className="rounded-lg bg-white p-1 shadow-sm hover:bg-slate-100 disabled:opacity-40"
                       >
                         <Plus className="h-3.5 w-3.5 text-slate-600" />
                       </button>
                       </>}
-                      <button onClick={() => setCart((c) => c.filter((x) => x.produto.id !== i.produto.id))} className="rounded-lg p-1 text-red-500 hover:bg-red-50">
+                      <button onClick={() => setCart((c) => c.filter((x) => chaveItem(x) !== chaveItem(i)))} className="rounded-lg p-1 text-red-500 hover:bg-red-50">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                       </div>
@@ -503,6 +533,12 @@ export function PdvPage() {
       </div>
 
       {/* Pagamento */}
+      <Modal open={!!comboSelecionado} onClose={() => setComboSelecionado(null)} title={comboSelecionado?.produto.nome || 'Montar combo'} width="max-w-md">
+        {comboSelecionado && <div className="space-y-4">
+          <ComboEscolha grupos={gruposCombo(comboSelecionado.produto).map((g) => ({ ...g, opcoes: g.opcoes.map((o) => ({ ...o, nome: opcoesCombo.find((p) => p.id === o.produto_id)?.nome })) }))} escolhas={comboChoices} onChange={setComboChoices} />
+          <Button type="button" disabled={!comboCompleto(gruposCombo(comboSelecionado.produto), comboChoices)} onClick={adicionarCombo}>Adicionar combo · {fmtBRL((Number(comboSelecionado.produto.preco) + adicionalCombo(gruposCombo(comboSelecionado.produto), comboChoices)) * comboSelecionado.quantidade)}</Button>
+        </div>}
+      </Modal>
       <Modal open={pagar} onClose={() => setPagar(false)} title="Pagamento" width="max-w-md">
         <div className="space-y-4">
           <div className="rounded-xl bg-slate-50 p-3 text-center">

@@ -1,7 +1,9 @@
 # Copie para .dev.vars somente no seu computador. Nunca envie .dev.vars ao Git.
-PAGBANK_API_TOKEN=
-PAGBANK_TAPON_APP_KEY=
-PAGBANK_SIMPLEXSA_ACCOUNT_ID=
+EFI_CLIENT_ID=
+EFI_CLIENT_SECRET=
+EFI_ENVIRONMENT=sandbox
+EFI_PLATFORM_FEE_BPS=2
+EFI_NOTIFICATION_URL=https://doixp.com/api/public/efipay/checkout/notificacao
 
 # Chaves PÚBLICAS DE TESTE, somente para desenvolvimento com Wrangler.
 TURNSTILE_SITE_KEY=1x00000000000000000000AA

@@ -134,8 +134,8 @@ Android e cuidados ao publicar um repositório que já teve dados no histórico.
 Para entender a arquitetura, o fluxo dos dados, a função de cada arquivo e por
 que o repositório contém arquivos JSON, consulte [GUIA_DO_PROJETO.md](./GUIA_DO_PROJETO.md).
 
-Para preparar os secrets da integração de pagamentos, consulte
-[PAGBANK_CONFIGURACAO.md](./PAGBANK_CONFIGURACAO.md).
+Para configurar o checkout Efí e o split, consulte
+[EFI_CONFIGURACAO.md](./EFI_CONFIGURACAO.md).
 
 O estado atual do cadastro pago e da apresentação de investimento está documentado
 em [CADASTRO_E_INVESTIMENTO.md](./CADASTRO_E_INVESTIMENTO.md).
@@ -215,6 +215,27 @@ Lotes e controles já registrados são preservados ao editar o cadastro.
 Aplique `0024_produtos_sem_vencimento.sql` antes de publicar o backend:
 `npm run db:migrate`. O comando `npm run deploy` já aplica as migrações antes da
 publicação. Produtos existentes continuam com a opção desmarcada.
+
+## Combos com escolha de produtos
+
+Em **Estoque → Novo produto → Combo**, informe o preço base e crie grupos como
+**Esfihas (10 escolhas)**, **Refrigerante (1)**, **Batata (1)** e **Lanche (1)**.
+Selecione em cada grupo os produtos simples ou compostos já cadastrados. É
+possível repetir a mesma opção nas escolhas de um grupo e definir um acréscimo
+para cada opção. No lançamento, use **+** e **−** para distribuir as quantidades
+entre os produtos; ao atingir o limite, o grupo se fecha e pode ser reaberto
+para alterações. Marque **Aparece no Restaurante** e/ou **Aparece no PDV** para
+usar o combo nesses canais. Para o delivery, publique o combo em **Estoque →
+Delivery** ou no cardápio online. O cliente precisa completar os grupos antes
+de adicionar o combo à sacola.
+Em **Mesas → Lançar para cartão**, a personalização também permite montar o
+combo e incluir observações cadastradas, texto livre e acréscimos antes de
+aproximar o cartão.
+
+As escolhas e o preço são validados no servidor. Na venda, a baixa de estoque
+é feita nos produtos escolhidos e nas fichas técnicas dos compostos, não no
+produto que representa o combo. A migração `0046_combos.sql` é necessária no
+D1 (`npm run db:migrate`); `npm run deploy` também a aplica.
 
 ## Apenas cardápio online
 

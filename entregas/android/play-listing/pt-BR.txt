@@ -1,0 +1,24 @@
+NOME
+DoixP Entregas
+
+DESCRIÇÃO CURTA
+Receba corridas, acompanhe entregas no mapa e organize o fechamento semanal.
+
+DESCRIÇÃO COMPLETA
+DoixP Entregas conecta a operação de estabelecimentos, entregadores e suporte em um aplicativo.
+
+PARA ENTREGADORES
+Fique online, confira as ofertas disponíveis e aceite uma entrega. Acompanhe a coleta e o destino no mapa, confirme a retirada com o estabelecimento e registre a conclusão com o código informado pelo cliente. Consulte o histórico e os registros do fechamento semanal.
+
+Enquanto estiver online, o app usa a localização do entregador para mostrar sua posição e operar as entregas, inclusive em segundo plano, durante o uso de outros aplicativos ou com a tela bloqueada. O compartilhamento é iniciado pelo entregador e pode ser encerrado ao ficar offline.
+
+PARA ESTABELECIMENTOS
+Cadastre pedidos, informe o destino e a distância do percurso, acompanhe o andamento e confirme a retirada quando o pedido estiver pronto. Defina a participação do estabelecimento no frete; quando houver valor para o cliente, a corrida aguarda sua concordância.
+
+PARA A OPERAÇÃO
+Registre tentativas de contato, problemas na entrega e solicitações de análise. O suporte acompanha ocorrências, revisa suspensões e organiza o fechamento semanal, com registro dos pagamentos realizados por meios externos.
+
+CONFIRMAÇÕES DE ENTREGA
+A retirada usa um código de seis números. A conclusão usa o código informado pelo comprador, composto pelos quatro últimos dígitos do CPF cadastrado no pedido. Nesta plataforma, o CPF completo não é solicitado.
+
+O acesso é disponibilizado pela operação responsável. O aplicativo requer conexão com a internet e servidor configurado. A distância é informada pelo estabelecimento; valores, disponibilidade de entregadores e área atendida dependem da operação. Os pagamentos são realizados por meios externos e registrados na plataforma.

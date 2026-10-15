@@ -30,6 +30,7 @@ import { saveOrderItems } from './restaurant-orders.js';
 import { dispatchOrders } from './order-printing.js';
 import { criarVendaRestaurante } from './restaurant-sale.js';
 import { transferirParaPagamentos } from './restaurant-payments.js';
+import { montarCombo } from './combo.js';
 import { somentePedidosPosteriores, validarHistoricoFechamento } from './restaurant-close-history.js';
 
 // ============================ VALIDADE ============================
@@ -157,12 +158,26 @@ export async function criarVendaHandler(c, env) {
     if (!p.ativo) return c.json({ error: `Produto inativo: ${p.nome}` }, 400);
     const qtd = num(it.quantidade);
     if (qtd <= 0) return c.json({ error: 'Quantidade inválida' }, 400);
+    if (p.tipo === 'combo' && !Number.isInteger(qtd)) return c.json({ error: 'Quantidade do combo deve ser inteira' }, 400);
     if (precisaPreco && !p.preco) {
       return c.json({ error: `Produto sem preço: ${p.nome}` }, 400);
     }
-    const preco = num(p.preco) || 0;
-    const composto = p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length;
-    const baixas = composto ? await calcularBaixasProduto(env, p.id, qtd) : [];
+    const combo = p.tipo === 'combo' ? await montarCombo(env, p, it.combo_escolhas) : null;
+    if (!combo && it.combo_escolhas != null) return c.json({ error: 'Este produto não é um combo' }, 400);
+    const preco = Math.round((num(p.preco) + (combo?.adicional || 0)) * 100) / 100;
+    const composto = (p.tipo === 'composto' && Array.isArray(p.ficha) && p.ficha.length) || !!combo;
+    const baixas = combo ? [] : composto ? await calcularBaixasProduto(env, p.id, qtd) : [];
+    if (combo) {
+      const mapa = new Map();
+      for (const id of combo.componentes) {
+        for (const baixa of await calcularBaixasProduto(env, id, qtd)) {
+          const atual = mapa.get(baixa.produto_id) || { ...baixa, quantidade: 0 };
+          atual.quantidade += baixa.quantidade;
+          mapa.set(baixa.produto_id, atual);
+        }
+      }
+      baixas.push(...mapa.values());
+    }
     if (composto) {
       for (const baixa of baixas) {
         if (baixa.disponivel < baixa.quantidade - 0.0001) {
@@ -175,8 +190,22 @@ export async function criarVendaHandler(c, env) {
     } else if (num(p.estoque_atual) < qtd) {
       return c.json({ error: `Estoque insuficiente para ${p.nome} (${num(p.estoque_atual)} disponível)` }, 400);
     }
-    itensNorm.push({ produto: p, qtd, preco, total: preco * qtd, composto, baixas });
+    const custo = combo ? baixas.reduce((s, baixa) => s + baixa.quantidade * baixa.custo_unitario, 0) / qtd : num(p.custo);
+    itensNorm.push({ produto: p, qtd, preco, total: preco * qtd, composto, baixas, combo, custo });
     subtotal += preco * qtd;
+  }
+
+  const consumo = new Map();
+  for (const it of itensNorm) {
+    const linhas = it.composto ? it.baixas : [{ produto_id: it.produto.id, nome: it.produto.nome, quantidade: it.qtd, disponivel: num(it.produto.estoque_atual) }];
+    for (const baixa of linhas) {
+      const atual = consumo.get(baixa.produto_id) || { nome: baixa.nome, quantidade: 0, disponivel: baixa.disponivel };
+      atual.quantidade += baixa.quantidade;
+      consumo.set(baixa.produto_id, atual);
+    }
+  }
+  for (const item of consumo.values()) if (item.quantidade > item.disponivel + 0.0001) {
+    return c.json({ error: `Estoque insuficiente de ${item.nome}` }, 400);
   }
 
   const desconto = Math.min(num(b.desconto), subtotal);
@@ -215,9 +244,9 @@ export async function criarVendaHandler(c, env) {
   for (const it of itensNorm) {
     stmts.push(
       env.DB.prepare(
-        `INSERT INTO venda_itens (venda_id, produto_id, nome, quantidade, custo_unitario, preco_unitario, total)
-         VALUES (?,?,?,?,?,?,?)`
-      ).bind(vendId, it.produto.id, it.produto.nome, it.qtd, num(it.produto.custo), it.preco, it.total)
+        `INSERT INTO venda_itens (venda_id, produto_id, nome, quantidade, custo_unitario, preco_unitario, total, combo_escolhas_json)
+         VALUES (?,?,?,?,?,?,?,?)`
+      ).bind(vendId, it.produto.id, it.combo ? `${it.produto.nome} · ${it.combo.descricao}` : it.produto.nome, it.qtd, it.custo, it.preco, it.total, it.combo ? JSON.stringify(it.combo.escolhas) : null)
     );
     if (it.composto) {
       for (const baixa of it.baixas) {
@@ -301,7 +330,7 @@ export async function criarVendaHandler(c, env) {
     nfce_erro = e?.message || 'Não foi possível emitir a NFC-e automaticamente';
   }
   return c.json({ venda_id: vendId, numero, subtotal, desconto, total, pagamentos,
-    itens: itensNorm.map((i) => ({ nome: i.produto.nome, qtd: i.qtd, preco: i.preco, total: i.total })),
+    itens: itensNorm.map((i) => ({ nome: i.combo ? `${i.produto.nome} · ${i.combo.descricao}` : i.produto.nome, qtd: i.qtd, preco: i.preco, total: i.total })),
     nfce, nfce_erro }, 201);
 }
 
@@ -391,11 +420,13 @@ export async function ajustarVendaPdvHandler(c, env) {
 
   const antigosRes = await env.DB.prepare('SELECT * FROM venda_itens WHERE venda_id=?').bind(v.id).all();
   const antigos = antigosRes.results;
+  if (antigos.some((item) => item.combo_escolhas_json)) return c.json({ error: 'Para alterar uma venda com combo, cancele a venda e registre outra com as novas escolhas' }, 409);
   const novos = new Map();
   let subtotal = 0;
   for (const it of b.itens) {
     const produto = await getProdutoFull(env, it.produto_id);
     if (!produto || !produto.ativo) return c.json({ error: 'Produto inválido no ajuste' }, 400);
+    if (produto.tipo === 'combo') return c.json({ error: 'Para alterar uma venda com combo, cancele a venda e registre outra com as novas escolhas' }, 409);
     const qtd = num(it.quantidade);
     if (qtd <= 0) return c.json({ error: 'Quantidade inválida no ajuste' }, 400);
     const preco = num(produto.preco);

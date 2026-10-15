@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestaurantCatalog } from '@/components/RestaurantCatalog';
+import { ComboEscolha, adicionalCombo, comboCompleto } from '@/components/ComboFields';
 import { TransferItemModal } from '@/components/TransferItemModal';
 import { TransferTableModal } from '@/components/TransferTableModal';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Toggle, useConfirm, useToast } from '@/components/ui';
@@ -50,6 +51,7 @@ export function ComandaPage() {
   const [pessoaSel, setPessoaSel] = useState<number | 'geral'>('geral');
   const [setor, setSetor] = useState('Cozinha');
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [opcoesCombo, setOpcoesCombo] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [setores, setSetores] = useState<string[]>(['Cozinha', 'Bar', 'Salão', 'Padaria', 'Etiquetas']);
   const [nomePessoa, setNomePessoa] = useState('');
@@ -72,6 +74,7 @@ export function ComandaPage() {
   const [enviandoCozinha, setEnviandoCozinha] = useState(false);
   const [imprimir, setImprimir] = useState<{ impressao: string; setor: string } | null>(null);
   const [addProduto, setAddProduto] = useState<Produto | null>(null);
+  const [comboChoices, setComboChoices] = useState<number[][]>([]);
   const [editandoItem, setEditandoItem] = useState<ComandaItem | null>(null);
   const [acoesItem, setAcoesItem] = useState<ComandaItem | null>(null);
   const [transferencia, setTransferencia] = useState<{ item: ComandaItem; mode: 'pessoa' | 'mesa' } | null>(null);
@@ -124,6 +127,7 @@ export function ComandaPage() {
     Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
       setProdutos(ps); setCategorias(cs);
     }).catch(() => toast('error', 'Não foi possível carregar o cardápio'));
+    produtoApi.list().then(setOpcoesCombo).catch(() => {});
     impressoraApi.setores().then((s) => setSetores(s.map((x) => x.nome))).catch(() => {});
     const iv = setInterval(() => { if (!document.hidden) void loadComanda(true); }, 3000);
     return () => clearInterval(iv);
@@ -231,6 +235,7 @@ export function ComandaPage() {
     if (pendingRef.current || adicionandoRef.current) { toast('error', 'Confirme o lançamento pendente antes de adicionar outro.'); return; }
     setEditandoItem(null);
     setAddProduto(p);
+    setComboChoices([]);
     setAddQtd(1);
     setAddObsSel([]);
     setAddObsUnidades([[]]);
@@ -364,6 +369,8 @@ export function ComandaPage() {
 
   const confirmarAdicao = async () => {
     if (!addProduto || adicionandoRef.current || !storageKey) return;
+    const gruposCombo = addProduto.tipo === 'combo' ? JSON.parse(addProduto.combo_grupos_json || '[]') as NonNullable<Produto['combo_grupos']> : [];
+    if (!editandoItem && addProduto.tipo === 'combo' && !comboCompleto(gruposCombo, comboChoices)) { toast('error', 'Complete as escolhas do combo'); return; }
     if (editandoItem) {
       adicionandoRef.current = true; setAdicionando(true);
       try {
@@ -384,6 +391,7 @@ export function ComandaPage() {
       pessoa_id: pessoaSel === 'geral' ? undefined : pessoaSel,
       observacao: [...observacoes, aplicarEmConjunto || index === addUnidade ? addCustom.trim() : ''].filter(Boolean).join('\n') || undefined,
       acrescimos: gruposAcrescimo[index] || [],
+      ...(addProduto.tipo === 'combo' ? { combo_escolhas: comboChoices } : {}),
     })) });
   };
 
@@ -1169,6 +1177,7 @@ export function ComandaPage() {
             </Field>
           </div>
 
+
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">2. Produtos consumidos</p>
             <div className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-slate-100 p-3">
@@ -1330,6 +1339,7 @@ export function ComandaPage() {
               <p className="text-sm font-bold text-slate-800">{addProduto.nome}</p>
               <p className="text-xs text-slate-500">{addProduto.preco != null ? fmtBRL(addProduto.preco) : '—'}</p>
             </div>
+            {addProduto.tipo === 'combo' && !editandoItem && <ComboEscolha grupos={(JSON.parse(addProduto.combo_grupos_json || '[]') as NonNullable<Produto['combo_grupos']>).map((g) => ({ ...g, opcoes: g.opcoes.map((o) => ({ ...o, nome: opcoesCombo.find((p) => p.id === o.produto_id)?.nome })) }))} escolhas={comboChoices} onChange={setComboChoices} />}
 
             <Field label="Quantidade">
               <div className="flex items-center gap-2">
@@ -1444,10 +1454,10 @@ export function ComandaPage() {
 
             <div className="rounded-xl bg-slate-50 p-3 text-center">
               <p className="text-xs text-slate-400">Total</p>
-              <p className="text-xl font-extrabold text-brand-600">{fmtBRL((addProduto.preco || 0) * addQtd + extraTotal)}</p>
+              <p className="text-xl font-extrabold text-brand-600">{fmtBRL(((addProduto.preco || 0) + (addProduto.tipo === 'combo' ? adicionalCombo(JSON.parse(addProduto.combo_grupos_json || '[]'), comboChoices) : 0)) * addQtd + extraTotal)}</p>
             </div>
 
-            <Button className="w-full" loading={adicionando} disabled={!storageKey} onClick={confirmarAdicao}>
+            <Button className="w-full" loading={adicionando} disabled={!storageKey || (addProduto.tipo === 'combo' && !editandoItem && !comboCompleto(JSON.parse(addProduto.combo_grupos_json || '[]'), comboChoices))} onClick={confirmarAdicao}>
               {editandoItem ? 'Salvar observações' : `Adicionar ${addQtd}x ${addProduto.nome}`}
             </Button>
           </fieldset>

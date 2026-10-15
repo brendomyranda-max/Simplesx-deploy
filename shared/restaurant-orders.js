@@ -1,5 +1,6 @@
-import { estabelecimentoId, httpError, now, sha256 } from './util.js';
+import { estabelecimentoId, httpError, now, num, sha256 } from './util.js';
 import { idsAcrescimo, observacaoComAcrescimos, precoComAcrescimos, selecionarAcrescimos } from './acrescimos.js';
+import { montarCombo } from './combo.js';
 
 // A chave pertence à intenção do cliente e sobrevive a timeout/reenvio.
 export async function saveOrderItems(c, env, body) {
@@ -13,6 +14,7 @@ export async function saveOrderItems(c, env, body) {
     preco_unitario: b.preco_unitario == null ? null : Number(b.preco_unitario),
     pessoa_id: b.pessoa_id == null ? null : Number(b.pessoa_id), observacao: String(b.observacao || '').trim(),
     acrescimos: idsAcrescimo(b.acrescimos),
+    combo_escolhas: b.combo_escolhas,
   }));
   for (const b of input) {
     if (!Number.isFinite(b.quantidade) || b.quantidade <= 0 || b.quantidade > 10000 ||
@@ -53,16 +55,21 @@ export async function saveOrderItems(c, env, body) {
     const product = b.produto_id ? byId.get(b.produto_id) : b.codigo ? byCode.get(b.codigo.trim()) : null;
     if ((b.produto_id || b.codigo) && (!product || !product.ativo)) throw httpError(400, 'Produto não encontrado ou inativo');
     const escolhidos = selecionarAcrescimos(b.acrescimos, extras.filter((extra) => extra.produto_id === product?.id));
-    const preco = escolhidos.length
-      ? precoComAcrescimos(product?.preco, escolhidos)
+    const combo = product?.tipo === 'combo' ? await montarCombo(env, product, b.combo_escolhas) : null;
+    if (!combo && b.combo_escolhas != null) throw httpError(400, 'Este produto não é um combo');
+    const precoBase = num(product?.preco) + (combo?.adicional || 0);
+    const preco = combo || escolhidos.length
+      ? precoComAcrescimos(precoBase, escolhidos)
       : (b.preco_unitario ?? Number(product?.preco || 0));
-    const observacao = escolhidos.length ? observacaoComAcrescimos(b.observacao, escolhidos) : b.observacao;
+    const observacaoBase = [combo?.descricao, b.observacao].filter(Boolean).join(' · ');
+    const observacao = escolhidos.length ? observacaoComAcrescimos(observacaoBase, escolhidos) : observacaoBase;
     items.push({
       ...b,
       produto_id: product?.id ?? null,
       nome: b.nome || product?.nome || 'Item avulso',
       preco_unitario: preco,
       observacao,
+      combo_escolhas_json: combo ? JSON.stringify(combo.escolhas) : null,
     });
   }
   const id = crypto.randomUUID();
@@ -81,9 +88,9 @@ export async function saveOrderItems(c, env, body) {
       ON CONFLICT(estabelecimento_id,chave) DO NOTHING`)
       .bind(id, tenant, key, hash, command.id, c.user.id, timestamp, command.id, tenant, timestamp, data, command.id, tenant, tenant),
     db.prepare(`INSERT INTO comanda_itens
-      (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,status,responsavel,criado_em,lancamento_id,funcionario_id)
+      (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em,lancamento_id,funcionario_id)
       SELECT ?,?,json_extract(j.value,'$.pessoa_id'),json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.nome'),
-        json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),
+        json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.combo_escolhas_json'),
         'novo',?,?,?,? FROM json_each(?) j WHERE EXISTS (SELECT 1 FROM comanda_lancamentos WHERE id=?)`)
       .bind(tenant, command.id, c.user.nome || `Funcionário ${c.user.id}`, timestamp, id, c.user.id, data, id),
   ]);

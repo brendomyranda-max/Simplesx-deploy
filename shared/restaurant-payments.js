@@ -45,8 +45,8 @@ export async function transferirParaPagamentos(env, com, taxaPct, b) {
     SELECT ?,${novaId},json_extract(value,'$.nome'),json_extract(value,'$.cor'),? FROM json_each(?) ORDER BY CAST(key AS INTEGER)`)
     .bind(tenant, timestamp, data));
   statements.push(env.DB.prepare(`INSERT INTO comanda_itens
-    (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,status,responsavel,criado_em,funcionario_id,enviado_em)
-    SELECT ?,${novaId},p.id,i.produto_id,i.nome,i.quantidade,i.preco_unitario,i.observacao,i.status,i.responsavel,?,i.funcionario_id,i.enviado_em
+    (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em,funcionario_id,enviado_em)
+    SELECT ?,${novaId},p.id,i.produto_id,i.nome,i.quantidade,i.preco_unitario,i.observacao,i.combo_escolhas_json,i.status,i.responsavel,?,i.funcionario_id,i.enviado_em
     FROM comanda_itens i JOIN json_each(?) j ON json_extract(j.value,'$.origem')=COALESCE(i.pessoa_id,0)
     JOIN ${pessoasNumeradas} p ON p.indice=CAST(j.key AS INTEGER)
     WHERE i.comanda_id=? AND i.status!='cancelado'`).bind(tenant, timestamp, data, com.id));

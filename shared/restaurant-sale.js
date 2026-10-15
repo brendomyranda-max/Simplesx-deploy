@@ -4,7 +4,17 @@ import { quantidadeEmUnidadesEstoque } from './units.js';
 // Uma leitura carrega o grafo da receita. Repetir 50 drinks não deve fazer
 // 50 viagens ao banco para buscar os mesmos três ingredientes.
 async function planejarVenda(env, itens) {
-  const ids = [...new Set(itens.map((item) => item.produto_id).filter(Boolean))];
+  const escolhasDe = (item) => {
+    if (!item.combo_escolhas_json) return [];
+    try {
+      const grupos = JSON.parse(item.combo_escolhas_json);
+      if (!Array.isArray(grupos) || !grupos.every(Array.isArray)) throw new Error();
+      const ids = grupos.flat().map(Number);
+      if (ids.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error();
+      return ids;
+    } catch { throw httpError(400, 'Escolhas do combo inválidas'); }
+  };
+  const ids = [...new Set(itens.flatMap((item) => [item.produto_id, ...escolhasDe(item)]).filter(Boolean))];
   const rows = await env.DB.prepare(`WITH RECURSIVE receita_ids(id) AS (
     SELECT CAST(value AS INTEGER) FROM json_each(?)
     UNION
@@ -19,6 +29,7 @@ async function planejarVenda(env, itens) {
     if (cache.has(id)) return cache.get(id);
     const p = produtos.get(id);
     if (!p) throw httpError(400, 'Produto não encontrado na ficha técnica');
+    if (p.tipo === 'combo') throw httpError(400, 'Um combo não pode compor outro combo');
     if (p.tipo !== 'composto') return [{ produto_id: p.id, quantidade: 1 }];
     if (!p.ficha.length) throw httpError(400, `Produto composto sem ficha técnica: ${p.nome}`);
     const total = new Map();
@@ -38,18 +49,24 @@ async function planejarVenda(env, itens) {
   const baixas = new Map();
   const linhas = itens.map((it) => {
     const p = produtos.get(it.produto_id);
-    if (p) for (const folha of folhasDe(p.id)) {
+    if (p?.tipo === 'combo' && !it.combo_escolhas_json) throw httpError(400, 'Combo sem escolhas registradas');
+    const comboIds = p?.tipo === 'combo' ? escolhasDe(it) : [];
+    if (p?.tipo === 'combo' && !comboIds.length) throw httpError(400, 'Combo sem produtos escolhidos');
+    const folhas = p?.tipo === 'combo' ? comboIds.flatMap((id) => folhasDe(id)) : p ? folhasDe(p.id) : [];
+    for (const folha of folhas) {
       const insumo = produtos.get(folha.produto_id);
       const baixa = baixas.get(insumo.id) || { produto_id: insumo.id, nome: insumo.nome, quantidade: 0,
         custo_unitario: num(insumo.custo), disponivel: num(insumo.estoque_atual), verificar: false, receita_direta: 0, descricoes: new Set() };
       baixa.quantidade += folha.quantidade * num(it.quantidade);
-      baixa.verificar ||= p.tipo === 'composto';
+      baixa.verificar ||= p.tipo === 'composto' || p.tipo === 'combo';
       if (p.id === insumo.id) baixa.receita_direta += num(it.quantidade) * num(it.preco_unitario);
       baixa.descricoes.add(p.nome);
       baixas.set(insumo.id, baixa);
     }
+    const custoCombo = folhas.reduce((s, folha) => s + folha.quantidade * num(produtos.get(folha.produto_id)?.custo), 0);
     return { produto_id: it.produto_id ?? null, nome: it.nome, quantidade: num(it.quantidade),
-      custo_unitario: it.custo_unitario ?? num(p?.custo), preco_unitario: num(it.preco_unitario), total: it.total };
+      custo_unitario: p?.tipo === 'combo' ? custoCombo : it.custo_unitario ?? num(p?.custo), preco_unitario: num(it.preco_unitario), total: it.total,
+      combo_escolhas_json: it.combo_escolhas_json || null };
   });
   for (const baixa of baixas.values()) {
     if (baixa.verificar && baixa.disponivel < baixa.quantidade - 0.0001) {
@@ -91,9 +108,9 @@ export async function criarVendaRestaurante(env, o, concluir = []) {
     .bind(o.numero, o.tipo, o.comanda_id, o.mesa_id, o.subtotal, o.desconto, o.taxa_servico, o.total,
       o.responsavel, o.responsavel, o.observacoes || null, timestamp));
   statements.push(env.DB.prepare(`INSERT INTO venda_itens
-    (estabelecimento_id,venda_id,produto_id,nome,quantidade,custo_unitario,preco_unitario,total)
+    (estabelecimento_id,venda_id,produto_id,nome,quantidade,custo_unitario,preco_unitario,total,combo_escolhas_json)
     SELECT ?,${vendaId},json_extract(value,'$.produto_id'),json_extract(value,'$.nome'),json_extract(value,'$.quantidade'),
-      json_extract(value,'$.custo_unitario'),json_extract(value,'$.preco_unitario'),json_extract(value,'$.total') FROM json_each(?)`)
+      json_extract(value,'$.custo_unitario'),json_extract(value,'$.preco_unitario'),json_extract(value,'$.total'),json_extract(value,'$.combo_escolhas_json') FROM json_each(?)`)
     .bind(tenant, JSON.stringify(linhas)));
   statements.push(env.DB.prepare(`UPDATE produtos SET estoque_atual=estoque_atual-
     (SELECT json_extract(value,'$.quantidade') FROM json_each(?) WHERE json_extract(value,'$.produto_id')=produtos.id)

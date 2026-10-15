@@ -17,8 +17,8 @@ As contas existentes continuam entrando normalmente. A criação administrativa
 pela CLI continua disponível ao operador com acesso ao ambiente.
 
 Esta etapa não implementa cobrança real, cadastro pendente, webhook ou aprovação
-manual. Não há migração de banco necessária. A configuração PagBank existente
-para pagamentos do restaurante também não habilita o pagamento de cadastro.
+manual. Não há migração de banco necessária. A configuração Efí do restaurante
+também não habilita o pagamento de cadastro.
 
 ## Próxima etapa após definir o recebimento
 

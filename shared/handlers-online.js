@@ -6,17 +6,53 @@
  * de um pedido só abre com a chave daquele pedido, na loja daquele estabelecimento.
  */
 
-import { estabelecimentoId, getFichaCompleta, httpError, kvGet, kvPut, now, num } from './util.js';
+import { estabelecimentoId, getConfigValue, getFichaCompleta, httpError, kvGet, kvPut, now, num, setConfig } from './util.js';
+import { confirmarCobrancaEfi, consultarNotificacaoEfi, criarLinkCheckoutEfi, efiCheckoutDisponivel } from './efipay.js';
 import { areaDaLoja, cobrancaEntrega, coordenadaValida, distanciaKm, dentroDoRaio, kmExibido, localizar } from './localizacao.js';
 import { vincularInsumosOpcoes } from './acrescimos.js';
 import { copiaColaPix, normalizarChavePix, textoPix } from './pix.js';
 import { categoriaPrincipalDelivery } from './categorias-delivery.js';
 import { escolherSlugLoja, reservarLinkLoja } from './loja-slug.js';
+import { gruposDoCombo, montarCombo } from './combo.js';
+import { chamarEntregas } from './entregas-bridge.js';
+import { cifrarCodigoEntrega, decifrarCodigoEntrega } from './entregas-code.js';
 
 const MAX_ITEMS = 30;
 const MAX_CATEGORIAS_LOJA = 6;
 const SITE_SLUG = /^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])?$/;
 const ORDER_KEY = /^[a-zA-Z0-9_-]{16,100}$/;
+async function confirmarCobrancaCheckoutEfi(env, row) {
+  if (row.forma_pagamento !== 'efi_checkout' || !row.checkout_charge_id) throw httpError(400, 'Este pedido não tem uma cobrança Efí vinculada.');
+  const charge = await confirmarCobrancaEfi(env, row.checkout_charge_id);
+  if (String(charge.custom_id || '') !== row.chave || Number(charge.total) !== Math.round(num(row.total) * 100)) {
+    throw httpError(402, 'Os dados da cobrança Efí não correspondem a este pedido.');
+  }
+  if (charge.status !== 'paid') throw httpError(402, 'A Efí ainda não confirmou o pagamento deste pedido.');
+  await env.DB.prepare(`UPDATE pedidos_online SET checkout_capture_method='credit_card',checkout_pago_em=?,atualizado_em=?
+    WHERE id=? AND forma_pagamento='efi_checkout' AND checkout_pago_em IS NULL`)
+    .bind(now(), now(), row.id).run();
+  const fresh = await env.DB.prepare('SELECT * FROM pedidos_online WHERE id=?').bind(row.id).first();
+  if (fresh?.etapa === 'aguardando_pagamento') await liberarPedidoPagamento(env, fresh);
+  if (fresh && num(fresh.entrega_plataforma) === 1 && fresh.etapa === 'recebido') {
+    try { await despacharEntregaPix(env, fresh.id); }
+    catch (error) {
+      await env.DB.prepare("UPDATE pedidos_online SET entrega_despacho_status='erro' WHERE id=?").bind(fresh.id).run();
+      console.error('[efipay-checkout] delivery_dispatch_failed', { order_id: num(fresh.id), message: String(error?.message || error).slice(0, 200) });
+    }
+  }
+  return true;
+}
+
+function integracaoEntregasConfigurada(store, env) {
+  return env.ENTREGAS_PIX_DESTINO === 'loja'
+    && typeof env.ENTREGAS_API_URL === 'string' && typeof env.ENTREGAS_INTEGRATION_SECRET === 'string'
+    && env.ENTREGAS_INTEGRATION_SECRET.length >= 32 && Boolean(store.pix_chave)
+    && store.latitude != null && store.longitude != null;
+}
+
+function plataformaDisponivel(store, env) {
+  return Number(store.entrega_plataforma_ativo) === 1 && integracaoEntregasConfigurada(store, env);
+}
 
 function nomeLojaChave(nome) {
   return String(nome || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
@@ -136,21 +172,34 @@ function productView(row, options = []) {
     ativo: num(row.ativo),
     categoria_nome: row.cardapio_categoria_nome || row.categoria_estoque_nome || row.categoria_nome || null,
     opcoes: options,
+    combo_grupos: gruposDoCombo({ tipo: row.produto_tipo, combo_grupos_json: row.combo_grupos_json }),
   };
 }
 
 async function ensureStore(env) {
   const tenant = estabelecimentoId(env);
   let store = await env.DB.prepare('SELECT * FROM lojas_online WHERE estabelecimento_id=?').bind(tenant).first();
-  if (store) return store;
+  if (store) {
+    if (!store.pix_chave) {
+      const pixKey = await getConfigValue(env, 'pix_chave', '');
+      const pixCity = await getConfigValue(env, 'pix_cidade', '');
+      if (pixKey) {
+        await env.DB.prepare('UPDATE lojas_online SET pix_chave=?,pix_cidade=? WHERE estabelecimento_id=?')
+          .bind(pixKey, pixCity || null, tenant).run();
+        store = await env.DB.prepare('SELECT * FROM lojas_online WHERE estabelecimento_id=?').bind(tenant).first();
+      }
+    }
+    return store;
+  }
   const business = await env.rawDB.prepare('SELECT nome FROM estabelecimentos WHERE id=?').bind(tenant).first();
   const timestamp = now();
   const nome = business?.nome || 'Meu restaurante';
   const slug = await escolherSlugLoja(env.rawDB, nome, tenant);
   await env.DB.prepare(
-    `INSERT INTO lojas_online (slug,nome,descricao,taxa_entrega,aceita_entrega,aceita_retirada,ativo,criado_em,atualizado_em)
-     VALUES (?,?,?,?,?,?,?,?,?)`
-  ).bind(slug, nome, null, 0, 1, 1, 0, timestamp, timestamp).run();
+    `INSERT INTO lojas_online (slug,nome,descricao,taxa_entrega,aceita_entrega,aceita_retirada,ativo,criado_em,atualizado_em,pix_chave,pix_cidade)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(slug, nome, null, 0, 1, 1, 0, timestamp, timestamp,
+    await getConfigValue(env, 'pix_chave', ''), await getConfigValue(env, 'pix_cidade', '')).run();
   await reservarLinkLoja(env.rawDB, slug, tenant).run();
   store = await env.DB.prepare('SELECT * FROM lojas_online WHERE estabelecimento_id=?').bind(tenant).first();
   return store;
@@ -177,7 +226,7 @@ function pixDaLoja(body, current) {
 function pagamentoDoPedido(valor) {
   const bruto = String(valor || '').trim().toLocaleLowerCase('pt-BR');
   const pagamento = bruto === 'cartao' ? 'maquininha' : bruto;
-  if (!['pix', 'dinheiro', 'maquininha'].includes(pagamento)) throw httpError(400, 'Escolha Pix, dinheiro ou maquininha.');
+  if (!['pix', 'dinheiro', 'maquininha', 'efi_checkout'].includes(pagamento)) throw httpError(400, 'Escolha Pix, dinheiro, maquininha ou cartão online Efí.');
   return pagamento;
 }
 
@@ -195,6 +244,8 @@ async function storeResponse(env) {
     pix_chave: store.pix_chave || null,
     pix_cidade: store.pix_cidade || null,
     pix_disponivel: store.pix_chave ? 1 : 0,
+    checkout_efi_disponivel: await efiCheckoutDisponivel(env, store.estabelecimento_id) ? 1 : 0,
+    entrega_plataforma_disponivel: plataformaDisponivel(store, env) ? 1 : 0,
     estabelecimento_id: estabelecimentoId(env),
     site_url: `/pedido/${store.slug}`,
     segmentos: categorias.map((categoria) => categoria.nome),
@@ -203,7 +254,7 @@ async function storeResponse(env) {
 
 async function catalogRows(env, where = '', params = []) {
   return env.DB.prepare(
-    `SELECT cp.*, p.nome AS produto_nome, p.preco AS produto_preco, p.observacoes AS produto_observacoes,
+    `SELECT cp.*, p.nome AS produto_nome, p.preco AS produto_preco, p.observacoes AS produto_observacoes, p.tipo AS produto_tipo, p.combo_grupos_json,
        p.ativo AS produto_ativo, p.exibir_restaurante,
        cc.nome AS cardapio_categoria_nome, cc.id AS cardapio_categoria_ok,
        c.nome AS categoria_estoque_nome
@@ -280,7 +331,15 @@ async function catalogProduct(env, catalogId) {
   const row = rows.results[0];
   if (!row) return null;
   const options = await catalogOptions(env, [num(row.id)]);
-  return productView(row, options.get(num(row.id)) || []);
+  return (await enriquecerCombos(env, [productView(row, options.get(num(row.id)) || [])]))[0];
+}
+
+async function enriquecerCombos(env, lista) {
+  const ids = [...new Set(lista.flatMap((p) => (p.combo_grupos || []).flatMap((g) => g.opcoes.map((o) => o.produto_id))))];
+  if (!ids.length) return lista;
+  const rows = await env.DB.prepare('SELECT id,nome,ativo FROM produtos WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)).all();
+  const nomes = new Map(rows.results.filter((p) => num(p.ativo)).map((p) => [num(p.id), p.nome]));
+  return lista.map((p) => ({ ...p, combo_grupos: p.combo_grupos.map((g) => ({ ...g, opcoes: g.opcoes.filter((o) => nomes.has(o.produto_id)).map((o) => ({ ...o, nome: nomes.get(o.produto_id) })) })) }));
 }
 
 function nulo(value) {
@@ -423,21 +482,34 @@ export async function updateOnlineStoreHandler(c, env) {
   } catch (error) {
     return c.json({ error: error?.message || 'WhatsApp inválido' }, error?.status || 400);
   }
+  const ativarMotoboy = flag(body.entrega_plataforma_ativo, current.entrega_plataforma_ativo) === 1;
+  if (ativarMotoboy && !num(current.entrega_plataforma_ativo)) {
+    if (!integracaoEntregasConfigurada({ pix_chave: pix.chave, latitude: local.latitude, longitude: local.longitude }, env)) {
+      return c.json({ error: 'Configure Pix, localização da loja e integração HTTPS dos motoboys antes de ativar.' }, 409);
+    }
+    await chamarEntregas(env, `/api/integration/stores/${estabelecimentoId(env)}/quote`, {
+      method: 'POST', body: { distanceKm: 1, subsidy: 'base' },
+    });
+  }
   const atualizar = env.DB.prepare(
     `UPDATE lojas_online SET slug=?,nome=?,descricao=?,logo_url=?,capa_url=?,cor_capa=?,taxa_entrega=?,tempo_min_entrega=?,tempo_max_entrega=?,
-     aceita_entrega=?,aceita_retirada=?,aceita_pedidos_online=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,whatsapp_suporte=?,atualizado_em=? WHERE estabelecimento_id=?`
+     aceita_entrega=?,aceita_retirada=?,aceita_pedidos_online=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,whatsapp_suporte=?,entrega_plataforma_ativo=?,atualizado_em=? WHERE estabelecimento_id=?`
   ).bind(
     slug, nome, nulo(descricao), logo, capa, cor,
     taxa, min, max, flag(body.aceita_entrega, current.aceita_entrega), flag(body.aceita_retirada, current.aceita_retirada),
     flag(body.aceita_pedidos_online, current.aceita_pedidos_online),
     flag(body.ativo, current.ativo), nulo(local.endereco), nulo(local.latitude), nulo(local.longitude), nulo(local.raio),
-    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), nulo(whatsappSuporte), now(), estabelecimentoId(env)
+    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), nulo(whatsappSuporte), flag(body.entrega_plataforma_ativo, current.entrega_plataforma_ativo), now(), estabelecimentoId(env)
   );
   await env.DB.batch([
     reservarLinkLoja(env.rawDB, current.slug, estabelecimentoId(env)),
     reservarLinkLoja(env.rawDB, slug, estabelecimentoId(env)),
     atualizar,
   ]);
+  if (body.pix_chave !== undefined || body.pix_cidade !== undefined) {
+    await setConfig(env, 'pix_chave', pix.chave || '');
+    await setConfig(env, 'pix_cidade', pix.cidade || '');
+  }
   return c.json(await storeResponse(env));
 }
 
@@ -616,7 +688,7 @@ export async function listOnlineCatalogHandler(c, env) {
   const rows = await catalogRows(env);
   const options = await catalogOptions(env, rows.results.map((row) => num(row.id)));
   const vendas = await vendidosDaLoja(env, estabelecimentoId(env));
-  return c.json(rows.results.map((row) => comVendidos(productView(row, options.get(num(row.id)) || []), vendas)));
+  return c.json(await enriquecerCombos(env, rows.results.map((row) => comVendidos(productView(row, options.get(num(row.id)) || []), vendas))));
 }
 
 export async function upsertOnlineCatalogProductHandler(c, env) {
@@ -625,8 +697,8 @@ export async function upsertOnlineCatalogProductHandler(c, env) {
   if (!Number.isInteger(productId) || productId <= 0) return c.json({ error: 'Produto inválido' }, 400);
   const product = await env.DB.prepare('SELECT * FROM produtos WHERE id=? AND ativo=1').bind(productId).first();
   if (!product) return c.json({ error: 'Produto não encontrado ou inativo' }, 404);
-  if (product.tipo !== 'produto' && product.tipo !== 'composto') {
-    return c.json({ error: 'O delivery só publica produto simples ou composto que já está no estoque' }, 400);
+  if (!['produto', 'composto', 'combo'].includes(product.tipo)) {
+    return c.json({ error: 'O delivery só publica produto simples, composto ou combo cadastrado' }, 400);
   }
   const existing = await env.DB.prepare('SELECT * FROM cardapio_online_produtos WHERE produto_id=?').bind(productId).first();
   const data = catalogPayload(body, existing || { categoria_id: product.categoria_id, preco: product.preco, disponivel: 1, ativo: 1, ordem: 0 }, product.preco);
@@ -696,6 +768,7 @@ function esperaMinutos(iso) {
 function etapaPainel(row) {
   if (row.status === 'cancelado' || row.etapa === 'cancelado') return 'cancelado';
   if (row.etapa === 'aguardando_pix') return 'aguardando_pix';
+  if (row.etapa === 'aguardando_pagamento') return 'aguardando_pagamento';
   if (row.etapa === 'entregue' || row.status === 'finalizado') return 'entregue';
   if (row.etapa === 'saiu_entrega' || row.etapa === 'pronto_retirada' || row.etapa === 'preparando') return row.etapa;
   if (row.status === 'confirmado') return 'preparando';
@@ -972,30 +1045,32 @@ export async function painelCozinhaHandler(c, env) {
   return c.json({ estacoes:[...porEstacao.values()], categorias:categorias.map(cat=>({...cat,caminho:caminhos.get(num(cat.id)).map(pai=>pai.nome).join(' › ')})) });
 }
 
-async function liberarPedidoPix(env, row) {
+async function liberarPedidoPagamento(env, row) {
   const timestamp = now();
   const virtualNumber = 900000000;
   const id = num(row.id);
+  const etapaPendente = row.etapa;
+  if (!['aguardando_pix', 'aguardando_pagamento'].includes(etapaPendente)) return;
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO mesas (estabelecimento_id,numero,nome,capacidade,setor,status,ativo,aberta_em,criado_em,tipo)
        SELECT ?,?+id,'Pedido online #' || id,1,'Delivery online','ocupada',1,?,?,'online'
-       FROM pedidos_online WHERE id=? AND mesa_id IS NULL AND etapa='aguardando_pix' AND forma_pagamento='pix'`
-    ).bind(row.estabelecimento_id, virtualNumber, timestamp, timestamp, id),
+       FROM pedidos_online WHERE id=? AND mesa_id IS NULL AND etapa=?`
+    ).bind(row.estabelecimento_id, virtualNumber, timestamp, timestamp, id, etapaPendente),
     env.DB.prepare(
       `INSERT INTO comandas (estabelecimento_id,mesa_id,cliente_nome,garcom_nome,status,taxa_garcom_pct,pessoas_count,criado_em)
        SELECT o.estabelecimento_id,m.id,o.cliente_nome,'Pedido online','aberta',0,1,?
        FROM pedidos_online o JOIN mesas m ON m.estabelecimento_id=o.estabelecimento_id AND m.numero=?+o.id
-       WHERE o.id=? AND o.comanda_id IS NULL AND o.etapa='aguardando_pix'`
-    ).bind(timestamp, virtualNumber, id),
+       WHERE o.id=? AND o.comanda_id IS NULL AND o.etapa=?`
+    ).bind(timestamp, virtualNumber, id, etapaPendente),
     env.DB.prepare(
       `UPDATE pedidos_online SET mesa_id=(SELECT m.id FROM mesas m WHERE m.estabelecimento_id=pedidos_online.estabelecimento_id AND m.numero=?+pedidos_online.id),
        comanda_id=(SELECT c.id FROM comandas c JOIN mesas m ON m.id=c.mesa_id WHERE c.estabelecimento_id=pedidos_online.estabelecimento_id AND m.numero=?+pedidos_online.id),
-       etapa='recebido', atualizado_em=? WHERE id=? AND comanda_id IS NULL AND etapa='aguardando_pix'`
-    ).bind(virtualNumber, virtualNumber, timestamp, id),
+       etapa='recebido', atualizado_em=? WHERE id=? AND comanda_id IS NULL AND etapa=?`
+    ).bind(virtualNumber, virtualNumber, timestamp, id, etapaPendente),
     env.DB.prepare(
-      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,status,responsavel,criado_em)
-       SELECT i.estabelecimento_id,o.comanda_id,NULL,i.produto_id,i.nome,i.quantidade,i.preco_unitario,NULLIF(i.observacao,''),'novo','Pedido online',?
+      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em)
+       SELECT i.estabelecimento_id,o.comanda_id,NULL,i.produto_id,i.nome,i.quantidade,i.preco_unitario,NULLIF(i.observacao,''),i.combo_escolhas_json,'novo','Pedido online',?
        FROM pedidos_online o JOIN pedidos_online_itens i ON i.pedido_online_id=o.id AND i.estabelecimento_id=o.estabelecimento_id
        WHERE o.id=? AND o.comanda_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM comanda_itens ci WHERE ci.comanda_id=o.comanda_id)`
@@ -1020,14 +1095,22 @@ export async function atualizarPedidoOnlineHandler(c, env) {
     if (row.forma_pagamento !== 'pix' || etapa !== 'aguardando_pix') {
       return c.json({ error: 'Este pedido não está aguardando Pix' }, 409);
     }
-    await liberarPedidoPix(env, row);
+    await liberarPedidoPagamento(env, row);
     const released = await env.DB.prepare('SELECT id, status, etapa, comanda_id FROM pedidos_online WHERE id=?').bind(row.id).first();
     if (!released?.comanda_id || released.etapa !== 'recebido') {
       throw httpError(409, 'Não foi possível liberar o pedido. Tente novamente.');
     }
-    return c.json({ ok: true, id: num(row.id), status: 'recebido', etapa: 'recebido', comanda_id: num(released.comanda_id) });
+    let despacho = null;
+    if (num(row.entrega_plataforma) === 1) {
+      try { despacho = await despacharEntregaPix(env, row.id); }
+      catch (error) {
+        await env.DB.prepare("UPDATE pedidos_online SET entrega_despacho_status='erro' WHERE id=?").bind(row.id).run();
+        despacho = { error: error?.message || 'O serviço de motoboys está indisponível. Tente chamar novamente.' };
+      }
+    }
+    return c.json({ ok: true, id: num(row.id), status: 'recebido', etapa: 'recebido', comanda_id: num(released.comanda_id), despacho });
   }
-  if (etapa === 'aguardando_pix' && acao !== 'cancelado') {
+  if (['aguardando_pix', 'aguardando_pagamento'].includes(etapa) && acao !== 'cancelado') {
     return c.json({ error: 'Confirme o Pix antes de liberar o pedido' }, 409);
   }
   if (acao === 'confirmado') {
@@ -1036,6 +1119,20 @@ export async function atualizarPedidoOnlineHandler(c, env) {
     return c.json({ ok: true, id: num(row.id), status: 'confirmado', etapa: 'preparando' });
   }
   if (acao === 'cancelado') {
+    if (num(row.entrega_plataforma) === 1 && row.entrega_externa_id) {
+      const path = `/api/integration/stores/${row.estabelecimento_id}/orders/${row.entrega_externa_id}`;
+      let corrida = await chamarEntregas(env, path);
+      if (['delivered', 'in_transit', 'incident'].includes(corrida.status)) {
+        if (corrida.status === 'in_transit') {
+          await chamarEntregas(env, `${path}/cancel`, { method: 'POST', body: { note: 'Cancelamento solicitado no DoixP Delivery após a retirada.' } });
+        }
+        return c.json({ error: 'O motoboy já retirou o pedido ou há uma ocorrência. Aguarde a análise do suporte.' }, 409);
+      }
+      if (!['cancelled', 'returned'].includes(corrida.status)) {
+        corrida = await chamarEntregas(env, `${path}/cancel`, { method: 'POST', body: { note: 'Cancelamento solicitado no DoixP Delivery.' } });
+        if (corrida.status !== 'cancelled') return c.json({ error: 'A corrida precisa ser analisada pelo suporte antes de cancelar o pedido.' }, 409);
+      }
+    }
     await env.DB.prepare("UPDATE pedidos_online SET status='cancelado', etapa='cancelado', atualizado_em=? WHERE id=?").bind(timestamp, row.id).run();
     if (row.comanda_id) {
       await env.DB.prepare("UPDATE comanda_itens SET status='cancelado' WHERE comanda_id=? AND status IN ('novo','enviado')").bind(row.comanda_id).run();
@@ -1045,6 +1142,12 @@ export async function atualizarPedidoOnlineHandler(c, env) {
     return c.json({ ok: true, id: num(row.id), status: 'cancelado', etapa: 'cancelado' });
   }
   if (acao === 'saiu_entrega' && row.tipo_entrega !== 'entrega') return c.json({ error: 'Este pedido é de retirada' }, 400);
+  if (num(row.entrega_plataforma) === 1 && ['saiu_entrega', 'entregue'].includes(acao)) {
+    if (!row.entrega_externa_id) return c.json({ error: 'A corrida ainda não foi anunciada aos motoboys.' }, 409);
+    const corrida = await chamarEntregas(env, `/api/integration/stores/${row.estabelecimento_id}/orders/${row.entrega_externa_id}`);
+    if (acao === 'saiu_entrega' && !['in_transit', 'delivered'].includes(corrida.status)) return c.json({ error: 'Confirme a retirada com o código de seis dígitos antes de marcar a saída.' }, 409);
+    if (acao === 'entregue' && corrida.status !== 'delivered') return c.json({ error: 'A entrega precisa ser confirmada pelo motoboy com os últimos quatro dígitos do CPF.' }, 409);
+  }
   if (acao === 'pronto_retirada' && row.tipo_entrega !== 'retirada') return c.json({ error: 'Este pedido é de entrega' }, 400);
   if (etapa === 'recebido') return c.json({ error: 'Confirme o pedido antes de avançar' }, 409);
   if (acao === 'saiu_entrega') {
@@ -1062,6 +1165,34 @@ export async function atualizarPedidoOnlineHandler(c, env) {
   }
   await env.DB.prepare("UPDATE pedidos_online SET etapa='entregue', atualizado_em=? WHERE id=?").bind(timestamp, row.id).run();
   return c.json({ ok: true, id: num(row.id), status: row.status, etapa: 'entregue' });
+}
+
+async function despacharEntregaPix(env, id) {
+  const row = await env.DB.prepare('SELECT * FROM pedidos_online WHERE id=?').bind(id).first();
+  if (!row || num(row.entrega_plataforma) !== 1) throw httpError(404, 'Pedido com motoboy não encontrado.');
+  if (row.status === 'cancelado' || row.etapa === 'aguardando_pix' || !row.comanda_id) throw httpError(409, 'Confirme o recebimento do Pix antes de chamar o motoboy.');
+  if (row.entrega_externa_id) return { id: row.entrega_externa_id, status: row.entrega_despacho_status };
+  const store = await env.DB.prepare('SELECT l.*,e.nome AS empresa_nome FROM lojas_online l JOIN estabelecimentos e ON e.id=l.estabelecimento_id WHERE l.estabelecimento_id=?').bind(row.estabelecimento_id).first();
+  if (!store || !integracaoEntregasConfigurada(store, env)) throw httpError(503, 'Integração dos motoboys indisponível nesta loja.');
+  const code = await decifrarCodigoEntrega(row.entrega_codigo_cifrado, `${row.estabelecimento_id}:${row.chave}`, env.ENTREGAS_INTEGRATION_SECRET);
+  const delivery = await chamarEntregas(env, '/api/integration/orders', { method: 'POST', body: {
+    establishmentId: num(row.estabelecimento_id), reference: `PEDIDO-ONLINE-${row.id}`,
+    paymentReference: `pix-manual:${row.estabelecimento_id}:${row.id}`, paymentMode: 'pix_confirmed_manually',
+    customerName: row.cliente_nome, customerPhone: row.telefone, customerCpfLast4: code,
+    destinationAddress: row.endereco, destinationLat: Number(row.entrega_destino_lat), destinationLng: Number(row.entrega_destino_lng),
+    distanceKm: Number(row.entrega_distancia_precisa), subsidy: row.entrega_subsidio, ready: false,
+    quotedTotalCents: Number(row.entrega_frete_centavos), quotedCustomerCents: Math.round(Number(row.taxa_entrega) * 100),
+    quotedMerchantCents: Number(row.entrega_frete_centavos) - Math.round(Number(row.taxa_entrega) * 100),
+  } });
+  await env.DB.prepare("UPDATE pedidos_online SET entrega_despacho_status='anunciada',entrega_externa_id=?,atualizado_em=? WHERE id=? AND entrega_plataforma=1")
+    .bind(delivery.id, now(), row.id).run();
+  return { id: delivery.id, status: delivery.status };
+}
+
+export async function chamarEntregadorOnlineHandler(c, env) {
+  const id = Number(c.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: 'Pedido inválido' }, 400);
+  return c.json(await despacharEntregaPix(env, id));
 }
 
 export async function listOnlineOrdersHandler(c, env) {
@@ -1134,7 +1265,15 @@ export async function distanciaLojaHandler(c, env) {
   const q = String(c.req.query('q') || '').trim();
   const ponto = q ? await localizar(env, { q }) : pontoDaConsulta(c);
   if (!ponto) return c.json({ error: 'Não foi possível localizar este endereço. Inclua rua, número e cidade.' }, 400);
-  return c.json({ ...areaDaLoja(store, ponto), endereco: ponto.endereco || q });
+  const area = areaDaLoja(store, ponto);
+  if (c.req.query('plataforma') === '1') {
+    if (!plataformaDisponivel(store, env)) return c.json({ error: 'Motoboy da plataforma indisponível nesta loja.' }, 409);
+    if (area.entrega_na_regiao === 0 || area.distancia_km == null) return c.json({ error: 'Endereço fora da área da loja ou sem distância calculada.' }, 400);
+    const distance = distanciaKm({ latitude: Number(store.latitude), longitude: Number(store.longitude) }, ponto);
+    const quote = await chamarEntregas(env, `/api/integration/stores/${store.estabelecimento_id}/quote`, { method: 'POST', body: { distanceKm: distance, subsidy: 'base' } });
+    return c.json({ ...area, endereco: ponto.endereco || q, latitude: ponto.latitude, longitude: ponto.longitude, plataforma: quote });
+  }
+  return c.json({ ...area, endereco: ponto.endereco || q });
 }
 
 export async function listPublicStoresHandler(c, env) {
@@ -1219,21 +1358,43 @@ export async function getPublicOrderHandler(c, env) {
   const key = String(c.params.chave || '').trim();
   if (!ORDER_KEY.test(key)) return c.json({ error: 'Pedido não encontrado' }, 404);
   const row = await env.DB.prepare(
-    `SELECT po.id, po.status, po.etapa, po.tipo_entrega, po.forma_pagamento, po.troco_para, po.pix_copia_cola, po.total, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.criado_em, po.atualizado_em, c.status AS comanda_status
+    `SELECT po.id, po.status, po.etapa, po.tipo_entrega, po.forma_pagamento, po.troco_para, po.pix_copia_cola, po.total, po.checkout_url, po.checkout_capture_method, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.entrega_plataforma, po.entrega_externa_id, po.entrega_despacho_status, po.criado_em, po.atualizado_em, c.status AS comanda_status
      FROM pedidos_online po LEFT JOIN comandas c ON c.id=po.comanda_id AND c.estabelecimento_id=po.estabelecimento_id
      WHERE po.estabelecimento_id=? AND po.chave=?`
   ).bind(store.estabelecimento_id, key).first();
   if (!row) return c.json({ error: 'Pedido não encontrado' }, 404);
+  let deliveryStatus = null;
+  if (num(row.entrega_plataforma) === 1 && row.entrega_externa_id && row.status !== 'cancelado') {
+    const cacheKey = `entrega-status:${store.estabelecimento_id}:${row.entrega_externa_id}`;
+    deliveryStatus = await kvGet(env, cacheKey);
+    if (!deliveryStatus) {
+      try {
+        const delivery = await chamarEntregas(env, `/api/integration/stores/${store.estabelecimento_id}/orders/${row.entrega_externa_id}`);
+        deliveryStatus = delivery.status;
+        await kvPut(env, cacheKey, deliveryStatus, { expirationTtl: 60 });
+      } catch { /* O pedido continua visível mesmo se o serviço de motoboys falhar. */ }
+    }
+  }
+  const etapaAtual = deliveryStatus === 'delivered' ? 'entregue'
+    : deliveryStatus === 'in_transit' ? 'saiu_entrega' : etapaCliente(row);
+  if (etapaAtual !== row.etapa && ['entregue', 'saiu_entrega'].includes(etapaAtual)) {
+    await env.DB.prepare('UPDATE pedidos_online SET etapa=?,atualizado_em=? WHERE id=? AND estabelecimento_id=? AND status!=\'cancelado\' AND etapa!=\'entregue\'')
+      .bind(etapaAtual, now(), row.id, store.estabelecimento_id).run();
+  }
   const itens = await env.DB.prepare(
-    'SELECT nome, quantidade FROM pedidos_online_itens WHERE estabelecimento_id=? AND pedido_online_id=? ORDER BY ordem, id'
+    'SELECT nome, quantidade, observacao FROM pedidos_online_itens WHERE estabelecimento_id=? AND pedido_online_id=? ORDER BY ordem, id'
   ).bind(store.estabelecimento_id, row.id).all();
   return c.json({
     id: num(row.id),
-    etapa: etapaCliente(row),
+    etapa: etapaAtual,
+    entrega_plataforma: num(row.entrega_plataforma),
+    entrega_status: deliveryStatus || row.entrega_despacho_status || null,
     tipo_entrega: row.tipo_entrega,
     forma_pagamento: row.forma_pagamento,
     troco_para: row.troco_para == null || row.troco_para === '' ? null : num(row.troco_para),
     pix_copia_cola: row.forma_pagamento === 'pix' ? (row.pix_copia_cola || null) : null,
+    checkout_url: row.forma_pagamento === 'efi_checkout' ? (row.checkout_url || null) : null,
+    checkout_capture_method: row.checkout_capture_method || null,
     total: num(row.total),
     taxa_entrega: num(row.taxa_entrega),
     valor_entrega: row.valor_entrega == null || row.valor_entrega === '' ? null : num(row.valor_entrega),
@@ -1248,17 +1409,50 @@ export async function getPublicOrderHandler(c, env) {
   });
 }
 
+export async function confirmarCheckoutPublicoHandler(c, env) {
+  const store = await lojaPorSlug(env, c.params.slug, false);
+  const key = String(c.params.chave || '').trim();
+  if (!ORDER_KEY.test(key)) return c.json({ error: 'Pedido não encontrado' }, 404);
+  const row = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?')
+    .bind(store.estabelecimento_id, key).first();
+  if (!row) return c.json({ error: 'Pedido não encontrado' }, 404);
+  try {
+    await confirmarCobrancaCheckoutEfi(env, row);
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ error: error?.message || 'Não foi possível confirmar o pagamento.' }, error?.status || 400);
+  }
+}
+
+export async function webhookCheckoutEfiHandler(c, env) {
+  const raw = await c.req.text();
+  let token = '';
+  try { token = String(JSON.parse(raw)?.notification || ''); } catch { token = String(new URLSearchParams(raw).get('notification') || ''); }
+  try {
+    const notifications = await consultarNotificacaoEfi(env, token);
+    const paid = notifications.find((item) => item?.status?.current === 'paid' && ORDER_KEY.test(String(item?.custom_id || '')));
+    if (!paid) return c.json({ ok: true });
+    const row = await env.DB.prepare('SELECT * FROM pedidos_online WHERE chave=? AND forma_pagamento=\'efi_checkout\'').bind(String(paid.custom_id)).first();
+    if (!row) return c.json({ error: 'Pedido Efí ainda não registrado.' }, 503);
+    if (String(paid.identifiers?.charge_id || '') !== String(row.checkout_charge_id || '')) return c.json({ error: 'Cobrança não corresponde ao pedido.' }, 400);
+    await confirmarCobrancaCheckoutEfi(env, row);
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ error: error?.message || 'Notificação Efí ainda não processada.' }, error?.status || 503);
+  }
+}
+
 export async function getPublicStoreHandler(c, env) {
   const store = await publicStore(env, c.params.slug);
   const rows = await env.DB.prepare(
-    `SELECT cp.*, p.nome AS produto_nome, p.preco AS produto_preco, p.observacoes AS produto_observacoes,
+    `SELECT cp.*, p.nome AS produto_nome, p.preco AS produto_preco, p.observacoes AS produto_observacoes, p.tipo AS produto_tipo, p.combo_grupos_json,
        cc.nome AS cardapio_categoria_nome, cc.id AS cardapio_categoria_ok,
        cat.nome AS categoria_estoque_nome
      FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id
      LEFT JOIN cardapio_online_categorias cc ON cc.id=cp.cardapio_categoria_id AND cc.estabelecimento_id=cp.estabelecimento_id AND cc.ativo=1
      LEFT JOIN categorias cat ON cat.id=cp.categoria_id AND cat.estabelecimento_id=cp.estabelecimento_id
      WHERE cp.estabelecimento_id=? AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1
-       AND p.tipo IN ('produto','composto')
+       AND p.tipo IN ('produto','composto','combo')
      ORDER BY CASE WHEN cc.id IS NULL THEN 1 ELSE 0 END, cc.ordem, cc.id, cp.ordem, cp.id`
   ).bind(store.estabelecimento_id).all();
   const ids = rows.results.map((row) => num(row.id));
@@ -1275,7 +1469,7 @@ export async function getPublicStoreHandler(c, env) {
     }
   }
   const vendas = await vendidosDaLoja(env, store.estabelecimento_id);
-  const products = rows.results.map((row) => comVendidos(productView(row, options.get(num(row.id)) || []), vendas));
+  const products = await enriquecerCombos(env, rows.results.map((row) => comVendidos(productView(row, options.get(num(row.id)) || []), vendas)));
   const categories = [];
   const categoriasVistas = new Set();
   for (const product of products) {
@@ -1296,6 +1490,8 @@ export async function getPublicStoreHandler(c, env) {
       aceita_entrega: num(store.aceita_entrega), aceita_retirada: num(store.aceita_retirada),
       aceita_pedidos_online: num(store.aceita_pedidos_online), ativo: num(store.ativo), modo_publicacao: store.modo_publicacao,
       pix_disponivel: store.pix_chave ? 1 : 0,
+      checkout_efi_disponivel: await efiCheckoutDisponivel(env, store.estabelecimento_id) ? 1 : 0,
+      entrega_plataforma_disponivel: plataformaDisponivel(store, env) ? 1 : 0,
       whatsapp_suporte: store.whatsapp_suporte || null,
       ...areaDaLoja(store, pontoDaConsulta(c)),
       segmentos: segmentos.results.map((row) => row.nome),
@@ -1333,6 +1529,7 @@ export async function createPublicOrderHandler(c, env) {
       id: existing.id, comanda_id: existing.comanda_id, status: existing.status, total: num(existing.total),
       forma_pagamento: existing.forma_pagamento,
       pix_copia_cola: existing.forma_pagamento === 'pix' ? (existing.pix_copia_cola || null) : null,
+      checkout_url: existing.forma_pagamento === 'efi_checkout' ? (existing.checkout_url || null) : null,
       repetido: true,
     });
   }
@@ -1341,16 +1538,20 @@ export async function createPublicOrderHandler(c, env) {
   const phone = String(body?.telefone || '').replace(/\D/g, '');
   if (phone.length < 10 || phone.length > 13) return c.json({ error: 'Informe um WhatsApp válido' }, 400);
   const delivery = body?.tipo_entrega === 'retirada' ? 'retirada' : body?.tipo_entrega === 'entrega' ? 'entrega' : '';
+  const platformDelivery = body?.entrega_plataforma === true;
   if (!delivery || (delivery === 'entrega' && !num(store.aceita_entrega)) || (delivery === 'retirada' && !num(store.aceita_retirada))) return c.json({ error: 'Esta forma de recebimento não está disponível' }, 400);
+  if (platformDelivery && (delivery !== 'entrega' || !plataformaDisponivel(store, env))) return c.json({ error: 'Motoboy da plataforma indisponível nesta loja.' }, 409);
   const address = cleanText(body?.endereco, 350, 'Endereço', delivery === 'entrega');
   if (delivery === 'entrega' && store.valor_por_km != null && (store.latitude == null || store.longitude == null)) {
     return c.json({ error: 'Configure o endereço da loja para calcular a entrega por km.' }, 400);
   }
   let distanciaBruta = null;
-  const calculaDistancia = delivery === 'entrega' && store.latitude != null && store.longitude != null && (store.raio_entrega_km != null || store.valor_por_km != null);
+  let destinationPoint = null;
+  const calculaDistancia = delivery === 'entrega' && store.latitude != null && store.longitude != null && (platformDelivery || store.raio_entrega_km != null || store.valor_por_km != null);
   if (calculaDistancia) {
     const ponto = await localizar(env, { q: address });
     if (!ponto) return c.json({ error: 'Não foi possível localizar este endereço. Inclua rua, número e cidade.' }, 400);
+    destinationPoint = ponto;
     distanciaBruta = distanciaKm({ latitude: Number(store.latitude), longitude: Number(store.longitude) }, ponto);
     if (store.raio_entrega_km != null && !dentroDoRaio(distanciaBruta, Number(store.raio_entrega_km))) {
       return c.json({ error: `Esta loja entrega até ${kmExibido(store.raio_entrega_km)} km. Este endereço fica a ${kmExibido(distanciaBruta)} km.` }, 400);
@@ -1368,6 +1569,16 @@ export async function createPublicOrderHandler(c, env) {
   } catch (error) {
     return c.json({ error: error?.message || 'Escolha Pix, dinheiro ou maquininha.' }, error?.status || 400);
   }
+  if (platformDelivery && payment !== 'pix') return c.json({ error: 'A entrega pela plataforma aceita Pix nesta etapa; o checkout Efí com divisão do frete será integrado ao fluxo de entregas depois.' }, 400);
+  let platformQuote = null;
+  let encryptedCode = null;
+  if (platformDelivery) {
+    const code = String(body?.cpf_ultimos4 || '');
+    if (!/^\d{4}$/.test(code)) return c.json({ error: 'Informe os últimos quatro números do CPF para confirmar a entrega.' }, 400);
+    platformQuote = await chamarEntregas(env, `/api/integration/stores/${store.estabelecimento_id}/quote`, { method: 'POST', body: { distanceKm: distanciaBruta, subsidy: 'base' } });
+    if (body?.frete_cliente_esperado_centavos !== platformQuote.customerCents) return c.json({ error: 'O valor da entrega mudou. Confira o total e tente novamente.' }, 409);
+    encryptedCode = await cifrarCodigoEntrega(code, `${store.estabelecimento_id}:${key}`, env.ENTREGAS_INTEGRATION_SECRET);
+  }
   const change = payment === 'dinheiro' && body?.troco_para != null && String(body.troco_para).trim() !== ''
     ? optionalNumber(body.troco_para, 'Valor em dinheiro', { min: 0, max: 100000 })
     : null;
@@ -1378,6 +1589,7 @@ export async function createPublicOrderHandler(c, env) {
     cardapio_produto_id: Number(item?.cardapio_produto_id), quantidade: Number(item?.quantidade || 1),
     opcoes_ids: Array.isArray(item?.opcoes_ids) ? item.opcoes_ids.map(Number) : [], observacao: cleanText(item?.observacao, 400, 'Observação do item'),
     preco_unitario_esperado: item?.preco_unitario_esperado == null ? null : Number(item.preco_unitario_esperado),
+    combo_escolhas: item?.combo_escolhas,
   }));
   for (const item of parsedItems) {
     if (!Number.isInteger(item.cardapio_produto_id) || item.cardapio_produto_id <= 0 || !Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 30 || item.opcoes_ids.length > 25 || item.opcoes_ids.some((id) => !Number.isInteger(id) || id <= 0) || (item.preco_unitario_esperado != null && (!Number.isFinite(item.preco_unitario_esperado) || item.preco_unitario_esperado < 0))) return c.json({ error: 'Itens do pedido inválidos' }, 400);
@@ -1385,9 +1597,9 @@ export async function createPublicOrderHandler(c, env) {
   const catalogIds = [...new Set(parsedItems.map((item) => item.cardapio_produto_id))];
   const placeholders = catalogIds.map(() => '?').join(',');
   const catalog = await env.DB.prepare(
-    `SELECT cp.*,p.nome AS produto_nome,p.preco AS produto_preco FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id
+    `SELECT cp.*,p.nome AS produto_nome,p.preco AS produto_preco,p.tipo AS produto_tipo,p.combo_grupos_json FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id
      WHERE cp.estabelecimento_id=? AND cp.id IN (${placeholders}) AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1
-       AND p.tipo IN ('produto','composto')`
+       AND p.tipo IN ('produto','composto','combo')`
   ).bind(store.estabelecimento_id, ...catalogIds).all();
   if (catalog.results.length !== catalogIds.length) return c.json({ error: 'Um dos itens não está mais disponível' }, 409);
   const catalogById = new Map(catalog.results.map((row) => [num(row.id), row]));
@@ -1401,26 +1613,29 @@ export async function createPublicOrderHandler(c, env) {
     if (options.results.length !== optionIds.length) return c.json({ error: 'Uma opção escolhida não está mais disponível' }, 409);
     for (const option of options.results) optionsById.set(num(option.id), option);
   }
-  const items = parsedItems.map((item) => {
+  const items = await Promise.all(parsedItems.map(async (item) => {
     const catalogProduct = catalogById.get(item.cardapio_produto_id);
     const options = item.opcoes_ids.map((id) => optionsById.get(id));
     if (options.some((option) => !option || num(option.cardapio_produto_id) !== num(catalogProduct.id))) throw httpError(400, 'Uma opção não pertence a este produto');
     const precoNormal = catalogProduct.preco == null ? num(catalogProduct.produto_preco) : num(catalogProduct.preco);
     const promocional = catalogProduct.preco_promocional == null ? null : num(catalogProduct.preco_promocional);
     const precoDelivery = promocional != null && promocional < precoNormal ? promocional : precoNormal;
-    const unitPrice = Math.round((precoDelivery + options.filter((option) => option.tipo === 'adicional').reduce((sum, option) => sum + num(option.preco_adicional), 0)) * 100) / 100;
+    const combo = catalogProduct.produto_tipo === 'combo' ? await montarCombo(env, { tipo: 'combo', combo_grupos_json: catalogProduct.combo_grupos_json }, item.combo_escolhas) : null;
+    if (!combo && item.combo_escolhas != null) throw httpError(400, 'Este produto não é um combo');
+    const unitPrice = Math.round((precoDelivery + (combo?.adicional || 0) + options.filter((option) => option.tipo === 'adicional').reduce((sum, option) => sum + num(option.preco_adicional), 0)) * 100) / 100;
     if (item.preco_unitario_esperado != null && Math.round(item.preco_unitario_esperado * 100) !== Math.round(unitPrice * 100)) {
       throw httpError(409, 'O preço de um produto mudou. Atualize o cardápio e tente novamente.');
     }
     return {
       cardapio_produto_id: num(catalogProduct.id), produto_id: num(catalogProduct.produto_id), nome: catalogProduct.nome_exibicao || catalogProduct.produto_nome,
-      quantidade: item.quantidade, preco_unitario: unitPrice, observacao: orderNote(item.observacao, options),
+      quantidade: item.quantidade, preco_unitario: unitPrice, observacao: [combo?.descricao, orderNote(item.observacao, options)].filter(Boolean).join(' · '),
+      combo_escolhas_json: combo ? JSON.stringify(combo.escolhas) : null,
       opcoes_json: JSON.stringify(options.map((option) => ({ id: num(option.id), nome: option.nome, tipo: option.tipo, preco_adicional: num(option.preco_adicional) }))),
       total: Math.round(unitPrice * item.quantidade * 100) / 100,
     };
-  });
+  }));
   const subtotal = Math.round(items.reduce((sum, item) => sum + item.total, 0) * 100) / 100;
-  const deliveryFee = delivery === 'entrega' ? num(cobranca.taxa_cliente) : 0;
+  const deliveryFee = platformDelivery ? platformQuote.customerCents / 100 : delivery === 'entrega' ? num(cobranca.taxa_cliente) : 0;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
   if (payment === 'dinheiro' && change != null && change < total) {
     return c.json({ error: `O valor em dinheiro deve ser igual ou maior que ${total.toFixed(2).replace('.', ',')}.` }, 400);
@@ -1433,17 +1648,33 @@ export async function createPublicOrderHandler(c, env) {
       return c.json({ error: error?.message || 'Esta loja não recebe Pix.' }, error?.status || 400);
     }
   }
+  let checkout = null;
+  if (payment === 'efi_checkout') {
+    try { checkout = await criarLinkCheckoutEfi(env, store, store.estabelecimento_id, key, items, total, deliveryFee, platformDelivery); }
+    catch (error) { return c.json({ error: error?.message || 'Não foi possível iniciar o Checkout Efí.' }, error?.status || 502); }
+  }
   const timestamp = now();
   const data = JSON.stringify(items);
   const virtualNumber = 900000000;
   const segurarPix = payment === 'pix';
+  const segurarPagamento = payment === 'efi_checkout';
+  const etapaPendente = segurarPagamento ? 'aguardando_pagamento' : 'aguardando_pix';
   const statements = [
     env.DB.prepare(
-      `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,criado_em,atualizado_em)
-       VALUES (?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?)`
-    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? 'aguardando_pix' : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), timestamp, timestamp),
+      `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em)
+       VALUES (?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, (segurarPix || segurarPagamento) ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), checkout?.url || null, checkout?.charge_id || null, timestamp, timestamp),
   ];
-  if (!segurarPix) {
+  if (platformDelivery) {
+    statements.push(env.DB.prepare(
+      `UPDATE pedidos_online SET entrega_plataforma=1,entrega_codigo_cifrado=?,entrega_destino_lat=?,entrega_destino_lng=?,
+       entrega_distancia_precisa=?,entrega_subsidio='base',entrega_frete_centavos=?,entrega_despacho_status='aguardando_pix',
+       valor_entrega=?,distancia_km=?,modo_entrega=?
+       WHERE estabelecimento_id=? AND chave=? AND entrega_plataforma=0`
+    ).bind(encryptedCode, destinationPoint.latitude, destinationPoint.longitude, distanciaBruta, platformQuote.totalCents,
+      platformQuote.totalCents / 100, kmExibido(distanciaBruta), platformQuote.customerCents === 0 ? 'gratis' : 'dividido', store.estabelecimento_id, key));
+  }
+  if (!segurarPix && !segurarPagamento) {
     statements.push(
       env.DB.prepare(
         `INSERT INTO mesas (estabelecimento_id,numero,nome,capacidade,setor,status,ativo,aberta_em,criado_em,tipo)
@@ -1464,24 +1695,24 @@ export async function createPublicOrderHandler(c, env) {
     );
   }
   statements.push(env.DB.prepare(
-    `INSERT INTO pedidos_online_itens (estabelecimento_id,pedido_online_id,ordem,produto_id,cardapio_produto_id,nome,quantidade,preco_unitario,observacao,opcoes_json,total,criado_em)
+    `INSERT INTO pedidos_online_itens (estabelecimento_id,pedido_online_id,ordem,produto_id,cardapio_produto_id,nome,quantidade,preco_unitario,observacao,opcoes_json,combo_escolhas_json,total,criado_em)
      SELECT o.estabelecimento_id,o.id,CAST(j.key AS INTEGER),json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.cardapio_produto_id'),json_extract(j.value,'$.nome'),
-     json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.opcoes_json'),json_extract(j.value,'$.total'),?
-     FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND ${segurarPix ? 'o.etapa=\'aguardando_pix\'' : 'o.comanda_id IS NOT NULL'}
+     json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.opcoes_json'),json_extract(j.value,'$.combo_escolhas_json'),json_extract(j.value,'$.total'),?
+     FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND ${(segurarPix || segurarPagamento) ? 'o.etapa=?' : 'o.comanda_id IS NOT NULL'}
      AND NOT EXISTS (SELECT 1 FROM pedidos_online_itens pi WHERE pi.pedido_online_id=o.id)`
-  ).bind(timestamp, data, store.estabelecimento_id, key));
-  if (!segurarPix) {
+  ).bind(...((segurarPix || segurarPagamento) ? [timestamp, data, store.estabelecimento_id, key, etapaPendente] : [timestamp, data, store.estabelecimento_id, key])));
+  if (!segurarPix && !segurarPagamento) {
     statements.push(env.DB.prepare(
-      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,status,responsavel,criado_em)
+      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em)
        SELECT o.estabelecimento_id,o.comanda_id,NULL,json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.nome'),json_extract(j.value,'$.quantidade'),
-       json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),'novo','Pedido online',?
+       json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.combo_escolhas_json'),'novo','Pedido online',?
        FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND o.comanda_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM comanda_itens ci WHERE ci.comanda_id=o.comanda_id)`
     ).bind(timestamp, data, store.estabelecimento_id, key));
   }
   await env.DB.batch(statements);
   const created = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?').bind(store.estabelecimento_id, key).first();
-  if (!created || (!segurarPix && !created.comanda_id)) throw httpError(409, 'Não foi possível registrar o pedido. Tente novamente.');
+  if (!created || (!segurarPix && !segurarPagamento && !created.comanda_id)) throw httpError(409, 'Não foi possível registrar o pedido. Tente novamente.');
   let pixCopiaCola = null;
   if (payment === 'pix') {
     pixCopiaCola = copiaColaPix({
@@ -1497,6 +1728,6 @@ export async function createPublicOrderHandler(c, env) {
   await kvPut(env, rateKey, String(attempts + 1), { expirationTtl: 900 });
   return c.json({
     id: created.id, comanda_id: created.comanda_id, status: created.status, total: num(created.total),
-    forma_pagamento: payment, pix_copia_cola: pixCopiaCola, repetido: false,
+    forma_pagamento: payment, pix_copia_cola: pixCopiaCola, checkout_url: checkout?.url || null, repetido: false,
   }, 201);
 }

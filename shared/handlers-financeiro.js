@@ -355,7 +355,7 @@ export async function createFechamentoCaixaHandler(c, env) {
 export async function cmvProdutosHandler(c, env) {
   const [produtos, categorias, vinculos] = await Promise.all([
     env.DB.prepare(`SELECT id, nome, codigo_interno, unidade, tipo, custo, preco FROM produtos
-      WHERE ativo=1 AND (tipo!='insumo' OR (preco>0 AND (exibir_restaurante=1 OR exibir_mercado=1)))
+      WHERE ativo=1 AND tipo!='combo' AND (tipo!='insumo' OR (preco>0 AND (exibir_restaurante=1 OR exibir_mercado=1)))
       ORDER BY nome`).all(),
     env.DB.prepare('SELECT id, nome, cor, ativo, categoria_pai_id FROM categorias ORDER BY nome').all(),
     env.DB.prepare('SELECT produto_id, categoria_id FROM produto_categorias').all(),

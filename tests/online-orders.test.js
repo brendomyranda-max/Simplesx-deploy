@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import SqliteDb from '../server/sqlite-db.js';
 import { TenantDb } from '../shared/tenant-db.js';
+import { entregasDaLojaHandler } from '../shared/handlers-entregas.js';
 import {
   atualizarPedidoOnlineHandler,
+  chamarEntregadorOnlineHandler,
   createPublicOrderHandler,
   getPublicOrderHandler,
   getPublicStoreHandler,
@@ -114,6 +116,90 @@ test('catálogo online público cria uma comanda de delivery com preço e adicio
     () => updateOnlineCatalogProductHandler(context({ foto_url: `data:image/jpeg;base64,${'A'.repeat(300000)}` }, { id: menu.data.produtos[0].id }), adminEnv),
     (error) => error.status === 400,
   );
+});
+
+test('Pix confirmado pela loja anuncia uma corrida uma vez e preserva o código do cliente cifrado', async (t) => {
+  const raw = new SqliteDb(':memory:');
+  t.after(() => raw.close());
+  raw.prepare("INSERT INTO estabelecimentos(id,nome,ativo) VALUES(1,'Loja Motoboy',1)").run();
+  raw.prepare(`INSERT INTO produtos(id,estabelecimento_id,nome,codigo_interno,preco,ativo,exibir_restaurante,exibir_mercado,tipo,sem_vencimento,criado_em)
+    VALUES(10,1,'Lanche','LAN-01',30,1,1,0,'produto',1,'2026-10-13T00:00:00.000Z')`).run();
+  const secret = 'segredo-para-testar-integracao-doixp-entregas-123456';
+  const calls = [];
+  let failDispatchOnce = true;
+  let remoteStatus = 'searching';
+  const common = {
+    ENTREGAS_API_URL: 'https://entregas.example.test', ENTREGAS_INTEGRATION_SECRET: secret,
+    ENTREGAS_PIX_DESTINO: 'loja',
+    geocode: async () => ({ latitude: -23.56, longitude: -46.64, endereco: 'Rua da Entrega, 20' }),
+    entregasFetch: async (url, init) => {
+      const path = new URL(url).pathname;
+      const body = init.body ? JSON.parse(init.body) : null;
+      calls.push({ path, body });
+      if (path.endsWith('/quote')) return Response.json({ distanceKm: body.distanceKm, baseCents: 1000, extraCents: 0, totalCents: 1000, merchantCents: 1000, customerCents: 0, subsidy: 'base' });
+      if (path === '/api/integration/orders') {
+        if (failDispatchOnce) {
+          failDispatchOnce = false;
+          return Response.json({ error: 'Servidor temporariamente indisponível' }, { status: 503 });
+        }
+        assert.equal(body.paymentMode, 'pix_confirmed_manually');
+        assert.equal(body.customerCpfLast4, '0042');
+        assert.equal(body.reference, 'PEDIDO-ONLINE-1');
+        return Response.json({ id: '11111111-2222-3333-4444-555555555555', status: 'searching' }, { status: 201 });
+      }
+      if (path === '/api/integration/stores/1/orders') return Response.json([
+        { id: '11111111-2222-3333-4444-555555555555', reference: 'PEDIDO-ONLINE-1', status: remoteStatus },
+      ]);
+      if (path.endsWith('/11111111-2222-3333-4444-555555555555')) return Response.json({ status: remoteStatus });
+      if (path.endsWith('/11111111-2222-3333-4444-555555555555/cancel')) return Response.json({ status: 'incident' });
+      throw new Error(`Chamada inesperada: ${path}`);
+    },
+  };
+  const admin = { ...common, DB: new TenantDb(raw, 1), rawDB: raw, estabelecimentoId: 1 };
+  const publicEnv = { ...common, DB: raw };
+  const store = await updateOnlineStoreHandler(context({ slug: 'loja-motoboy', nome: 'Loja Motoboy', ativo: true,
+    latitude: -23.55, longitude: -46.64, pix_chave: 'loja@example.com', pix_cidade: 'Sao Paulo', entrega_plataforma_ativo: 1 }), admin);
+  assert.equal(store.status, 200);
+  const product = await upsertOnlineCatalogProductHandler(context({ produto_id: 10 }), admin);
+  const menu = await getPublicStoreHandler(context({}, { slug: 'loja-motoboy' }), publicEnv);
+  assert.equal(menu.data.loja.entrega_plataforma_disponivel, 1);
+  const created = await createPublicOrderHandler(context({ chave: 'pedido-motoboy-0001', cliente_nome: 'Ana', telefone: '11999990000',
+    tipo_entrega: 'entrega', endereco: 'Rua da Entrega, 20', forma_pagamento: 'pix', entrega_plataforma: true, cpf_ultimos4: '0042', frete_cliente_esperado_centavos: 0,
+    itens: [{ cardapio_produto_id: product.data.id, quantidade: 1 }],
+  }, { slug: 'loja-motoboy' }), publicEnv);
+  assert.equal(created.status, 201);
+  assert.equal(created.data.total, 30);
+  const row = raw.prepare('SELECT * FROM pedidos_online WHERE id=?').bind(created.data.id).first();
+  assert.equal(row.entrega_plataforma, 1);
+  assert.equal(row.entrega_despacho_status, 'aguardando_pix');
+  assert.equal(row.entrega_codigo_cifrado.includes('0042'), false);
+  assert.equal(calls.filter(call => call.path === '/api/integration/orders').length, 0);
+  const confirmed = await atualizarPedidoOnlineHandler(context({ status: 'pix_recebido' }, { id: String(row.id) }), admin);
+  assert.equal(confirmed.status, 200);
+  assert.match(confirmed.data.despacho.error, /indisponível/);
+  assert.equal(raw.prepare('SELECT entrega_despacho_status FROM pedidos_online WHERE id=?').bind(row.id).first().entrega_despacho_status, 'erro');
+  const retried = await chamarEntregadorOnlineHandler(context({}, { id: String(row.id) }), admin);
+  assert.equal(retried.data.status, 'searching');
+  assert.equal(raw.prepare('SELECT entrega_despacho_status FROM pedidos_online WHERE id=?').bind(row.id).first().entrega_despacho_status, 'anunciada');
+  assert.equal(calls.filter(call => call.path === '/api/integration/orders').length, 2);
+  const tracked = await getPublicOrderHandler(context({}, { slug: 'loja-motoboy', chave: 'pedido-motoboy-0001' }), publicEnv);
+  assert.equal(tracked.data.entrega_status, 'searching');
+  assert.equal(tracked.data.cpf_ultimos4, undefined);
+  const preparing = await atualizarPedidoOnlineHandler(context({ status: 'confirmado' }, { id: String(row.id) }), admin);
+  assert.equal(preparing.status, 200);
+  const prematureExit = await atualizarPedidoOnlineHandler(context({ status: 'saiu_entrega' }, { id: String(row.id) }), admin);
+  assert.equal(prematureExit.status, 409);
+  remoteStatus = 'in_transit';
+  const exit = await atualizarPedidoOnlineHandler(context({ status: 'saiu_entrega' }, { id: String(row.id) }), admin);
+  assert.equal(exit.status, 200);
+  const prematureDelivery = await atualizarPedidoOnlineHandler(context({ status: 'entregue' }, { id: String(row.id) }), admin);
+  assert.equal(prematureDelivery.status, 409);
+  const cancelAfterPickup = await atualizarPedidoOnlineHandler(context({ status: 'cancelado' }, { id: String(row.id) }), admin);
+  assert.equal(cancelAfterPickup.status, 409);
+  assert.notEqual(raw.prepare('SELECT status FROM pedidos_online WHERE id=?').bind(row.id).first().status, 'cancelado');
+  remoteStatus = 'delivered';
+  await entregasDaLojaHandler(context(), admin);
+  assert.equal(raw.prepare('SELECT etapa FROM pedidos_online WHERE id=?').bind(row.id).first().etapa, 'entregue');
 });
 
 function bancoComoD1(raw) {

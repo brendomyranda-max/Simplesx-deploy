@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173b30">
+  <title>Solicitar exclusão — DoixP Entregas</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    [hidden]{display:none!important}.privacy-document{max-width:720px;margin:auto}.privacy-content{display:grid;gap:24px}.privacy-content section{display:grid;gap:12px}.privacy-content p{font-size:14px;line-height:1.7}.privacy-nav{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}.privacy-contact{white-space:pre-wrap;overflow-wrap:anywhere}.privacy-content .banner{margin:0}.privacy-content h1{font-size:28px}.privacy-history{margin:0;padding:0;list-style:none;display:grid;gap:14px}.privacy-history li{border:1px solid var(--border);border-radius:8px;padding:14px;overflow-wrap:anywhere}.privacy-history p{font-size:12px}.privacy-form{display:grid;gap:16px}.privacy-form .btn{white-space:normal}
+  </style>
+  <script src="/privacy.js" defer></script>
+</head>
+<body data-page="deletion">
+  <main class="customer-page">
+    <div class="privacy-document">
+      <nav class="privacy-nav" aria-label="Navegação">
+        <a class="btn" href="/">Abrir DoixP Entregas</a>
+        <a class="btn" href="/privacy.html">Política de Privacidade</a>
+      </nav>
+      <article class="card card-body privacy-content">
+        <header>
+          <p class="eyebrow">DoixP Entregas</p>
+          <h1>Solicitar exclusão da conta</h1>
+        </header>
+        <p>Você pode registrar aqui um pedido de exclusão da conta e dos dados associados, mesmo sem o aplicativo instalado. O pedido será encaminhado ao suporte da operação <strong data-operator>DoixP Entregas</strong>.</p>
+        <div class="banner warning" role="status" id="configuration-notice"><p>Consultando os dados de contato da operação…</p></div>
+        <section>
+          <h2>Como o pedido será tratado</h2>
+          <p>Registrar a solicitação não exclui nem desativa automaticamente sua conta. O suporte precisa avaliar e executar o procedimento, incluindo os dados de cadastro, localização, pedidos e pagamentos associados. Caso algum registro precise ser mantido, o responsável deverá informar quais dados, os motivos e o prazo.</p>
+          <p>Os prazos e o processo de atendimento ainda precisam ser definidos pela operação antes do lançamento público. Esta tela registra a solicitação e permite acompanhar seu protocolo.</p>
+          <p class="privacy-contact" data-contact>O contato será apresentado após carregar a configuração do servidor.</p>
+          <p>Se você não consegue acessar sua conta, ou é comprador sem conta nesta plataforma, use o contato acima. Não informe senha nem CPF na observação.</p>
+        </section>
+        <p id="session-status" role="status">Verificando sua sessão…</p>
+        <section id="login-section" hidden>
+          <h2>Entre para identificar sua conta</h2>
+          <form id="privacy-login" class="privacy-form">
+            <label class="field">Usuário<input name="username" autocomplete="username" maxlength="80" autocapitalize="none" spellcheck="false" required></label>
+            <label class="field">Senha<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+            <button class="btn primary" type="submit">Entrar para solicitar exclusão</button>
+            <p id="login-error" class="form-error" role="alert"></p>
+          </form>
+        </section>
+        <section id="request-section" hidden>
+          <h2>Sua solicitação</h2>
+          <form id="privacy-request" class="privacy-form">
+            <label class="field">Observação opcional<textarea name="note" maxlength="1000" rows="4" placeholder="Informe somente o necessário para o suporte tratar sua solicitação."></textarea><small>Até 1.000 caracteres. Não informe senha ou CPF.</small></label>
+            <button id="request-button" class="btn primary" type="submit">Solicitar exclusão da conta e dos dados</button>
+            <p id="request-result" role="status" hidden></p>
+            <p id="request-error" class="form-error" role="alert"></p>
+          </form>
+          <h2>Protocolos registrados</h2>
+          <p id="history-empty" class="muted">Nenhuma solicitação registrada.</p>
+          <ul id="privacy-history" class="privacy-history"></ul>
+        </section>
+        <noscript>Ative o JavaScript do navegador para entrar e registrar a solicitação. O aplicativo Android não precisa estar instalado.</noscript>
+      </article>
+    </div>
+  </main>
+</body>
+</html>

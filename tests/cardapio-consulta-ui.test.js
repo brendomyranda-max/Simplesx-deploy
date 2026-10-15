@@ -43,6 +43,7 @@ test('cliente consulta detalhes sem controles de pedido e volta a usar sacola no
     '@/components/ModoCardapioOnline': 'export const ConfiguracaoCardapioOnline="ConfiguracaoCardapioOnline";',
     '@/lib/descricao-composto': 'export const descricaoComIngredientes=()=>"";',
     '@/components/AcrescimoCadastro': 'export const AcrescimoCadastro="AcrescimoCadastro",lerAcrescimos=()=>({itens:[]});',
+    '@/components/ComboFields': 'export const ComboEscolha="ComboEscolha",adicionalCombo=()=>0,comboCompleto=()=>true,resumoEscolhasCombo=()=>"";',
   };
   let source = readFileSync('src/pages/OnlineStorefront.tsx', 'utf8').replace("import './online-storefront.css';", '');
   source = source.replace("'../../shared/categorias-delivery.js'", JSON.stringify(new URL('../shared/categorias-delivery.js', import.meta.url).href));

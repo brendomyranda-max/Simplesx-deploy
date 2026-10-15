@@ -31,6 +31,7 @@ const TABS: { v: ProdutoTipo | 'todos' | 'delivery'; label: string }[] = [
   { v: 'todos', label: 'Todos' },
   { v: 'produto', label: 'Produtos' },
   { v: 'composto', label: 'Compostos' },
+  { v: 'combo', label: 'Combos' },
   { v: 'insumo', label: 'Insumos' },
   { v: 'delivery', label: 'Delivery' },
 ];
@@ -38,6 +39,7 @@ const TABS: { v: ProdutoTipo | 'todos' | 'delivery'; label: string }[] = [
 const TIPO_LABEL: Record<ProdutoTipo, string> = {
   produto: 'Produto',
   composto: 'Composto',
+  combo: 'Combo',
   insumo: 'Insumo',
 };
 
@@ -184,7 +186,7 @@ export function EstoquePage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {produtos.map((p) => {
-                  const baixo = p.estoque_atual <= p.estoque_minimo && p.tipo !== 'composto';
+                  const baixo = p.estoque_atual <= p.estoque_minimo && p.tipo !== 'composto' && p.tipo !== 'combo';
                   const tipoLabel = p.tipo || 'produto';
                   return (
                     <tr key={p.id} className="transition-colors hover:bg-slate-50/60">
@@ -207,15 +209,15 @@ export function EstoquePage() {
                       <td className="td">{porCategoria(p)}</td>
                       <td className="td">
                         <Badge color={baixo ? 'red' : 'green'}>
-                          {p.tipo === 'composto' ? `p/ ${fmtNum(p.estoque_possivel ?? 0)} un` : `${fmtNum(p.estoque_atual)} ${p.unidade}`}
+                          {p.tipo === 'combo' ? 'Por escolha' : p.tipo === 'composto' ? `p/ ${fmtNum(p.estoque_possivel ?? 0)} un` : `${fmtNum(p.estoque_atual)} ${p.unidade}`}
                         </Badge>
                       </td>
-                      <td className="td text-slate-500">{p.tipo === 'composto' ? '—' : fmtNum(p.estoque_minimo)}</td>
+                      <td className="td text-slate-500">{p.tipo === 'composto' || p.tipo === 'combo' ? '—' : fmtNum(p.estoque_minimo)}</td>
                       <td className="td font-semibold">{p.preco != null ? fmtBRL(p.preco) : <span className="text-slate-300">—</span>}</td>
-                      <td className="td text-slate-500">{fmtBRL(p.custo)}</td>
+                      <td className="td text-slate-500">{p.tipo === 'combo' ? 'Conforme escolhas' : fmtBRL(p.custo)}</td>
                       <td className="td">
                         <div className="flex justify-end gap-1">
-                          {p.tipo !== 'composto' && (
+                          {p.tipo !== 'composto' && p.tipo !== 'combo' && (
                             <IconButton label="Ajustar estoque" icon={<PackageMinus className="h-4 w-4" />} onClick={() => { setAjuste(p); setAjusteQtd(String(p.estoque_atual)); setAjusteMotivo(''); }} />
                           )}
                           <IconButton label={abrindoEdicao === p.id ? 'Carregando produto' : 'Editar'} icon={<Pencil className="h-4 w-4" />} onClick={() => editarProduto(p)} disabled={abrindoEdicao !== null} />

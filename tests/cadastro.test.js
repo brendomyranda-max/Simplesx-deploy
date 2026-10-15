@@ -35,7 +35,7 @@ test('cadastro público bloqueia conta gratuita e dados de pagamento forjados, i
 
 test('condições públicas informam taxa única de R$ 150 sem expor credenciais', async () => {
   const result = await authConfigHandler(context(), {
-    TURNSTILE_SITE_KEY: 'site-publico', TURNSTILE_SECRET_KEY: 'segredo', PAGBANK_API_TOKEN: 'segredo-pagamento',
+    TURNSTILE_SITE_KEY: 'site-publico', TURNSTILE_SECRET_KEY: 'segredo', EFI_CLIENT_SECRET: 'segredo-pagamento',
   });
   assert.equal(result.status, 200);
   assert.deepEqual(result.data, {

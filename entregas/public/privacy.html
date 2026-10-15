@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173b30">
+  <title>Política de Privacidade — DoixP Entregas</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    [hidden]{display:none!important}.privacy-document{max-width:800px;margin:auto}.privacy-content{display:grid;gap:24px}.privacy-content section{display:grid;gap:10px}.privacy-content p,.privacy-content li{font-size:14px;line-height:1.7}.privacy-content ul{margin:0;padding-left:22px}.privacy-nav{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}.privacy-contact{white-space:pre-wrap;overflow-wrap:anywhere}.privacy-content .banner{margin:0}.privacy-content h1{font-size:28px}
+  </style>
+  <script src="/privacy.js" defer></script>
+</head>
+<body data-page="privacy">
+  <main class="customer-page">
+    <div class="privacy-document">
+      <nav class="privacy-nav" aria-label="Navegação">
+        <a class="btn" href="/">Abrir DoixP Entregas</a>
+        <a class="btn" href="/account-deletion.html">Solicitar exclusão</a>
+      </nav>
+      <article class="card card-body privacy-content">
+        <header>
+          <p class="eyebrow">DoixP Entregas</p>
+          <h1>Política de Privacidade</h1>
+          <p class="muted">Descrição do tratamento de dados nesta versão da plataforma.</p>
+        </header>
+        <div class="banner warning" role="status" id="configuration-notice"><p>Consultando os dados de contato da operação…</p></div>
+        <section aria-labelledby="operator-title">
+          <h2 id="operator-title">Responsável e contato</h2>
+          <p>Operação identificada como <strong data-operator>DoixP Entregas</strong>.</p>
+          <p class="privacy-contact" data-contact>O contato será apresentado após carregar a configuração do servidor.</p>
+          <p>Clientes que não possuem conta também podem usar esse contato para tratar dos dados de suas entregas. O estabelecimento responsável pelo pedido pode ajudar a identificar a operação.</p>
+        </section>
+        <section>
+          <h2>Dados usados na operação</h2>
+          <ul>
+            <li>Nome, usuário, senha protegida e perfil de acesso de suporte, estabelecimento ou entregador; telefone e endereço quando informados no cadastro.</li>
+            <li>Coordenadas do estabelecimento, do destino e última localização enviada pelo entregador, junto da data da atualização e sua disponibilidade.</li>
+            <li>Nome, telefone e endereço do comprador, referência do pedido, distância informada, valores e divisão do frete, códigos de confirmação e estados da entrega.</li>
+            <li>Histórico de ações, registros de contato, ocorrências, decisões do suporte, suspensões e registros do fechamento semanal e de pagamentos externos.</li>
+            <li>Solicitações de exclusão, com identificação da conta, observação opcional, protocolo e data do pedido.</li>
+          </ul>
+          <p>Esses dados permitem autenticar os usuários, disponibilizar corridas, realizar coletas e entregas, acompanhar valores e tratar ocorrências. Os códigos servem à confirmação operacional; não comprovam por si só identidade ou presença no destino.</p>
+        </section>
+        <section>
+          <h2>Localização do entregador</h2>
+          <p>Ao optar por ficar online e permitir o acesso, o entregador compartilha sua localização com o servidor. No aplicativo Android, o serviço de localização iniciado pelo usuário pode continuar durante o turno online mesmo com a tela bloqueada ou outro aplicativo aberto. O app apresenta uma explicação antes da permissão e uma notificação do serviço ao sistema Android.</p>
+          <p>Ao ficar offline, o compartilhamento é encerrado. A última posição já enviada pode permanecer registrada no servidor; ficar offline não apaga os dados existentes. No navegador, a atualização depende da execução da página. A localização não é usada para publicidade.</p>
+        </section>
+        <section>
+          <h2>Acesso aos dados de uma entrega</h2>
+          <p>O suporte tem acesso aos registros operacionais para administrar a plataforma. Cada estabelecimento acompanha seus próprios pedidos. Antes da retirada, os entregadores veem informações da coleta, frete e região aproximada do destino. O nome, telefone e endereço completo do cliente são liberados ao entregador responsável após a retirada ser confirmada.</p>
+          <p>O link de concordância do frete permite ao comprador consultar o valor e responder à solicitação. Os contatos por telefone ou outros aplicativos são feitos fora desta plataforma; seu uso segue também as regras desses serviços.</p>
+        </section>
+        <section>
+          <h2>Códigos, autenticação e segurança</h2>
+          <p>Esta plataforma usa somente os quatro últimos dígitos do CPF para confirmar a entrega. O CPF completo não é solicitado aqui. Os quatro dígitos são recebidos para criar ou conferir o código e armazenados como hash com salt usando scrypt, sem manter uma cópia legível do código de entrega.</p>
+          <p>As senhas também são armazenadas como hash com salt e scrypt. A sessão usa um cookie de autenticação HttpOnly, com validade de oito horas; o servidor guarda o hash do identificador da sessão. A implantação em HTTPS permite usar cookies seguros e proteger o tráfego entre app e servidor.</p>
+          <p>Para limitar tentativas de acesso, o servidor mantém contadores temporários associados ao usuário informado e ao endereço de rede observado na conexão. Ações operacionais têm registros com responsável e data. Logs adicionais da hospedagem dependem do ambiente administrado pelo operador.</p>
+        </section>
+        <section>
+          <h2>Mapas, bibliotecas e hospedagem</h2>
+          <p>O mapa utiliza imagens do OpenStreetMap e bibliotecas distribuídas pelo CDN unpkg. Ao carregar esses recursos, os fornecedores recebem dados técnicos da conexão, como endereço IP e informações de origem da requisição (referer), conforme o navegador e sua política de envio. As imagens solicitadas também indicam a região do mapa exibida.</p>
+          <p>Esta versão não inclui ferramentas de publicidade ou análise de audiência. O operador precisa informar os fornecedores de hospedagem e outros prestadores efetivamente contratados, conforme a configuração de produção. Integrações futuras podem exigir atualização desta política.</p>
+        </section>
+        <section>
+          <h2>Retenção e exclusão</h2>
+          <p>Pedidos, eventos, posições, contas e registros financeiros ficam no banco da operação. Esta versão não executa limpeza automática desses registros. Os prazos de retenção e o procedimento humano de exclusão precisam ser definidos e comunicados pelo responsável pela operação antes do lançamento público.</p>
+          <p>Você pode <a href="/account-deletion.html">solicitar a exclusão da conta e dos dados associados</a> nesta página, usando seu usuário e senha, mesmo sem o aplicativo instalado. O suporte recebe a solicitação para tratar a exclusão e informar eventuais dados que precisem ser mantidos e os motivos. O registro do pedido de exclusão não apaga nem desativa automaticamente sua conta.</p>
+          <p>Para correção de dados, dúvida sobre tratamento ou solicitação sem acesso à conta, use o contato de privacidade apresentado acima. Se o contato ainda não estiver configurado, a operação está em preparação e deve concluí-lo antes do lançamento.</p>
+        </section>
+      </article>
+    </div>
+  </main>
+</body>
+</html>

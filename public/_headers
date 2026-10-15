@@ -76,5 +76,8 @@ https://:version.simplesx-projeto-beta.pages.dev/*
 /restaurante*
   X-Robots-Tag: noindex
 
+/pagamento*
+  X-Robots-Tag: noindex
+
 /pedido/:slug/acompanhar/*
   X-Robots-Tag: noindex, nofollow, nosnippet

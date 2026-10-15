@@ -55,6 +55,25 @@ test('pedido usa obrigatoriamente a pessoa do cartão, é idempotente e informa 
   assert.equal(full.pessoas.find(p=>p.id===a.pessoa_id).cartao_atendimento_id,a.id);
 });
 
+test('cartão lança combo com dez escolhas distribuídas e envia observação à cozinha',async t=>{
+  const f=await fixture(t),atendimento=(await f.register()).data;
+  f.db.prepare("INSERT INTO produtos (id,estabelecimento_id,nome,tipo,preco,estoque_atual,ativo) VALUES (4,1,'Esfiha de carne','produto',8,30,1),(5,1,'Esfiha de queijo','produto',8,30,1)").run();
+  const grupos=[{nome:'Esfihas',quantidade:10,opcoes:[{produto_id:1,adicional:0},{produto_id:4,adicional:0},{produto_id:5,adicional:0}]}];
+  f.db.prepare("INSERT INTO produtos (id,estabelecimento_id,nome,tipo,preco,estoque_atual,ativo,combo_grupos_json) VALUES (6,1,'Combo dez esfihas','combo',50,0,1,?)").bind(JSON.stringify(grupos)).run();
+  const escolhas=[[1,1,4,4,4,5,5,5,5,5]];
+  const invalido=await f.order(UID_A,1,{itens:[{produto_id:6,quantidade:1,combo_escolhas:[[1,1,4]],observacao:'Sem cebola'}]});
+  assert.equal(invalido.status,400);
+  const enviado=await f.order(UID_A,1,{itens:[{produto_id:6,quantidade:1,combo_escolhas:escolhas,observacao:'Sem cebola'}]});
+  assert.equal(enviado.status,200,JSON.stringify(enviado));
+  const item=f.db.prepare('SELECT * FROM comanda_itens WHERE comanda_id=?').bind(atendimento.comanda_id).first();
+  assert.equal(item.pessoa_id,atendimento.pessoa_id);
+  assert.deepEqual(JSON.parse(item.combo_escolhas_json),escolhas);
+  assert.match(item.observacao,/2x Prato/);
+  assert.match(item.observacao,/3x Esfiha de carne/);
+  assert.match(item.observacao,/5x Esfiha de queijo/);
+  assert.match(item.observacao,/Sem cebola/);
+});
+
 test('fechamento individual cobra só a pessoa, preserva os IDs dos pedidos e libera cartão para reuso sem afetar outros clientes',async t=>{
   const f=await fixture(t),a=(await f.register()).data,b=(await f.register(UID_B,'Bruno')).data;
   await f.order(UID_A,2); await f.order(UID_B,1);

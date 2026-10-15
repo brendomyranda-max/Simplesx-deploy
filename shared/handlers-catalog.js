@@ -29,6 +29,7 @@ import {
 import { decodificarEtiquetaBalanca } from './balanca.js';
 import { quantidadeEmUnidadesEstoque, arredondar } from './units.js';
 import { normalizarAcrescimos } from './acrescimos.js';
+import { validarGruposCombo } from './combo.js';
 
 // ============================ AUTH ============================
 
@@ -80,6 +81,7 @@ export async function putConfigHandler(c, env) {
   const body = await c.req.json();
   if (body && typeof body === 'object') {
     for (const [k, v] of Object.entries(body)) {
+      if (k.startsWith('efi_')) return c.json({ error: 'Use a configuração de pagamentos para alterar este dado' }, 400);
       if (k === 'empresa_cnpj') {
         const cnpj = soDigitos(v);
         if (!cnpjValido(cnpj)) return c.json({ error: 'CNPJ inválido' }, 400);
@@ -215,7 +217,7 @@ export async function listProdutosHandler(c, env) {
   if (!incluirInativos) where.push('p.ativo=1');
   if (local === 'restaurante') where.push('p.exibir_restaurante=1');
   if (local === 'mercado') where.push('p.exibir_mercado=1');
-  if (tipo === 'insumo' || tipo === 'produto' || tipo === 'composto') {
+  if (tipo === 'insumo' || tipo === 'produto' || tipo === 'composto' || tipo === 'combo') {
     where.push(tipo === 'produto' ? "p.tipo='produto'" : `p.tipo='${tipo}'`);
   } else if (tipo === 'ingrediente') {
     where.push("p.tipo IN ('insumo','composto')");
@@ -430,6 +432,7 @@ function validaPreco(config, preco, tipo) {
 }
 
 function normalizarTipo(b, ingredientes) {
+  if (b.tipo === 'combo') return 'combo';
   if (b.tipo === 'insumo') return 'insumo';
   if (b.tipo === 'composto' || (Array.isArray(ingredientes) && ingredientes.length)) return 'composto';
   return 'produto';
@@ -468,8 +471,10 @@ export async function createProdutoHandler(c, env) {
   if (produtoBalanca && !['KG', 'L'].includes(String(b.unidade || '').toUpperCase())) return c.json({ error: 'Produto de balança deve usar KG ou L' }, 400);
   const ingredientes = Array.isArray(b.ingredientes) ? b.ingredientes : Array.isArray(b.ficha) ? b.ficha : [];
   const tipo = normalizarTipo(b, ingredientes);
+  if (tipo === 'combo' && produtoBalanca) return c.json({ error: 'Combo não pode ser produto de balança' }, 400);
+  const gruposCombo = tipo === 'combo' ? await validarGruposCombo(env, b.combo_grupos) : null;
   validaPreco(config, preco, tipo);
-  const semVencimento = tipo !== 'composto' && (b.sem_vencimento === true || b.sem_vencimento === 1) ? 1 : 0;
+  const semVencimento = tipo === 'combo' || (tipo !== 'composto' && (b.sem_vencimento === true || b.sem_vencimento === 1)) ? 1 : 0;
   const dataVencimento = semVencimento ? null : b.data_vencimento || null;
   if (tipo !== 'composto' && !semVencimento && (!b.data_fabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
   if (tipo === 'insumo' && num(b.validade_aberto_dias) <= 0) {
@@ -576,7 +581,7 @@ export async function createProdutoHandler(c, env) {
       );
     }
   }
-  if (num(b.estoque_atual) > 0 && tipo !== 'composto') {
+  if (num(b.estoque_atual) > 0 && tipo !== 'composto' && tipo !== 'combo') {
     stmts.push(
       env.DB.prepare(
         `INSERT INTO lotes (produto_id, quantidade, custo_unitario, data_fabricacao, data_validade, temperatura,
@@ -591,7 +596,7 @@ export async function createProdutoHandler(c, env) {
     );
   }
   if (stmts.length) await env.DB.batch(stmts);
-  if (num(b.estoque_atual) > 0 && tipo !== 'composto') {
+  if (num(b.estoque_atual) > 0 && tipo !== 'composto' && tipo !== 'combo') {
     await registrarMovimentacao(env, {
       produto_id: id,
       tipo: 'entrada',
@@ -603,6 +608,7 @@ export async function createProdutoHandler(c, env) {
       observacoes: 'Estoque inicial',
     });
   }
+  if (gruposCombo) await env.DB.prepare('UPDATE produtos SET combo_grupos_json=? WHERE id=?').bind(JSON.stringify(gruposCombo), id).run();
   return c.json(await getProdutoFull(env, id), 201);
 }
 
@@ -620,10 +626,17 @@ export async function updateProdutoHandler(c, env) {
   const ingredientes = Array.isArray(b.ingredientes) ? b.ingredientes : Array.isArray(b.ficha) ? b.ficha : null;
 
   let tipo = atual.tipo || 'produto';
-  if (b.tipo === 'insumo' || b.tipo === 'produto' || b.tipo === 'composto') tipo = b.tipo;
+  if (b.tipo === 'insumo' || b.tipo === 'produto' || b.tipo === 'composto' || b.tipo === 'combo') tipo = b.tipo;
   else if (ingredientes) tipo = ingredientes.length ? 'composto' : 'produto';
   validaPreco(config, preco, tipo);
-  const semVencimento = tipo !== 'composto'
+  if (tipo === 'combo' && produtoBalanca) return c.json({ error: 'Combo não pode ser produto de balança' }, 400);
+  const gruposCombo = tipo === 'combo' ? await validarGruposCombo(env, b.combo_grupos ?? JSON.parse(atual.combo_grupos_json || '[]'), Number(c.params.id)) : null;
+  if (tipo === 'combo' && atual.tipo !== 'combo') {
+    if (num(atual.estoque_atual) > 0) return c.json({ error: 'Zere o estoque próprio antes de converter este produto em combo' }, 400);
+    const emFicha = await env.DB.prepare('SELECT 1 FROM ficha_tecnica WHERE insumo_id=? LIMIT 1').bind(c.params.id).first();
+    if (emFicha) return c.json({ error: 'Produto usado em uma ficha técnica não pode ser convertido em combo' }, 400);
+  }
+  const semVencimento = tipo === 'combo' ? 1 : tipo !== 'composto'
     ? (b.sem_vencimento === undefined ? num(atual.sem_vencimento) : b.sem_vencimento === true || b.sem_vencimento === 1 ? 1 : 0)
     : 0;
   const dataFabricacao = b.data_fabricacao === undefined ? atual.data_fabricacao : b.data_fabricacao || null;
@@ -691,6 +704,7 @@ export async function updateProdutoHandler(c, env) {
       c.params.id
     )
     .run();
+  await env.DB.prepare('UPDATE produtos SET combo_grupos_json=? WHERE id=?').bind(gruposCombo ? JSON.stringify(gruposCombo) : null, c.params.id).run();
 
   const stmts = [];
   if (Array.isArray(b.codigos_barras)) {
@@ -744,7 +758,7 @@ export async function updateProdutoHandler(c, env) {
       );
     }
   }
-  if (ingredientes) {
+  if (ingredientes || (atual.tipo === 'composto' && tipo !== 'composto')) {
     stmts.push(env.DB.prepare('DELETE FROM ficha_tecnica WHERE produto_id=?').bind(c.params.id));
     if (tipo === 'composto') {
       for (const ing of ingredientes) {

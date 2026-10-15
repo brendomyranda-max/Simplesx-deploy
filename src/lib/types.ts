@@ -31,7 +31,13 @@ export interface CodigoBarras {
   principal: number;
 }
 
-export type ProdutoTipo = 'produto' | 'insumo' | 'composto';
+export type ProdutoTipo = 'produto' | 'insumo' | 'composto' | 'combo';
+
+export interface ComboGrupo {
+  nome: string;
+  quantidade: number;
+  opcoes: { produto_id: number; nome?: string; adicional: number }[];
+}
 
 export interface FichaIngrediente {
   id?: number;
@@ -81,6 +87,8 @@ export interface Produto {
   ficha?: FichaIngrediente[];
   ficha_count?: number;
   estoque_possivel?: number | null;
+  combo_grupos_json?: string | null;
+  combo_grupos?: ComboGrupo[];
 }
 
 export interface ProdutoAcrescimo {
@@ -115,6 +123,7 @@ export interface OnlineCatalogProduct {
   ativo: number;
   vendidos?: number;
   opcoes: OnlineCatalogOption[];
+  combo_grupos?: ComboGrupo[];
 }
 
 export interface OnlineStore {
@@ -148,6 +157,9 @@ export interface OnlineStore {
   pix_chave?: string | null;
   pix_cidade?: string | null;
   pix_disponivel?: number | null;
+  checkout_efi_disponivel?: number | null;
+  entrega_plataforma_ativo?: number;
+  entrega_plataforma_disponivel?: number;
   modo_publicacao?: 'marketplace' | 'cardapio';
   site_url?: string;
   segmentos?: string[];
@@ -202,6 +214,7 @@ export interface AreaEntrega {
   taxa_cliente?: number | null;
   taxa_estabelecimento?: number | null;
   entrega_gratis?: number | null;
+  plataforma?: { distanceKm: number; baseCents: number; extraCents: number; totalCents: number; merchantCents: number; customerCents: number; subsidy: string };
 }
 
 export interface RedePedidos {
@@ -268,10 +281,30 @@ export interface PedidoDelivery {
   distancia_km?: number | null;
   modo_entrega?: ModoEntrega | null;
   entrega_gratis?: number | null;
+  entrega_plataforma?: number;
+  entrega_despacho_status?: string | null;
+  entrega_externa_id?: string | null;
   total: number;
   criado_em: string;
   espera_min: number;
   itens: ItemPedido[];
+}
+
+export interface CorridaPlataforma {
+  id: string;
+  reference: string;
+  status: 'awaiting_customer' | 'searching' | 'accepted' | 'in_transit' | 'incident' | 'delivered' | 'cancelled' | 'returned';
+  ready: boolean;
+  held: boolean;
+  driverId: string | null;
+  merchantName: string;
+  customerName: string;
+  destinationAddress: string;
+  distanceKm: number;
+  totalCents: number;
+  merchantCents: number;
+  customerCents: number;
+  events?: { id: string; type: string; note: string; createdAt: string }[];
 }
 
 export interface PedidoRestaurante {
@@ -486,6 +519,7 @@ export interface VendaItem {
   custo_unitario: number;
   preco_unitario: number;
   total: number;
+  combo_escolhas_json?: string | null;
 }
 
 export interface Pagamento {

@@ -23,6 +23,8 @@ import { FotoGaleria } from '@/components/FotoGaleria';
 import { ConfiguracaoCardapioOnline } from '@/components/ModoCardapioOnline';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
+import { ComboEscolha, adicionalCombo, comboCompleto, resumoEscolhasCombo } from '@/components/ComboFields';
+import type { ComboGrupo } from '@/lib/types';
 import { CATEGORIAS_DELIVERY } from '../../shared/categorias-delivery.js';
 import './online-storefront.css';
 
@@ -37,6 +39,7 @@ type Product = {
   available: boolean;
   ingredients: { id: number; name: string }[];
   additions: { id: number; name: string; price: number }[];
+  comboGroups: ComboGrupo[];
   sold: number;
 };
 
@@ -46,12 +49,13 @@ type CartItem = {
   quantity: number;
   removed: string[];
   additions: string[];
+  comboChoices: number[][];
   note: string;
 };
 
 type Aba = 'cardapio' | 'configurar';
 
-const addOnPrice = (item: CartItem) => item.additions.reduce((total, name) => total + (item.product.additions.find((add) => add.name === name)?.price || 0), 0);
+const addOnPrice = (item: CartItem) => item.additions.reduce((total, name) => total + (item.product.additions.find((add) => add.name === name)?.price || 0), 0) + adicionalCombo(item.product.comboGroups, item.comboChoices);
 
 function paraCardapio(produto: OnlineCatalogProduct, aceitarPromocao = true): Product {
   const preco = Number(produto.preco);
@@ -68,6 +72,7 @@ function paraCardapio(produto: OnlineCatalogProduct, aceitarPromocao = true): Pr
     available: produto.disponivel === 1 && produto.ativo !== 0,
     ingredients: produto.opcoes.filter((opcao) => opcao.tipo === 'removivel').map((opcao) => ({ id: opcao.id, name: opcao.nome })),
     additions: produto.opcoes.filter((opcao) => opcao.tipo === 'adicional').map((opcao) => ({ id: opcao.id, name: opcao.nome, price: opcao.preco_adicional })),
+    comboGroups: produto.combo_grupos || [],
     sold: Math.max(0, Number(produto.vendidos) || 0),
   };
 }
@@ -169,7 +174,7 @@ function LojaOnline() {
         setLoja(lojaAdmin);
         setCatalogo(produtosAdmin.filter((produto) => produto.ativo !== 0));
         setCategoriasCardapio(secoes);
-        setEstoque(produtosEstoque.filter((produto) => produto.ativo && (produto.tipo === 'produto' || produto.tipo === 'composto')));
+        setEstoque(produtosEstoque.filter((produto) => produto.ativo && (produto.tipo === 'produto' || produto.tipo === 'composto' || produto.tipo === 'combo')));
         setAba(configurarNaUrl ? 'configurar' : 'cardapio');
         setEstado('pronto');
         return;
@@ -216,6 +221,7 @@ function LojaOnline() {
         cartItem.product.id === item.product.id &&
         cartItem.removed.join('|') === item.removed.join('|') &&
         cartItem.additions.join('|') === item.additions.join('|') &&
+        JSON.stringify(cartItem.comboChoices) === JSON.stringify(item.comboChoices) &&
         cartItem.note === item.note,
       );
       if (found) return current.map((cartItem) => cartItem.key === found.key ? { ...cartItem, quantity: cartItem.quantity + quantity } : cartItem);
@@ -240,7 +246,7 @@ function LojaOnline() {
     setLoja(lojaAdmin);
     setCatalogo(produtosAdmin.filter((produto) => produto.ativo !== 0));
     setCategoriasCardapio(secoes);
-    setEstoque(produtosEstoque.filter((produto) => produto.ativo && (produto.tipo === 'produto' || produto.tipo === 'composto')));
+    setEstoque(produtosEstoque.filter((produto) => produto.ativo && (produto.tipo === 'produto' || produto.tipo === 'composto' || produto.tipo === 'combo')));
   };
 
   const atualizarLoja = (proxima: OnlineStore) => {
@@ -363,17 +369,20 @@ function LojaOnline() {
     setConfigurando(null);
   };
 
-  const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null }) => {
+  const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => {
     if (!loja?.slug) throw new Error('Loja indisponível');
     if (somenteConsulta) throw new Error('Este cardápio está disponível apenas para consulta.');
     const chave = `web${crypto.randomUUID().replace(/-/g, '')}`;
-    await onlinePublicApi.order(loja.slug, {
+    const criado = await onlinePublicApi.order(loja.slug, {
       chave,
       cliente_nome: dados.nome,
       telefone: dados.telefone,
       tipo_entrega: dados.entrega,
       endereco: dados.endereco,
       forma_pagamento: dados.pagamento,
+      entrega_plataforma: dados.plataforma,
+      ...(dados.plataforma ? { cpf_ultimos4: dados.cpfUltimos4 } : {}),
+      ...(dados.plataforma ? { frete_cliente_esperado_centavos: dados.freteClienteCentavos } : {}),
       troco_para: dados.valorEmDinheiro,
       itens: cart.map((item) => ({
         cardapio_produto_id: item.product.id,
@@ -383,6 +392,7 @@ function LojaOnline() {
           ...item.product.ingredients.filter((ingrediente) => item.removed.includes(ingrediente.name)).map((ingrediente) => ingrediente.id),
           ...item.product.additions.filter((adicional) => item.additions.includes(adicional.name)).map((adicional) => adicional.id),
         ],
+        ...(item.product.comboGroups.length ? { combo_escolhas: item.comboChoices } : {}),
         observacao: item.note,
       })),
     });
@@ -390,6 +400,10 @@ function LojaOnline() {
     setCheckoutOpen(false);
     const caminho = `/pedido/${loja.slug}/acompanhar/${chave}`;
     gravarUltimoPedido(caminho);
+    if (criado.checkout_url) {
+      window.location.assign(criado.checkout_url);
+      return;
+    }
     navigate(caminho);
   };
 
@@ -457,6 +471,8 @@ function LojaOnline() {
           {configurandoAgora && loja && <NomeDaLoja loja={loja} onSaved={atualizarLoja} />}
           {configurandoAgora && !somenteConsulta && loja && <SuporteDaLoja loja={loja} onSaved={atualizarLoja} />}
           {configurandoAgora && !somenteConsulta && loja && <AreaDaLoja loja={loja} onSaved={atualizarLoja} />}
+          {configurandoAgora && !somenteConsulta && loja && <PixDaLoja loja={loja} onSaved={atualizarLoja} />}
+          {configurandoAgora && !somenteConsulta && loja && <MotoboyDaPlataforma loja={loja} onSaved={atualizarLoja} />}
           {estado === 'carregando' && <div className="online-empty"><b>Carregando o cardápio…</b></div>}
           {estado === 'vazio' && <div className="online-empty"><Store /><b>Abra o link da loja</b><span>O cliente entra pelo endereço publicado pelo estabelecimento.</span></div>}
           {estado === 'erro' && <div className="online-empty"><Store /><b>Loja indisponível</b><span>{mensagem}</span></div>}
@@ -859,7 +875,8 @@ function ProductCustomizer({ product, somenteConsulta, onClose, onAdd }: { produ
   const [additions, setAdditions] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const total = (product.price + additions.reduce((sum, name) => sum + (product.additions.find((item) => item.name === name)?.price || 0), 0)) * quantity;
+  const [comboChoices, setComboChoices] = useState<number[][]>([]);
+  const total = (product.price + additions.reduce((sum, name) => sum + (product.additions.find((item) => item.name === name)?.price || 0), 0) + adicionalCombo(product.comboGroups, comboChoices)) * quantity;
   const toggle = (name: string, selected: string[], set: (items: string[]) => void) => set(selected.includes(name) ? selected.filter((item) => item !== name) : [...selected, name]);
   return <div className="online-overlay" role="dialog" aria-modal="true" aria-labelledby="customizer-title">
     <div className="online-customizer">
@@ -868,15 +885,17 @@ function ProductCustomizer({ product, somenteConsulta, onClose, onAdd }: { produ
       <div className="online-customizer-content">
         <p className="online-eyebrow">{somenteConsulta ? 'DETALHES DO PRODUTO' : 'PERSONALIZE SEU PEDIDO'}</p><h2 id="customizer-title">{product.name}</h2><p>{product.description}</p><div className="online-customizer-prices">{product.originalPrice != null && <><span>Promoção exclusiva no delivery</span><del>{fmtBRL(product.originalPrice)}</del></>}<strong className={`online-customizer-price ${product.originalPrice != null ? 'online-promo-price' : ''}`}>{fmtBRL(product.price)}</strong></div>
         {somenteConsulta ? <>
+          {product.comboGroups.length > 0 && <p>{product.comboGroups.map((g) => `${g.nome}: escolha ${g.quantidade} entre ${g.opcoes.map((o) => o.nome).join(', ')}`).join(' · ')}</p>}
           {product.ingredients.length > 0 && <p>Ingredientes removíveis: {product.ingredients.map((item) => item.name).join(', ')}.</p>}
           {product.additions.length > 0 && <fieldset><legend>Adicionais disponíveis</legend>{product.additions.map((addition) => <div key={addition.id} className="online-choice"><span>{addition.name}</span><b>+ {fmtBRL(addition.price)}</b></div>)}</fieldset>}
         </> : <>
+        {product.comboGroups.length > 0 && <ComboEscolha grupos={product.comboGroups} escolhas={comboChoices} onChange={setComboChoices} />}
         {product.ingredients.length > 0 && <fieldset><legend>Quer tirar algum ingrediente? <small>opcional</small></legend>{product.ingredients.map((ingredient) => <label key={ingredient.id} className="online-choice"><span><input type="checkbox" checked={removed.includes(ingredient.name)} onChange={() => toggle(ingredient.name, removed, setRemoved)} /><i /> Tirar {ingredient.name}</span></label>)}</fieldset>}
         {product.additions.length > 0 && <fieldset><legend>Acréscimo de produto <small>opcional</small></legend>{product.additions.map((addition) => <label key={addition.name} className="online-choice"><span><input type="checkbox" checked={additions.includes(addition.name)} onChange={() => toggle(addition.name, additions, setAdditions)} /><i /> {addition.name}</span><b>+ {fmtBRL(addition.price)}</b></label>)}</fieldset>}
         <label className="online-note">Alguma observação?<textarea value={note} maxLength={140} onChange={(event) => setNote(event.target.value)} placeholder="Ex.: ponto da carne, alergias..." /><small>{note.length}/140</small></label>
         </>}
       </div>
-      {!somenteConsulta && <div className="online-customizer-footer"><div className="online-quantity"><button type="button" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)}><Minus /></button><b>{quantity}</b><button type="button" onClick={() => setQuantity((value) => value + 1)}><Plus /></button></div><button className="online-add-button" type="button" onClick={() => onAdd({ product, removed, additions, note }, quantity)}>Adicionar <strong>{fmtBRL(total)}</strong></button></div>}
+      {!somenteConsulta && <div className="online-customizer-footer"><div className="online-quantity"><button type="button" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)}><Minus /></button><b>{quantity}</b><button type="button" onClick={() => setQuantity((value) => value + 1)}><Plus /></button></div><button className="online-add-button" type="button" disabled={product.comboGroups.length > 0 && !comboCompleto(product.comboGroups, comboChoices)} onClick={() => onAdd({ product, removed, additions, comboChoices, note }, quantity)}>Adicionar <strong>{fmtBRL(total)}</strong></button></div>}
     </div>
   </div>;
 }
@@ -954,7 +973,7 @@ function EstoquePicker({ produtos, onClose, onPick }: { produtos: Produto[]; onC
 function CartDrawer({ cart, subtotal, deliveryFee, onClose, onChange, onCheckout }: { cart: CartItem[]; subtotal: number; deliveryFee: number | null; onClose: () => void; onChange: (key: string, delta: number) => void; onCheckout: () => void }) {
   const taxaTexto = deliveryFee == null ? 'No endereço' : deliveryFee === 0 ? 'Grátis' : fmtBRL(deliveryFee);
   const ultimoPedido = lerUltimoPedido();
-  return <div className="online-overlay online-cart-overlay" role="dialog" aria-modal="true" aria-labelledby="cart-title"><aside className="online-cart-drawer"><header><div><p>SEU PEDIDO</p><h2 id="cart-title">Sua sacola</h2></div><button className="online-close" type="button" onClick={onClose} aria-label="Fechar sacola"><X /></button></header>{cart.length === 0 ? <div className="online-cart-empty"><ShoppingBag />{ultimoPedido ? <><b>Acompanhe seu pedido</b><span>Veja o andamento do seu último pedido neste navegador.</span><Link className="online-cart-track-link" to={ultimoPedido}>Acompanhar meu pedido</Link></> : <><b>Sua sacola está vazia</b><span>Escolha um produto cadastrado.</span></>}<button type="button" onClick={onClose}>Ver cardápio</button></div> : <><div className="online-cart-list">{cart.map((item) => <div className="online-cart-item" key={item.key}><div className={`online-cart-thumb ${item.product.photo ? 'tem-foto' : 'burger'}`}>{item.product.photo ? <img src={item.product.photo} alt="" /> : '🍽️'}</div><div><b>{item.product.name}</b>{item.removed.length > 0 && <small>Sem {item.removed.join(', ')}</small>}{item.additions.length > 0 && <small>+ {item.additions.join(', ')}</small>}{item.note && <small>“{item.note}”</small>}<strong>{fmtBRL((item.product.price + addOnPrice(item)) * item.quantity)}</strong></div><div className="online-mini-quantity"><button type="button" onClick={() => onChange(item.key, -1)}><Minus /></button><b>{item.quantity}</b><button type="button" onClick={() => onChange(item.key, 1)}><Plus /></button></div></div>)}</div><div className="online-summary"><p><span>Subtotal</span><b>{fmtBRL(subtotal)}</b></p><p><span>Taxa de entrega</span><b>{taxaTexto}</b></p><p className="online-total"><span>Total</span><b>{fmtBRL(subtotal + (deliveryFee || 0))}</b></p></div><button className="online-checkout-button" type="button" onClick={onCheckout}>Continuar <ChevronRight /></button></>}</aside></div>;
+  return <div className="online-overlay online-cart-overlay" role="dialog" aria-modal="true" aria-labelledby="cart-title"><aside className="online-cart-drawer"><header><div><p>SEU PEDIDO</p><h2 id="cart-title">Sua sacola</h2></div><button className="online-close" type="button" onClick={onClose} aria-label="Fechar sacola"><X /></button></header>{cart.length === 0 ? <div className="online-cart-empty"><ShoppingBag />{ultimoPedido ? <><b>Acompanhe seu pedido</b><span>Veja o andamento do seu último pedido neste navegador.</span><Link className="online-cart-track-link" to={ultimoPedido}>Acompanhar meu pedido</Link></> : <><b>Sua sacola está vazia</b><span>Escolha um produto cadastrado.</span></>}<button type="button" onClick={onClose}>Ver cardápio</button></div> : <><div className="online-cart-list">{cart.map((item) => <div className="online-cart-item" key={item.key}><div className={`online-cart-thumb ${item.product.photo ? 'tem-foto' : 'burger'}`}>{item.product.photo ? <img src={item.product.photo} alt="" /> : '🍽️'}</div><div><b>{item.product.name}</b>{item.product.comboGroups.map((g, i) => <small key={i}>{g.nome}: {resumoEscolhasCombo(g, item.comboChoices[i] || [])}</small>)}{item.removed.length > 0 && <small>Sem {item.removed.join(', ')}</small>}{item.additions.length > 0 && <small>+ {item.additions.join(', ')}</small>}{item.note && <small>“{item.note}”</small>}<strong>{fmtBRL((item.product.price + addOnPrice(item)) * item.quantity)}</strong></div><div className="online-mini-quantity"><button type="button" onClick={() => onChange(item.key, -1)}><Minus /></button><b>{item.quantity}</b><button type="button" onClick={() => onChange(item.key, 1)}><Plus /></button></div></div>)}</div><div className="online-summary"><p><span>Subtotal</span><b>{fmtBRL(subtotal)}</b></p><p><span>Taxa de entrega</span><b>{taxaTexto}</b></p><p className="online-total"><span>Total</span><b>{fmtBRL(subtotal + (deliveryFee || 0))}</b></p></div><button className="online-checkout-button" type="button" onClick={onCheckout}>Continuar <ChevronRight /></button></>}</aside></div>;
 }
 
 function NomeDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
@@ -1071,6 +1090,27 @@ function PixDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onlin
   );
 }
 
+function MotoboyDaPlataforma({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState('');
+  const ativo = loja.entrega_plataforma_ativo === 1;
+  const alternar = async () => {
+    setOcupado(true);
+    setErro('');
+    try { onSaved(await onlineApi.updateStore({ entrega_plataforma_ativo: ativo ? 0 : 1 })); }
+    catch (error: any) { setErro(error?.error || 'Não foi possível alterar os motoboys.'); }
+    finally { setOcupado(false); }
+  };
+  return <section className="online-category-box online-aparencia">
+    <p className="online-eyebrow">MOTOBOYS DA PLATAFORMA</p>
+    <h3>Entregas com motoboy DoixP</h3>
+    <p>Quando o cliente escolher esta entrega, a loja assume R$ 10 dos primeiros 5 km e o cliente paga o excedente. A corrida será oferecida aos motoboys após a loja confirmar o Pix. O Pix desta etapa vai para a chave cadastrada pela loja; o pagamento ao motoboy é registrado separadamente.</p>
+    <div className="online-where-actions"><button type="button" onClick={alternar} disabled={ocupado}>{ocupado ? 'Salvando…' : ativo ? 'Desativar motoboys' : 'Ativar motoboys'}</button></div>
+    {ativo && <p>{loja.entrega_plataforma_disponivel === 1 ? 'Disponível no checkout.' : 'Aguardando configuração do servidor, da localização da loja ou da chave Pix.'}</p>}
+    {erro && <p className="online-erro" role="alert">{erro}</p>}
+  </section>;
+}
+
 function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
   const [endereco, setEndereco] = useState(loja.endereco || '');
   const [raio, setRaio] = useState(loja.raio_entrega_km == null ? '' : String(loja.raio_entrega_km).replace('.', ','));
@@ -1176,11 +1216,13 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
   );
 }
 
-function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null }) => Promise<void> }) {
+function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => Promise<void> }) {
   const guardado = lerPontoCliente();
   const entregaPadrao = loja.aceita_entrega ? 'entrega' : 'retirada';
   const [delivery, setDelivery] = useState<'entrega' | 'retirada'>(entregaPadrao);
-  const [payment, setPayment] = useState<'dinheiro' | 'maquininha'>('dinheiro');
+  const [platform, setPlatform] = useState(false);
+  const [payment, setPayment] = useState<'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'>('dinheiro');
+  const [cpfUltimos4, setCpfUltimos4] = useState('');
   const [valorEmDinheiro, setValorEmDinheiro] = useState('');
   const [avisoPagamento, setAvisoPagamento] = useState('');
   const [nome, setNome] = useState('');
@@ -1191,14 +1233,17 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
   const [medindo, setMedindo] = useState(false);
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
-  const aguardando = delivery === 'entrega' && loja.valor_por_km != null && area?.taxa_cliente == null;
+  const aguardando = delivery === 'entrega' && (platform ? area?.plataforma?.customerCents == null : loja.valor_por_km != null && area?.taxa_cliente == null);
   const taxa = delivery !== 'entrega' ? 0
+    : platform ? (area?.plataforma?.customerCents || 0) / 100
     : area?.taxa_cliente != null ? area.taxa_cliente
     : loja.modo_entrega === 'gratis' ? 0
     : loja.valor_por_km != null ? 0
     : Number(loja.taxa_entrega) || 0;
   const fora = delivery === 'entrega' && area?.entrega_na_regiao === 0;
-  const cobranca = textoCobrancaCliente(delivery === 'entrega' ? area : null);
+  const cobranca = platform && area?.plataforma
+    ? `Frete total ${fmtBRL(area.plataforma.totalCents / 100)}. Loja paga ${fmtBRL(area.plataforma.merchantCents / 100)}; você paga ${fmtBRL(area.plataforma.customerCents / 100)}.`
+    : textoCobrancaCliente(delivery === 'entrega' ? area : null);
   const totalPedido = totalBase + (aguardando ? 0 : taxa);
   const valorInformado = valorMonetario(valorEmDinheiro);
   const dinheiroInsuficiente = payment === 'dinheiro' && valorInformado != null && valorInformado < totalPedido;
@@ -1217,7 +1262,7 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
     }
     let ativo = true;
     setMedindo(true);
-    onlinePublicApi.distance(loja.slug, { q: consulta })
+    onlinePublicApi.distance(loja.slug, { q: consulta, plataforma: platform })
       .then((dados) => { if (ativo) { setArea(dados); setErro(''); } })
       .catch((error: any) => {
         if (!ativo) return;
@@ -1226,7 +1271,7 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
       })
       .finally(() => { if (ativo) setMedindo(false); });
     return () => { ativo = false; };
-  }, [consulta, delivery, loja.slug]);
+  }, [consulta, delivery, loja.slug, platform]);
 
   return (
     <div className="online-overlay" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
@@ -1240,10 +1285,14 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
           setErro(`Informe um valor em dinheiro igual ou maior que ${fmtBRL(totalPedido)}.`);
           return;
         }
+        if (platform && !/^\d{4}$/.test(cpfUltimos4)) {
+          setErro('Informe os quatro últimos números do CPF usado na compra.');
+          return;
+        }
         setEnviando(true);
         setErro('');
         try {
-          await onSubmit({ nome, telefone, entrega: delivery, endereco, pagamento: payment, valorEmDinheiro: payment === 'dinheiro' ? valorInformado : null });
+          await onSubmit({ nome, telefone, entrega: delivery, endereco, pagamento: payment, valorEmDinheiro: payment === 'dinheiro' ? valorInformado : null, plataforma: platform, cpfUltimos4, freteClienteCentavos: platform ? area?.plataforma?.customerCents : undefined });
         } catch (error: any) {
           setErro(error?.error || error?.message || 'Não foi possível enviar o pedido');
         } finally {
@@ -1253,13 +1302,14 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         <button className="online-close" type="button" onClick={onClose} aria-label="Voltar"><ArrowLeft /></button>
         <p className="online-eyebrow">QUASE LÁ</p>
         <h2 id="checkout-title">Finalizar pedido</h2>
-        <p className="online-config-note">Cadastro com CPF e código de confirmação: em breve. Por enquanto, informe seus dados para esta compra e acompanhe o pedido pelo link.</p>
+        <p className="online-config-note">Informe seus dados para acompanhar o pedido. Na entrega pela plataforma, os quatro últimos números do CPF confirmam o recebimento.</p>
         <label>Seu nome<input required value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Como podemos te chamar?" /></label>
         <label>WhatsApp<input required inputMode="tel" value={telefone} onChange={(event) => setTelefone(event.target.value)} placeholder="(00) 00000-0000" /></label>
         <fieldset className="online-delivery-choice">
           <legend>Como você quer receber?</legend>
-          {loja.aceita_entrega ? <label className={delivery === 'entrega' ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega'} onChange={() => setDelivery('entrega')} /><Bike /><span><b>Receber em casa</b><small>{loja.tempo_min_entrega ? `A partir de ${loja.tempo_min_entrega} min` : 'Entrega'}</small></span><Check /></label> : null}
-          {loja.aceita_retirada ? <label className={delivery === 'retirada' ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'retirada'} onChange={() => setDelivery('retirada')} /><Store /><span><b>Retirar no balcão</b><small>Sem taxa de entrega</small></span><Check /></label> : null}
+          {loja.aceita_entrega ? <label className={delivery === 'entrega' && !platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && !platform} onChange={() => { setDelivery('entrega'); setPlatform(false); }} /><Bike /><span><b>Entrega do estabelecimento</b><small>{loja.tempo_min_entrega ? `A partir de ${loja.tempo_min_entrega} min` : 'Entrega'}</small></span><Check /></label> : null}
+          {loja.aceita_entrega && loja.entrega_plataforma_disponivel === 1 ? <label className={delivery === 'entrega' && platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && platform} onChange={() => { setDelivery('entrega'); setPlatform(true); setPayment('pix'); }} /><Bike /><span><b>Motoboy da DoixP</b><small>Pix antes de chamar o entregador · loja assume R$ 10 da base</small></span><Check /></label> : null}
+          {loja.aceita_retirada ? <label className={delivery === 'retirada' ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'retirada'} onChange={() => { setDelivery('retirada'); setPlatform(false); }} /><Store /><span><b>Retirar no balcão</b><small>Sem taxa de entrega</small></span><Check /></label> : null}
         </fieldset>
         {delivery === 'entrega' && (
           <label>Endereço de entrega
@@ -1275,14 +1325,16 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
             {cobranca && <small>{cobranca}</small>}
           </label>
         )}
+        {platform && <label>Últimos 4 números do CPF usado na compra<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={cpfUltimos4} onChange={(event) => setCpfUltimos4(event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="0000" /><small>Peça para o motoboy confirmar o código somente após receber o pedido.</small></label>}
         <fieldset className="online-payment">
           <legend>Forma de pagamento</legend>
           <div className="online-payment-options">
-            {([['dinheiro', 'Dinheiro'], ['maquininha', 'Maquininha']] as const).map(([value, label]) => <label key={value} className={payment === value ? 'selected' : ''}><input type="radio" name="payment" checked={payment === value} onChange={() => { setPayment(value); setAvisoPagamento(''); }} />{label}</label>)}
-            {(['Pix', 'Cartão de débito', 'Cartão de crédito'] as const).map((label) => <button key={label} type="button" className="indisponivel" title={`${label}: em breve`} aria-label={`${label}: em breve`} onClick={() => setAvisoPagamento(`${label} estará disponível em breve.`)}>{label}<small>Em breve</small></button>)}
+            {!platform && ([['dinheiro', 'Dinheiro'], ['maquininha', 'Maquininha']] as const).map(([value, label]) => <label key={value} className={payment === value ? 'selected' : ''}><input type="radio" name="payment" checked={payment === value} onChange={() => { setPayment(value); setAvisoPagamento(''); }} />{label}</label>)}
+            {loja.pix_disponivel === 1 && <label className={payment === 'pix' ? 'selected' : ''}><input type="radio" name="payment" checked={payment === 'pix'} onChange={() => { setPayment('pix'); setAvisoPagamento(''); }} />Pix</label>}
+            {!platform && loja.checkout_efi_disponivel === 1 && <label className={payment === 'efi_checkout' ? 'selected' : ''}><input type="radio" name="payment" checked={payment === 'efi_checkout'} onChange={() => { setPayment('efi_checkout'); setAvisoPagamento(''); }} /><CreditCard /><span>Cartão de crédito online<small>Pagamento pelo checkout Efí com split</small></span></label>}
           </div>
           {payment === 'dinheiro' && <div className="online-cash-change"><label>Vou pagar com<input required inputMode="decimal" value={valorEmDinheiro} onChange={(event) => { setValorEmDinheiro(event.target.value); setErro(''); }} placeholder="Ex.: 50,00" /></label><div><span>Total do pedido <b>{fmtBRL(totalPedido)}</b></span>{valorInformado != null && <span className={dinheiroInsuficiente ? 'insuficiente' : ''}>{dinheiroInsuficiente ? `Faltam ${fmtBRL(totalPedido - valorInformado)}` : `Troco ${fmtBRL(troco || 0)}`}</span>}</div></div>}
-          <p className="online-pay-note">Dinheiro e maquininha são pagos na entrega ou na retirada. Pix, débito e crédito serão liberados em breve.</p>
+          <p className="online-pay-note">{platform ? 'O Pix vai para a chave cadastrada pela loja. A corrida aparece aos motoboys depois que a loja confirmar o recebimento.' : payment === 'efi_checkout' ? 'Você será direcionado ao checkout Efí para pagar com cartão de crédito. O pedido só será enviado à cozinha após a confirmação.' : 'Dinheiro e maquininha são pagos na entrega ou retirada. Pix é pago antes da preparação.'}</p>
           {avisoPagamento && <p className="online-payment-notice" role="status">{avisoPagamento}</p>}
         </fieldset>
         {erro && <p className="online-erro">{erro}</p>}
@@ -1362,7 +1414,11 @@ function AcompanharPedido() {
       buscando = true;
       setAtualizando(true);
       try {
-        const dados = await onlinePublicApi.track(slug, chave);
+        let dados = await onlinePublicApi.track(slug, chave);
+        if (dados.forma_pagamento === 'efi_checkout' && dados.etapa === 'aguardando_pagamento') {
+          try { await onlinePublicApi.confirmCheckout(slug, chave, {}); } catch { /* A notificação pode ainda estar pendente. */ }
+          dados = await onlinePublicApi.track(slug, chave);
+        }
         if (!ativo) return;
         setPedido(dados);
         setErro('');
@@ -1377,7 +1433,7 @@ function AcompanharPedido() {
     };
     atualizarRef.current = buscar;
     const aoVoltar = () => { if (!document.hidden) buscar(); };
-    const timer = window.setInterval(() => { if (!document.hidden) buscar(); }, 5000);
+    const timer = window.setInterval(() => { if (!document.hidden) buscar(); }, 15000);
     document.addEventListener('visibilitychange', aoVoltar);
     window.addEventListener('focus', aoVoltar);
     buscar();
@@ -1421,9 +1477,10 @@ function AcompanharPedido() {
         )}
         {pedido && (
           <section className="online-track-card" aria-live="polite">
-            <p className="online-eyebrow">{pedido.etapa === 'cancelado' ? 'PEDIDO ENCERRADO' : pedido.etapa === 'aguardando_pix' ? 'PAGUE COM PIX' : 'ACOMPANHAR PEDIDO'}</p>
+            <p className="online-eyebrow">{pedido.etapa === 'cancelado' ? 'PEDIDO ENCERRADO' : pedido.etapa === 'aguardando_pix' ? 'PAGUE COM PIX' : pedido.etapa === 'aguardando_pagamento' ? 'CONFIRMANDO PAGAMENTO' : 'ACOMPANHAR PEDIDO'}</p>
             <h1>Pedido #{pedido.id}</h1>
             <p className="online-track-loja">{pedido.loja} · {pedido.tipo_entrega === 'retirada' ? 'Retirada no balcão' : 'Entrega'}</p>
+            {pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && pedido.etapa !== 'cancelado' && <p className="online-config-note">{pedido.entrega_status === 'searching' || pedido.entrega_status === 'anunciada' ? 'Procurando um motoboy próximo da loja.' : pedido.entrega_status === 'accepted' ? 'Um motoboy aceitou e está indo buscar seu pedido.' : pedido.entrega_status === 'incident' ? 'A entrega está em análise pelo suporte.' : pedido.entrega_status === 'delivered' ? 'Entrega confirmada pelo código informado ao motoboy.' : 'A loja está preparando a chamada do motoboy.'}</p>}
             {erro && <p className="online-erro" role="status">Não foi possível atualizar agora. {erro}</p>}
             {pedido.etapa === 'aguardando_pix' && pedido.pix_copia_cola && <PixDoPedido codigo={pedido.pix_copia_cola} loja={pedido.loja} aguardando />}
             {pedido.etapa === 'cancelado' ? (
@@ -1435,6 +1492,12 @@ function AcompanharPedido() {
               <div className="online-track-wait">
                 <b>Aguardando o pagamento</b>
                 <span>A cozinha ainda não recebeu este pedido. Ele sobe quando a loja confirmar que o Pix caiu na conta dela.</span>
+              </div>
+            ) : pedido.etapa === 'aguardando_pagamento' ? (
+              <div className="online-track-wait">
+                <b>Aguardando confirmação da Efí</b>
+                <span>O pedido só será enviado à cozinha após a confirmação do pagamento. Se você ainda não concluiu, pode retomar o checkout.</span>
+                {pedido.checkout_url && <a className="online-place-order" href={pedido.checkout_url}>Continuar pagamento · {fmtBRL(pedido.total)}</a>}
               </div>
             ) : (
               <ol className="online-track">
@@ -1454,7 +1517,7 @@ function AcompanharPedido() {
               </ol>
             )}
             <ul className="online-track-itens">
-              {pedido.itens.map((item, index) => <li key={`${item.nome}-${index}`}>{item.quantidade}x {item.nome}</li>)}
+              {pedido.itens.map((item, index) => <li key={`${item.nome}-${index}`}>{item.quantidade}x {item.nome}{item.observacao && <small className="block text-slate-500">{item.observacao}</small>}</li>)}
             </ul>
             <p className="online-track-total"><span>Total</span><b>{fmtBRL(pedido.total)}</b></p>
             <p className="online-track-note">Pagamento: {rotuloPagamento(pedido.forma_pagamento)}.</p>

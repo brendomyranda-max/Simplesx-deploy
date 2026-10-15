@@ -34,6 +34,7 @@ import type {
   CategoriaCardapio,
   RedePedidos,
   AreaEntrega,
+  CorridaPlataforma,
 } from './types';
 
 export interface ApiError {
@@ -43,7 +44,7 @@ export interface ApiError {
 
 export interface OrderSubmission {
   chave: string;
-  itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string; acrescimos?: number[] }[];
+  itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string; acrescimos?: number[]; combo_escolhas?: number[][] }[];
 }
 
 export interface TableTransferSubmission {
@@ -146,6 +147,19 @@ export const configApi = {
   update: (body: Record<string, string | number>) => api.put('/config', body),
 };
 
+export interface EfiConfig {
+  payee_code: string;
+  pix_chave: string;
+  pix_cidade: string;
+  api_configurada: boolean;
+  checkout_ativo: boolean;
+}
+
+export const efiApi = {
+  config: () => api.get<EfiConfig>('/efi/config'),
+  updateConfig: (body: { payee_code: string; pix_chave: string; pix_cidade: string }) => api.put<EfiConfig>('/efi/config', body),
+};
+
 export const estadoApi = {
   get: () => api.get<EstadoSistema>('/estado'),
 };
@@ -221,7 +235,7 @@ export const validadeApi = {
 
 export const vendaApi = {
   criar: (b: {
-    itens: { produto_id: number; quantidade: number }[];
+    itens: { produto_id: number; quantidade: number; combo_escolhas?: number[][] }[];
     pagamentos?: { forma: string; valor: number }[];
     forma?: string;
     desconto?: number;
@@ -293,7 +307,7 @@ export const cartaoApi = {
     payload?: string;
     garcom_nome?: string;
     chave?: string;
-    itens?: { produto_id: number; quantidade: number; observacao?: string }[];
+    itens?: { produto_id: number; quantidade: number; observacao?: string; acrescimos?: number[]; combo_escolhas?: number[][] }[];
   }) => api.post<CartaoUso>('/cartoes/usar', b),
 };
 
@@ -360,9 +374,16 @@ export const pedidosApi = {
   painel: () => api.get<PainelPedidos>('/pedidos/painel'),
   cozinha: (categoriaId?: number) => api.get<PainelCozinha>(`/pedidos/cozinha${categoriaId!==undefined ? `?categoria_id=${categoriaId}` : ''}`),
   statusOnline: (id: number, status: 'confirmado' | 'cancelado' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'pix_recebido') =>
-    api.post<{ ok: boolean; id: number; status: string; etapa: string }>(`/pedidos/online/${id}/status`, { status }),
+    api.post<{ ok: boolean; id: number; status: string; etapa: string; despacho?: { id?: string; status?: string; error?: string } }>(`/pedidos/online/${id}/status`, { status }),
+  chamarEntregador: (id: number) => api.post<{ id: string; status: string }>(`/pedidos/online/${id}/chamar-entregador`, {}),
   etiqueta: (body: { item_id?: number; comanda_id?: number }) =>
     api.post<{ impressao: string; jobs: { impressora: string; ok?: boolean; error?: string }[] }>('/pedidos/etiqueta', body),
+};
+
+export const entregasApi = {
+  loja: () => api.get<{ orders: CorridaPlataforma[] }>('/entregas/loja'),
+  acao: (id: string, action: 'ready' | 'pickup' | 'cancel' | 'report', body: Record<string, unknown> = {}) =>
+    api.post<CorridaPlataforma>(`/entregas/loja/${encodeURIComponent(id)}/${action}`, body),
 };
 
 export const onlinePublicApi = {
@@ -385,11 +406,12 @@ export const onlinePublicApi = {
     if (consulta.lng != null) params.set('lng', String(consulta.lng));
     return api.get<{ latitude: number; longitude: number; endereco: string }>(`/public/localizar?${params.toString()}`);
   },
-  distance: (slug: string, consulta: { q?: string; lat?: number; lng?: number }) => {
+  distance: (slug: string, consulta: { q?: string; lat?: number; lng?: number; plataforma?: boolean }) => {
     const params = new URLSearchParams();
     if (consulta.q) params.set('q', consulta.q);
     if (consulta.lat != null) params.set('lat', String(consulta.lat));
     if (consulta.lng != null) params.set('lng', String(consulta.lng));
+    if (consulta.plataforma) params.set('plataforma', '1');
     return api.get<AreaEntrega>(`/public/lojas/${encodeURIComponent(slug)}/distancia?${params.toString()}`);
   },
   store: (slug: string, ponto?: { lat?: number; lng?: number }) => {
@@ -403,27 +425,34 @@ export const onlinePublicApi = {
   },
   order: (slug: string, body: {
     chave: string; cliente_nome: string; telefone: string; tipo_entrega: 'entrega' | 'retirada'; endereco?: string;
-    forma_pagamento: 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
-    itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; preco_unitario_esperado?: number; observacao?: string }[];
-  }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
+    forma_pagamento: 'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'; troco_para?: number | null; observacao?: string;
+    entrega_plataforma?: boolean; cpf_ultimos4?: string;
+    frete_cliente_esperado_centavos?: number;
+    itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; combo_escolhas?: number[][]; preco_unitario_esperado?: number; observacao?: string }[];
+  }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; checkout_url?: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
+  confirmCheckout: (slug: string, chave: string, body: Record<string, string>) => api.post<{ ok: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos/${encodeURIComponent(chave)}/checkout/confirmar`, body),
   track: (slug: string, chave: string) => api.get<{
     id: number;
-    etapa: 'aguardando_pix' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
+    etapa: 'aguardando_pix' | 'aguardando_pagamento' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
     tipo_entrega: 'entrega' | 'retirada';
     forma_pagamento: string;
     troco_para?: number | null;
     pix_copia_cola: string | null;
+    checkout_url?: string | null;
+    checkout_capture_method?: string | null;
     total: number;
     taxa_entrega?: number;
     valor_entrega?: number | null;
     distancia_km?: number | null;
     modo_entrega?: 'cliente' | 'dividido' | 'gratis' | null;
+    entrega_plataforma?: number;
+    entrega_status?: string | null;
     entrega_gratis?: number | null;
     criado_em: string;
     atualizado_em: string;
     loja: string;
     whatsapp_suporte?: string | null;
-    itens: { nome: string; quantidade: number }[];
+    itens: { nome: string; quantidade: number; observacao?: string | null }[];
   }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos/${encodeURIComponent(chave)}`),
 };
 

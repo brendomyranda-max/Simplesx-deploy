@@ -8,6 +8,7 @@ import { Plus, ScanBarcode, Trash2, Boxes, MessageSquare, X, ChefHat } from 'luc
 import { Button, Field, Input, Modal, Select, Textarea, Toggle, useToast } from '@/components/ui';
 import { FotoGaleria } from '@/components/FotoGaleria';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
+import { ComboCadastro } from '@/components/ComboFields';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
 import { categoriaApi, fornecedorApi, onlineApi, produtoApi } from '@/lib/api';
 import type { Categoria, CategoriaCardapio, Fornecedor, OnlineCatalogProduct, Produto, ProdutoTipo } from '@/lib/types';
@@ -24,6 +25,7 @@ const TIPOS: { v: ProdutoTipo | 'delivery'; label: string; desc: string }[] = [
   { v: 'produto', label: 'Produto simples', desc: 'Vende e baixa o próprio estoque' },
   { v: 'insumo', label: 'Insumo', desc: 'Matéria-prima usada em fichas técnicas' },
   { v: 'composto', label: 'Produto composto', desc: 'Receita: baixa insumos do estoque ao vender' },
+  { v: 'combo', label: 'Combo', desc: 'Cliente escolhe produtos já cadastrados em cada grupo' },
   { v: 'delivery', label: 'Delivery', desc: 'Publica um produto que já está no estoque' },
 ];
 
@@ -74,6 +76,7 @@ function initialState(p?: Produto | null, codigoInicial?: string) {
       quantidade: String(i.quantidade ?? ''),
       unidade: i.unidade || 'UN',
     })) as LinhaFicha[],
+    combo_grupos: p?.combo_grupos_json ? JSON.parse(p.combo_grupos_json) : [],
   };
 }
 
@@ -96,6 +99,7 @@ export function ProdutoForm({
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [insumos, setInsumos] = useState<Produto[]>([]);
+  const [produtosCombo, setProdutosCombo] = useState<Produto[]>([]);
   const [saving, setSaving] = useState(false);
   const [novoComentario, setNovoComentario] = useState('');
   const [form, setForm] = useState<any>(() => initialState(produto, codigoInicial));
@@ -119,6 +123,7 @@ export function ProdutoForm({
     categoriaApi.list().then(setCategorias).catch(() => {});
     fornecedorApi.list().then(setFornecedores).catch(() => {});
     produtoApi.insumos().then(setInsumos).catch(() => {});
+    produtoApi.list().then((lista) => setProdutosCombo(lista.filter((item) => item.ativo && item.id !== produto?.id && (item.tipo === 'produto' || item.tipo === 'composto')))).catch(() => {});
     setForm(initialState(produto, codigoInicial));
     setNovoComentario('');
     setCanal(canalInicial);
@@ -287,15 +292,17 @@ export function ProdutoForm({
       return toast('error', unidadeIncompativel.ing ? `Unidade incompatível: ${unidadeIncompativel.ing.nome}` : 'Unidade incompatível');
     if (form.tipo === 'composto' && Number(form.preco) <= 0)
       return toast('error', 'Informe o preço de venda do produto composto');
+    if (form.tipo === 'combo' && (!form.combo_grupos.length || form.combo_grupos.some((grupo: any) => !grupo.nome.trim() || !Number.isInteger(grupo.quantidade) || grupo.quantidade < 1 || !grupo.opcoes.length || grupo.opcoes.some((opcao: any) => !opcao.produto_id))))
+      return toast('error', 'Complete os grupos e produtos disponíveis no combo');
     if (form.produto_balanca && !['KG', 'L'].includes(form.unidade))
       return toast('error', 'Produto de balança deve usar a unidade KG ou L');
     if (form.produto_balanca && !/^\d{1,6}$/.test(String(form.balanca_plu)))
       return toast('error', 'Informe um PLU numérico de até 6 dígitos');
     if (form.produto_balanca && Number(form.preco) <= 0)
       return toast('error', `Informe o preço por ${form.unidade === 'L' ? 'litro' : 'quilo'}`);
-    if (form.tipo !== 'composto' && !form.sem_vencimento && (!form.data_fabricacao || !form.data_vencimento))
+    if (form.tipo !== 'composto' && form.tipo !== 'combo' && !form.sem_vencimento && (!form.data_fabricacao || !form.data_vencimento))
       return toast('error', 'Informe as datas de fabricação e vencimento');
-    if (form.tipo !== 'composto' && !form.sem_vencimento && form.data_vencimento < form.data_fabricacao)
+    if (form.tipo !== 'composto' && form.tipo !== 'combo' && !form.sem_vencimento && form.data_vencimento < form.data_fabricacao)
       return toast('error', 'O vencimento não pode ser anterior à fabricação');
     if (form.tipo === 'insumo' && Number(form.validade_aberto_dias) <= 0)
       return toast('error', 'Informe a validade após abertura do insumo');
@@ -315,19 +322,19 @@ export function ProdutoForm({
         preco: form.preco === '' ? null : Number(form.preco),
         produto_balanca: form.produto_balanca,
         balanca_plu: form.produto_balanca ? String(form.balanca_plu).padStart(6, '0') : null,
-        custo: form.tipo === 'composto' ? undefined : Number(form.custo || 0),
+        custo: form.tipo === 'composto' ? undefined : form.tipo === 'combo' ? 0 : Number(form.custo || 0),
         estoque_atual: form.tipo === 'produto' ? Number(form.estoque_atual || 0) : undefined,
-        estoque_minimo: form.tipo !== 'composto' ? Number(form.estoque_minimo || 0) : undefined,
+        estoque_minimo: form.tipo === 'produto' || form.tipo === 'insumo' ? Number(form.estoque_minimo || 0) : undefined,
         conteudo_quantidade: form.tipo === 'insumo' ? Number(form.conteudo_quantidade) : undefined,
         conteudo_unidade: form.tipo === 'insumo' ? form.conteudo_unidade : undefined,
         marca: form.marca.trim() || null,
-        sem_vencimento: form.tipo !== 'composto' && form.sem_vencimento ? 1 : 0,
-        validade_fabricacao_dias: form.tipo !== 'composto' && !form.sem_vencimento
+        sem_vencimento: form.tipo === 'combo' || (form.tipo !== 'composto' && form.sem_vencimento) ? 1 : 0,
+        validade_fabricacao_dias: form.tipo !== 'composto' && form.tipo !== 'combo' && !form.sem_vencimento
           ? Math.max(1, Math.round((new Date(`${form.data_vencimento}T12:00:00`).getTime() - new Date(`${form.data_fabricacao}T12:00:00`).getTime()) / 86400000))
           : null,
         validade_aberto_dias: form.validade_aberto_dias === '' ? null : Number(form.validade_aberto_dias),
         data_fabricacao: form.data_fabricacao || null,
-        data_vencimento: form.sem_vencimento ? null : form.data_vencimento || null,
+        data_vencimento: form.tipo === 'combo' || form.sem_vencimento ? null : form.data_vencimento || null,
         temperatura: form.temperatura || null,
         observacoes: form.observacoes.trim() || null,
         fornecedor_id: form.fornecedor_id ? Number(form.fornecedor_id) : null,
@@ -337,6 +344,7 @@ export function ProdutoForm({
         codigos_barras: form.codigos_barras.filter((c: any) => c.codigo.trim()),
         categoria_ids: form.categoria_ids,
         comentarios: form.comentarios.map((c: string) => c.trim()).filter(Boolean),
+        combo_grupos: form.tipo === 'combo' ? form.combo_grupos : undefined,
         acrescimos: form.tipo === 'composto'
           ? acrescimosLidos.itens.map((item) => ({ insumo_id: item.insumo_id, valor: item.valor }))
           : undefined,
@@ -361,7 +369,7 @@ export function ProdutoForm({
   return (
     <Modal open={open} onClose={onClose} title={canal === 'delivery' ? 'Delivery' : produto ? `Editar: ${produto.nome}` : 'Novo produto'} width="max-w-3xl">
       <form onSubmit={salvar} className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {TIPOS.map((t) => {
             const ativo = t.v === 'delivery' ? canal === 'delivery' : canal === 'cadastro' && form.tipo === t.v;
             return (
@@ -372,7 +380,7 @@ export function ProdutoForm({
                 if (t.v === 'delivery') setCanal('delivery');
                 else {
                   setCanal('cadastro');
-                  set('tipo', t.v);
+                  setForm((atual: any) => ({ ...atual, tipo: t.v, ...(t.v === 'combo' ? { produto_balanca: false, balanca_plu: '', unidade: 'UN' } : {}) }));
                 }
               }}
               className={`rounded-xl border p-3 text-left transition-colors ${
@@ -390,14 +398,14 @@ export function ProdutoForm({
 
         {canal === 'delivery' ? (
           <div className="space-y-4">
-            <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">O delivery só publica um produto simples ou composto que já está cadastrado no estoque. O estoque e a ficha técnica continuam os mesmos.</p>
+                <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">O delivery publica um produto ou combo já cadastrado. As escolhas e os produtos disponíveis vêm do cadastro do combo.</p>
             {opcoesEstoque.length === 0 ? (
               <p className="text-sm text-slate-500">Cadastre um produto simples ou composto antes de publicar no delivery.</p>
             ) : (
               <>
                 <Field label="Produto do estoque *">
                   <Select value={entregaId} onChange={(event) => preencherEntrega(Number(event.target.value), opcoesEstoque, catalogoDelivery)}>
-                    {opcoesEstoque.map((item) => <option key={item.id} value={item.id}>{item.nome} · {item.tipo === 'composto' ? 'composto' : 'simples'}</option>)}
+                    {opcoesEstoque.map((item) => <option key={item.id} value={item.id}>{item.nome} · {item.tipo === 'composto' ? 'composto' : item.tipo === 'combo' ? 'combo' : 'simples'}</option>)}
                   </Select>
                 </Field>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -609,6 +617,8 @@ export function ProdutoForm({
           </div>
         ) : null}
 
+        {form.tipo === 'combo' && <ComboCadastro grupos={form.combo_grupos} produtos={produtosCombo} onChange={(grupos) => set('combo_grupos', grupos)} />}
+
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Unidade">
             <Select value={form.unidade} onChange={(e) => set('unidade', e.target.value)}>
@@ -621,9 +631,9 @@ export function ProdutoForm({
             <Input type="number" step="0.01" value={form.preco} onChange={(e) => set('preco', e.target.value)} placeholder="0,00" />
             {form.produto_balanca && <p className="mt-1 text-[11px] text-slate-500">Valor por {form.unidade === 'L' ? 'litro' : 'quilo'}</p>}
           </Field>
-          {form.tipo === 'composto' ? (
-            <Field label="Custo (R$)" hint="Calculado pela ficha técnica">
-              <Input type="number" step="0.01" value={form.tipo === 'composto' ? '' : form.custo} disabled placeholder="automático" />
+          {form.tipo === 'composto' || form.tipo === 'combo' ? (
+            <Field label="Custo (R$)" hint={form.tipo === 'combo' ? 'Calculado a cada venda conforme as escolhas' : 'Calculado pela ficha técnica'}>
+              <Input type="number" step="0.01" value="" disabled placeholder={form.tipo === 'combo' ? 'varia por escolha' : 'automático'} />
             </Field>
           ) : (
             <Field label="Custo (R$)">
@@ -632,7 +642,7 @@ export function ProdutoForm({
           )}
         </div>
 
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+        {form.tipo !== 'combo' && <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-bold text-slate-800">Produto de balança</p>
@@ -669,7 +679,7 @@ export function ProdutoForm({
               </p>
             </div>
           )}
-        </div>
+        </div>}
 
         {form.tipo === 'produto' && (
           <div className="grid gap-4 sm:grid-cols-3">
@@ -710,7 +720,7 @@ export function ProdutoForm({
           </div>
         )}
 
-        {form.tipo !== 'composto' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+        {form.tipo !== 'composto' && form.tipo !== 'combo' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="mb-3 text-sm font-bold text-amber-800">Validades do produto</p>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>

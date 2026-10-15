@@ -8,8 +8,8 @@ import { Bike, BookOpen, ExternalLink, Printer } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { RestauranteAbas } from '@/components/RestauranteAbas';
 import { Badge, Button, Card, EmptyState, useToast } from '@/components/ui';
-import { impressoraApi, pedidosApi, retryOrder } from '@/lib/api';
-import type { PainelPedidos, PedidoDelivery } from '@/lib/types';
+import { entregasApi, impressoraApi, pedidosApi, retryOrder } from '@/lib/api';
+import type { CorridaPlataforma, PainelPedidos, PedidoDelivery } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
 import { fmtKm } from '@/lib/localizacao-cliente';
 
@@ -47,11 +47,24 @@ export function DeliveryPage() {
   const [load, setLoad] = useState(true);
   const [ocupado, setOcupado] = useState('');
   const [filtro, setFiltro] = useState<'pendentes' | 'entregues'>('pendentes');
+  const [corridas, setCorridas] = useState<CorridaPlataforma[]>([]);
+  const [integracaoErro, setIntegracaoErro] = useState('');
+  const [codigos, setCodigos] = useState<Record<string, string>>({});
+  const [denuncias, setDenuncias] = useState<Record<string, string>>({});
+  const [denunciaAberta, setDenunciaAberta] = useState('');
 
   const carregar = async (silencioso = false) => {
     if (!silencioso) setLoad(true);
     try {
-      setPainel(await pedidosApi.painel());
+      const [pedidos, entregas] = await Promise.allSettled([pedidosApi.painel(), entregasApi.loja()]);
+      if (pedidos.status === 'rejected') throw pedidos.reason;
+      setPainel(pedidos.value);
+      if (entregas.status === 'fulfilled') {
+        setCorridas(entregas.value.orders);
+        setIntegracaoErro('');
+      } else {
+        setIntegracaoErro(entregas.reason?.error || 'O serviço de motoboys ainda não está conectado.');
+      }
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível carregar os pedidos');
     } finally {
@@ -83,6 +96,37 @@ export function DeliveryPage() {
 
   const pedidosVisiveis = filtro === 'pendentes' ? painel.delivery : painel.delivery_entregues;
 
+  const acaoCorrida = async (corrida: CorridaPlataforma, action: 'ready' | 'pickup' | 'report', body: Record<string, unknown> = {}) => {
+    setOcupado(`corrida-${corrida.id}`);
+    try {
+      await entregasApi.acao(corrida.id, action, body);
+      if (action === 'pickup') {
+        setCodigos((old) => ({ ...old, [corrida.id]: '' }));
+      }
+      if (action === 'report') {
+        setDenunciaAberta('');
+        setDenuncias((old) => ({ ...old, [corrida.id]: '' }));
+      }
+      toast('success', action === 'ready' ? 'Pedido pronto para o motoboy.' : action === 'pickup' ? 'Retirada confirmada pelo código.' : 'Ocorrência enviada ao suporte; o entregador foi suspenso preventivamente.');
+      await carregar(true);
+    } catch (error: any) {
+      toast('error', error?.error || 'Não foi possível atualizar a corrida.');
+    } finally {
+      setOcupado('');
+    }
+  };
+
+  const tentarChamarMotoboy = async (id: number) => {
+    setOcupado(`despacho-${id}`);
+    try {
+      await pedidosApi.chamarEntregador(id);
+      toast('success', 'Pedido anunciado aos motoboys da região.');
+      await carregar(true);
+    } catch (error: any) {
+      toast('error', error?.error || 'Não foi possível chamar o motoboy.');
+    } finally { setOcupado(''); }
+  };
+
   const mudarStatus = async (id: number, status: 'confirmado' | 'cancelado' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'pix_recebido') => {
     const chave = `status-${id}`;
     setOcupado(chave);
@@ -95,8 +139,9 @@ export function DeliveryPage() {
       entregue: 'Cliente avisado. Feche a comanda para concluir o caixa.',
     };
     try {
-      await pedidosApi.statusOnline(id, status);
-      toast('success', avisos[status]);
+      const result = await pedidosApi.statusOnline(id, status);
+      if (result.despacho?.error) toast('error', `Pix registrado, mas o motoboy ainda não foi chamado: ${result.despacho.error}`);
+      else toast('success', avisos[status]);
       await carregar(true);
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível atualizar o pedido');
@@ -124,12 +169,37 @@ export function DeliveryPage() {
         <Button type="button" variant={filtro === 'entregues' ? 'primary' : 'secondary'} onClick={() => setFiltro('entregues')}>Já entregues ({painel.delivery_entregues.length})</Button>
       </div>
 
+      {integracaoErro && <Card className="mb-4 p-3 text-sm text-amber-800">Motoboys da plataforma: {integracaoErro}</Card>}
+      {corridas.length > 0 && <section className="mb-5 space-y-3" aria-label="Corridas dos motoboys">
+        <h2 className="text-sm font-bold text-slate-700">Corridas da plataforma</h2>
+        {corridas.filter((corrida) => !['delivered', 'cancelled', 'returned'].includes(corrida.status)).map((corrida) => (
+          <Card key={corrida.id} className="p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><b>#{corrida.reference}</b><p className="text-sm text-slate-600">{corrida.customerName} · {corrida.destinationAddress}</p>
+                <p className="text-xs text-slate-500">{corrida.status === 'searching' ? 'Procurando motoboy' : corrida.status === 'accepted' ? 'Motoboy aceitou' : corrida.status === 'in_transit' ? 'A caminho do cliente' : 'Em análise'} · Frete {fmtBRL(corrida.totalCents / 100)} · {fmtKm(corrida.distanceKm)}</p></div>
+              <div className="flex flex-wrap items-center gap-2">
+                {!corrida.ready && ['searching', 'accepted'].includes(corrida.status) && <Button size="sm" onClick={() => acaoCorrida(corrida, 'ready')} loading={ocupado === `corrida-${corrida.id}`}>Pedido pronto</Button>}
+                {corrida.ready && corrida.status === 'accepted' && <><input aria-label={`Código de retirada da corrida ${corrida.reference}`} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} placeholder="Código de 6 dígitos" className="w-40 rounded-lg border border-slate-300 p-2 text-sm" value={codigos[corrida.id] || ''} onChange={(event) => setCodigos((old) => ({ ...old, [corrida.id]: event.target.value.replace(/\D/g, '').slice(0, 6) }))} /><Button size="sm" disabled={(codigos[corrida.id] || '').length !== 6} onClick={() => acaoCorrida(corrida, 'pickup', { code: codigos[corrida.id] })} loading={ocupado === `corrida-${corrida.id}`}>Confirmar retirada</Button></>}
+                {['accepted', 'in_transit'].includes(corrida.status) && <Button size="sm" variant="danger" onClick={() => setDenunciaAberta(denunciaAberta === corrida.id ? '' : corrida.id)}>Relatar suspeita</Button>}
+              </div>
+            </div>
+            {denunciaAberta === corrida.id && <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+              <label className="block text-sm font-semibold text-slate-700">Descreva o motivo da suspeita
+                <textarea className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm" rows={3} maxLength={2000} value={denuncias[corrida.id] || ''} onChange={(event) => setDenuncias((old) => ({ ...old, [corrida.id]: event.target.value }))} />
+              </label>
+              <Button size="sm" variant="danger" disabled={(denuncias[corrida.id] || '').trim().length < 5} onClick={() => acaoCorrida(corrida, 'report', { kind: 'fraud', note: denuncias[corrida.id].trim() })} loading={ocupado === `corrida-${corrida.id}`}>Enviar ao suporte e suspender preventivamente</Button>
+            </div>}
+          </Card>
+        ))}
+      </section>}
+
       {load ? <Card className="p-8 text-center text-sm text-slate-500">Carregando pedidos…</Card> : pedidosVisiveis.length === 0 ? (
         <Card><EmptyState icon={<Bike className="h-8 w-8" />} title={filtro === 'pendentes' ? 'Nenhum pedido para entregar' : 'Nenhum pedido entregue ainda'} subtitle={filtro === 'pendentes' ? 'Quando um cliente pedir pelo site, o pedido aparece aqui.' : 'Os pedidos concluídos aparecem aqui, mesmo depois do fechamento da comanda.'} /></Card>
       ) : (
         <div className="space-y-3">
           {pedidosVisiveis.map((pedido) => {
             const etapa = etapaDelivery(pedido);
+            const corrida = corridas.find((item) => item.reference === `PEDIDO-ONLINE-${pedido.id}`);
             return (
               <Card key={pedido.id} className="p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -145,6 +215,7 @@ export function DeliveryPage() {
                     {pedido.forma_pagamento === 'dinheiro' && pedido.troco_para != null && <p className="text-xs font-semibold text-slate-600">Cliente paga com {fmtBRL(pedido.troco_para)} · Troco {fmtBRL(Math.max(0, pedido.troco_para - pedido.total))}</p>}
                     {pedido.forma_pagamento === 'pix' && pedido.etapa === 'aguardando_pix' && <p className="text-xs font-semibold text-slate-500">O cliente já tem o QR Code. O pedido só sobe depois que o Pix cair na conta da loja.</p>}
                     {pedido.forma_pagamento === 'pix' && pedido.etapa !== 'aguardando_pix' && <p className="text-xs font-semibold text-slate-500">Pix na chave desta loja. Confira o recebimento na conta do estabelecimento.</p>}
+                    {pedido.entrega_plataforma === 1 && <p className="text-xs font-semibold text-brand-700">Motoboy DoixP · {corrida ? 'corrida ' + corrida.status : pedido.entrega_despacho_status === 'erro' ? 'chamada pendente de reenvio' : 'aguardando anúncio'}</p>}
                     {pedido.tipo_entrega === 'entrega' && pedido.valor_entrega != null && (
                       <p className="text-xs font-semibold text-slate-500">
                         {pedido.modo_entrega === 'gratis' || pedido.entrega_gratis === 1
@@ -157,10 +228,11 @@ export function DeliveryPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {pedido.etapa === 'aguardando_pix' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pix_recebido')} loading={ocupado === `status-${pedido.id}`}>Pix recebido</Button>}
+                    {pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && !corrida && pedido.entrega_despacho_status !== 'anunciada' && pedido.etapa !== 'cancelado' && <Button size="sm" onClick={() => tentarChamarMotoboy(pedido.id)} loading={ocupado === `despacho-${pedido.id}`}>Tentar chamar motoboy</Button>}
                     {pedido.etapa === 'recebido' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'confirmado')} loading={ocupado === `status-${pedido.id}`}>Confirmar</Button>}
-                    {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'entrega' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'saiu_entrega')} loading={ocupado === `status-${pedido.id}`}>Saiu para entrega</Button>}
+                    {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'entrega' && pedido.entrega_plataforma !== 1 && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'saiu_entrega')} loading={ocupado === `status-${pedido.id}`}>Saiu para entrega</Button>}
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'retirada' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pronto_retirada')} loading={ocupado === `status-${pedido.id}`}>Pronto para retirada</Button>}
-                    {(pedido.etapa === 'saiu_entrega' || pedido.etapa === 'pronto_retirada') && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'entregue')} loading={ocupado === `status-${pedido.id}`}>{pedido.tipo_entrega === 'retirada' ? 'Marcar retirado' : 'Marcar entregue'}</Button>}
+                    {(pedido.etapa === 'saiu_entrega' || pedido.etapa === 'pronto_retirada') && (!corrida || pedido.tipo_entrega === 'retirada') && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'entregue')} loading={ocupado === `status-${pedido.id}`}>{pedido.tipo_entrega === 'retirada' ? 'Marcar retirado' : 'Marcar entregue'}</Button>}
                     {filtro === 'pendentes' && pedido.comanda_id && pedido.comanda_status === 'aberta' && pedido.etapa !== 'aguardando_pix' && <Button size="sm" variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={() => imprimirPedido(pedido.comanda_id!, `impressao-${pedido.id}`)} loading={ocupado === `impressao-${pedido.id}`}>Imprimir pedido</Button>}
                     {pedido.comanda_id && pedido.comanda_status !== 'fechada' && <Button size="sm" variant="secondary" onClick={() => navigate(`/restaurante/comanda/${pedido.comanda_id!}`)}>Abrir comanda</Button>}
                     {filtro === 'pendentes' && pedido.etapa !== 'entregue' && <Button size="sm" variant="danger" onClick={() => mudarStatus(pedido.id, 'cancelado')} loading={ocupado === `status-${pedido.id}`}>Cancelar</Button>}

@@ -4,11 +4,12 @@ name = "simplesx-projeto-beta"
 compatibility_date = "2025-01-01"
 pages_build_output_dir = "dist"
 
-# Pagamentos começam obrigatoriamente no simulador. Alterar para `sandbox`
-# somente após cadastrar os secrets; `production` exigirá homologação explícita.
+# Checkout Efí começa em homologação. Só altere para `production` após validar
+# credenciais, split, notificações e a aprovação comercial da taxa.
 [vars]
-PAGBANK_MODE = "simulator"
-PAGBANK_PLATFORM_FEE_BPS = "2"
+EFI_ENVIRONMENT = "sandbox"
+EFI_PLATFORM_FEE_BPS = "2"
+EFI_NOTIFICATION_URL = "https://doixp.com/api/public/efipay/checkout/notificacao"
 
 # Recursos Cloudflare criados no deploy
 [[d1_databases]]

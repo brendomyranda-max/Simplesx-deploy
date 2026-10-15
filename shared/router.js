@@ -17,6 +17,8 @@ import { cancelarComandaHandler } from './restaurant-cancel.js';
 import { addOrderItemsHandler } from './restaurant-orders.js';
 import * as fiscal from './handlers-fiscal.js';
 import * as online from './handlers-online.js';
+import * as efi from './efipay.js';
+import * as entregas from './handlers-entregas.js';
 import { TenantDb } from './tenant-db.js';
 import { usarCartaoHandler } from './cartao-nfc.js';
 import { listarCartoesHandler, consultarCartaoHandler, cadastrarCartaoHandler, fecharCartaoHandler, imprimirContaCartaoHandler } from './recepcao.js';
@@ -39,6 +41,8 @@ const routes = [
   { m: 'GET', p: '/api/public/lojas/:slug', h: online.getPublicStoreHandler, pub: true },
   { m: 'POST', p: '/api/public/lojas/:slug/pedidos', h: online.createPublicOrderHandler, pub: true },
   { m: 'GET', p: '/api/public/lojas/:slug/pedidos/:chave', h: online.getPublicOrderHandler, pub: true },
+  { m: 'POST', p: '/api/public/lojas/:slug/pedidos/:chave/checkout/confirmar', h: online.confirmarCheckoutPublicoHandler, pub: true },
+  { m: 'POST', p: '/api/public/efipay/checkout/notificacao', h: online.webhookCheckoutEfiHandler, pub: true },
   // funcionários (login por senha/pin não usa token)
   { m: 'POST', p: '/api/funcionarios/login', h: cad.loginFuncionarioHandler, pub: true },
   { m: 'POST', p: '/api/funcionarios/pin', h: cad.loginPinHandler, pub: true },
@@ -46,6 +50,8 @@ const routes = [
   // config
   { m: 'GET', p: '/api/config', h: cat.getConfigHandler },
   { m: 'PUT', p: '/api/config', h: cat.putConfigHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/efi/config', h: efi.getEfiConfigHandler },
+  { m: 'PUT', p: '/api/efi/config', h: efi.putEfiConfigHandler, mod: 'gestor' },
 
   // configuração do cardápio que alimenta o site público
   { m: 'GET', p: '/api/online/loja', h: online.getOnlineStoreHandler, mod: 'restaurante' },
@@ -67,6 +73,9 @@ const routes = [
   { m: 'GET', p: '/api/pedidos/painel', h: online.painelPedidosHandler, mod: 'restaurante' },
   { m: 'GET', p: '/api/pedidos/cozinha', h: online.painelCozinhaHandler, mod: 'restaurante' },
   { m: 'POST', p: '/api/pedidos/online/:id/status', h: online.atualizarPedidoOnlineHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/pedidos/online/:id/chamar-entregador', h: online.chamarEntregadorOnlineHandler, mod: 'restaurante' },
+  { m: 'GET', p: '/api/entregas/loja', h: entregas.entregasDaLojaHandler, mod: 'restaurante' },
+  { m: 'POST', p: '/api/entregas/loja/:id/:action', h: entregas.acaoEntregaDaLojaHandler, mod: 'restaurante' },
   { m: 'POST', p: '/api/pedidos/etiqueta', h: cad.imprimirEtiquetaPedidoHandler },
 
   // NFC-e / fiscal
@@ -252,6 +261,7 @@ const routes = [
 // conceda acesso. Leituras de catálogo/impressoras são compartilhadas porque
 // Vendas e Estoque precisam delas para operar.
 function areasDaRota(method, path) {
+  if (path === '/api/efi/config') return method === 'GET' ? [] : ['configuracoes'];
   if (path === '/api/config') return method === 'GET' ? [] : ['configuracoes'];
   if (/^\/api\/(funcionarios|devices|device-tasks|gestores)/.test(path)) return ['configuracoes'];
   if (/^\/api\/(setores-impressao|impressora-agentes|impressora-etiquetas)/.test(path)) {
@@ -261,6 +271,7 @@ function areasDaRota(method, path) {
   if (/^\/api\/impressao/.test(path)) return ['vendas', 'estoque'];
   if (/^\/api\/online/.test(path)) return ['vendas', 'estoque'];
   if (/^\/api\/pedidos/.test(path)) return ['vendas'];
+  if (/^\/api\/entregas/.test(path)) return ['vendas'];
   if (/^\/api\/(fiscal|vendas|mesas|comandas|cartoes)/.test(path)) return ['vendas'];
   if (/^\/api\/(financeiro|despesas|contas-pagar|contas-receber|lancamentos|caixa|fechamento-caixa|perdas)/.test(path)) return ['gestao'];
   if (/^\/api\/(estoque|validade|fornecedores)/.test(path)) return ['estoque'];
