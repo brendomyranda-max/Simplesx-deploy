@@ -8,7 +8,7 @@ import { Download, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { instalarPda, usePdaInstalacao } from '@/lib/pda-instalacao';
 
-const OCULTO = 'simplexsa-instalacao-oculta';
+const OCULTO = 'doixp-instalacao-nativa-v1';
 
 function ocultoNaSessao(chave: string) {
   try {
@@ -27,7 +27,9 @@ export function InstallPrompt() {
   const chaveOculto = `${OCULTO}:${marketplace ? 'marketplace' : 'gestor'}`;
   const [oculto, setOculto] = useState(() => ocultoNaSessao(chaveOculto));
   const [mostrarPassos, setMostrarPassos] = useState(false);
-  const mostraBanner = podeInstalar || plataforma === 'windows' || plataforma === 'linux' || plataforma === 'android' || plataforma === 'ios';
+  // Android, Windows e Linux só exibem o botão quando o navegador já pode abrir
+  // a confirmação nativa. Assim o CTA nunca vira um botão de instruções nesses sistemas.
+  const mostraBanner = podeInstalar || plataforma === 'ios';
 
   useEffect(() => {
     setOculto(ocultoNaSessao(chaveOculto));
@@ -66,8 +68,8 @@ export function InstallPrompt() {
         <p className="text-sm font-extrabold text-slate-800">Instalar {app} DoixP</p>
         <p className="text-xs text-slate-500">
           {podeInstalar
-            ? `Adicione o ${app} à tela inicial ou ao computador.`
-            : `Veja como instalar o ${app} neste aparelho.`}
+            ? `Instale o ${app} diretamente neste aparelho.`
+            : `No iPhone ou iPad, adicione o ${app} à tela inicial pelo Safari.`}
         </p>
       </div>
       <button type="button" className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => void instalar()}>
