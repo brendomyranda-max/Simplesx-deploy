@@ -31,6 +31,7 @@ export interface EstadoPda {
   plataforma: PlataformaPda;
   instalado: boolean;
   podeInstalar: boolean;
+  aguardandoLiberacao: boolean;
   emTelaCheia: boolean;
   swAtivo: boolean;
   compativel: boolean;
@@ -42,6 +43,7 @@ const estadoVazio: EstadoPda = {
   plataforma: 'outro',
   instalado: false,
   podeInstalar: false,
+  aguardandoLiberacao: false,
   emTelaCheia: false,
   swAtivo: false,
   compativel: false,
@@ -49,6 +51,7 @@ const estadoVazio: EstadoPda = {
 };
 
 let pedidoEmAndamento: Promise<'aceito' | 'recusado' | 'indisponivel'> | null = null;
+let aguardandoLiberacao = false;
 let instalado = false;
 let emTelaCheia = false;
 let swAtivo = false;
@@ -76,6 +79,7 @@ function montar(): EstadoPda {
     plataforma,
     instalado,
     podeInstalar: Boolean(window.doixpPwa?.promptEvent) && !instalado && !pedidoEmAndamento,
+    aguardandoLiberacao,
     emTelaCheia,
     swAtivo,
     compativel: Boolean(window.doixpPwa?.promptEvent) || navegadorCompativel(ua),
@@ -123,22 +127,19 @@ export function entrarTelaCheia(): Promise<boolean> {
     .catch(() => false);
 }
 
-export function instalarPda(): Promise<'aceito' | 'recusado' | 'indisponivel'> {
-  if (pedidoEmAndamento) return pedidoEmAndamento;
-  const estado = window.doixpPwa;
-  const atual = estado?.promptEvent;
-  if (!atual) return Promise.resolve('indisponivel');
+type ResultadoInstalacao = 'aceito' | 'recusado' | 'indisponivel';
+
+function abrirPedidoNativo(atual: BeforeInstallPromptEvent): Promise<ResultadoInstalacao> {
   // O evento só pode ser utilizado uma vez. Consuma antes de notificar os componentes.
-  estado.promptEvent = null;
+  if (window.doixpPwa) window.doixpPwa.promptEvent = null;
   let pedido: Promise<void>;
   try {
     // Mantenha esta chamada síncrona dentro do clique, preservando a ativação do usuário.
     pedido = atual.prompt();
   } catch {
-    publicar();
     return Promise.resolve('indisponivel');
   }
-  pedidoEmAndamento = Promise.resolve(pedido)
+  return Promise.resolve(pedido)
     .then(() => atual.userChoice)
     .then((escolha) => {
       if (escolha.outcome === 'accepted') {
@@ -146,7 +147,43 @@ export function instalarPda(): Promise<'aceito' | 'recusado' | 'indisponivel'> {
       }
       return 'recusado' as const;
     })
-    .catch(() => 'indisponivel' as const)
+    .catch(() => 'indisponivel' as const);
+}
+
+export function instalarPda(): Promise<ResultadoInstalacao> {
+  if (pedidoEmAndamento) return pedidoEmAndamento;
+  const estado = window.doixpPwa;
+  if (!estado || instalado) return Promise.resolve('indisponivel');
+  let pedido: Promise<ResultadoInstalacao>;
+  if (estado.promptEvent) {
+    pedido = abrirPedidoNativo(estado.promptEvent);
+  } else if (navigator.userActivation?.isActive) {
+    // O primeiro toque pode ser o que libera beforeinstallprompt. Aproveite-o somente
+    // enquanto a ativação transitória ainda existir, sem tentar contornar o navegador.
+    aguardandoLiberacao = true;
+    pedido = new Promise((resolve) => {
+      const concluir = (resultado: ResultadoInstalacao | Promise<ResultadoInstalacao>) => {
+        window.clearTimeout(limite);
+        window.removeEventListener('doixp:pwa-change', tentar);
+        aguardandoLiberacao = false;
+        resolve(resultado);
+        publicar();
+      };
+      const tentar = () => {
+        if (estado.installed) concluir('aceito');
+        else if (estado.promptEvent) {
+          concluir(navigator.userActivation?.isActive
+            ? abrirPedidoNativo(estado.promptEvent)
+            : 'indisponivel');
+        }
+      };
+      const limite = window.setTimeout(() => concluir('indisponivel'), 4000);
+      window.addEventListener('doixp:pwa-change', tentar);
+    });
+  } else {
+    return Promise.resolve('indisponivel');
+  }
+  pedidoEmAndamento = pedido
     .finally(() => {
       pedidoEmAndamento = null;
       publicar();

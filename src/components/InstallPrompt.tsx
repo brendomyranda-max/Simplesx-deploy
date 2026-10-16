@@ -7,7 +7,7 @@ import { instalarPda, usePdaInstalacao } from '@/lib/pda-instalacao';
 export function InstallPrompt() {
   const { pathname } = useLocation();
   const estado = usePdaInstalacao();
-  const { instalado, podeInstalar, plataforma, compativel, passos } = estado;
+  const { instalado, podeInstalar, aguardandoLiberacao, plataforma, compativel, passos } = estado;
   const portal = pathname === '/';
   const marketplace = pathname === '/pedido' || pathname.startsWith('/pedido/');
   const app = marketplace ? 'Marketplace' : 'Gestor';
@@ -38,7 +38,7 @@ export function InstallPrompt() {
   );
 
   const instalar = async () => {
-    if (!podeInstalar) {
+    if (!podeInstalar && (plataforma === 'ios' || !compativel)) {
       setAviso('aguardando');
       setMostrarPassos(plataforma === 'ios' || !compativel);
       return;
@@ -86,12 +86,12 @@ export function InstallPrompt() {
             <a className={`${botao} basis-full`} href={marketplace ? '/pedido' : '/gestor'}>Instalar PDA</a>
           ) : (
             <button type="button" className={`${botao} basis-full`} onClick={() => void instalar()} disabled={instalando || aviso === 'aceito'}>
-              {instalando ? 'Confirme na janela do navegador…' : aviso === 'aceito' ? 'Instalação aceita' : 'Instalar PDA'}
+              {instalando ? aguardandoLiberacao ? 'Preparando instalação…' : 'Confirme na janela do navegador…' : aviso === 'aceito' ? 'Instalação aceita' : 'Instalar PDA'}
             </button>
           )}
           <div className="basis-full text-xs leading-relaxed text-neutral-600" role="status" aria-live="polite">
             {aviso === 'aceito' ? 'O navegador está concluindo a instalação. Abra pelo ícone do aplicativo.'
-              : instalando ? 'Confirme a instalação na janela aberta pelo navegador.'
+              : instalando ? aguardandoLiberacao ? 'Aguarde enquanto o navegador prepara o pedido de instalação.' : 'Confirme a instalação na janela aberta pelo navegador.'
               : aviso === 'recusado' ? 'Você cancelou a instalação. Pode tentar novamente quando o navegador liberar o pedido.'
                 : podeInstalar ? 'Toque em Instalar PDA e confirme a instalação na janela do navegador.'
                   : plataforma === 'ios' ? 'No iPhone ou iPad, a instalação é feita pelo menu Compartilhar do Safari.'

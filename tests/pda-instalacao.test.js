@@ -14,6 +14,9 @@ function ambiente(path, semIcone = false) {
   const window = new EventTarget();
   window.location = { pathname: path };
   window.matchMedia = () => ({ matches: false, addEventListener() {} });
+  const timers = new Map();
+  window.setTimeout = fn => { const id = timers.size + 1; timers.set(id, fn); return id; };
+  window.clearTimeout = id => timers.delete(id);
   const manifest = {
     href: '/manifest.webmanifest',
     getAttribute() { return this.href; },
@@ -24,10 +27,11 @@ function ambiente(path, semIcone = false) {
   const document = new EventTarget();
   document.querySelector = selector => selector.includes('manifest') ? manifest : selector.includes('meta') ? titulo : semIcone ? null : icone;
   document.documentElement = {};
-  const context = vm.createContext({ window, document, navigator: { userAgent: 'Chrome/155 Linux' }, Event, console });
+  const navigator = { userAgent: 'Chrome/155 Linux', userActivation: { isActive: false } };
+  const context = vm.createContext({ window, document, navigator, Event, console });
   vm.runInContext(bootstrap, context);
   return {
-    window, manifest, titulo, icone,
+    window, manifest, titulo, icone, navigator, timers,
     carregarStore() {
       context.module = { exports: {} };
       context.exports = context.module.exports;
@@ -101,6 +105,51 @@ test('recebe autorização depois do carregamento e permite novo evento após ca
   assert.equal(api.usePdaInstalacao().instalado, false);
   assert.equal(await api.instalarPda(), 'indisponivel');
   env.window.dispatchEvent(eventoInstalacao());
+  assert.equal(api.usePdaInstalacao().podeInstalar, true);
+});
+
+test('primeiro clique abre a confirmação quando a autorização chega logo depois', async () => {
+  const env = ambiente('/pedido');
+  const api = env.carregarStore();
+  env.navigator.userActivation.isActive = true;
+  const pedido = api.instalarPda();
+  assert.equal(api.usePdaInstalacao().aguardandoLiberacao, true);
+  assert.equal(api.instalarPda(), pedido);
+  let chamadas = 0;
+  env.window.dispatchEvent(eventoInstalacao(() => { chamadas++; return Promise.resolve(); }));
+  assert.equal(chamadas, 1);
+  assert.equal(await pedido, 'recusado');
+  assert.equal(env.timers.size, 0);
+  assert.equal(api.usePdaInstalacao().aguardandoLiberacao, false);
+});
+
+test('não abre automaticamente após a ativação expirar; preserva o evento para novo clique', async () => {
+  const env = ambiente('/gestor');
+  const api = env.carregarStore();
+  env.navigator.userActivation.isActive = true;
+  const pedido = api.instalarPda();
+  env.navigator.userActivation.isActive = false;
+  let chamadas = 0;
+  env.window.dispatchEvent(eventoInstalacao(() => { chamadas++; return Promise.resolve(); }));
+  assert.equal(await pedido, 'indisponivel');
+  assert.equal(chamadas, 0);
+  assert.equal(api.usePdaInstalacao().podeInstalar, true);
+  env.navigator.userActivation.isActive = true;
+  assert.equal(await api.instalarPda(), 'recusado');
+  assert.equal(chamadas, 1);
+});
+
+test('espera tem limite e remove o ouvinte sem disparar instalação atrasada', async () => {
+  const env = ambiente('/gestor');
+  const api = env.carregarStore();
+  env.navigator.userActivation.isActive = true;
+  const pedido = api.instalarPda();
+  for (const expirar of env.timers.values()) expirar();
+  assert.equal(await pedido, 'indisponivel');
+  assert.equal(api.usePdaInstalacao().aguardandoLiberacao, false);
+  let chamadas = 0;
+  env.window.dispatchEvent(eventoInstalacao(() => { chamadas++; return Promise.resolve(); }));
+  assert.equal(chamadas, 0);
   assert.equal(api.usePdaInstalacao().podeInstalar, true);
 });
 
