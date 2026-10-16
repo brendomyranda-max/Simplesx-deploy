@@ -9,7 +9,7 @@
   if (marketplace) {
     manifest.href = '/manifest-marketplace.webmanifest';
     tituloApple.content = 'Marketplace';
-    iconeApple.href = '/brand/Logofood.png';
+    iconeApple.href = '/icons/marketplace-192.png';
   } else if (gestor) {
     manifest.href = '/manifest-gestor.webmanifest';
     tituloApple.content = 'Gestor DoixP';

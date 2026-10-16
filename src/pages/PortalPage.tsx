@@ -1,23 +1,17 @@
-import { ArrowUpRight, Bike, LayoutDashboard, Store } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import './portal.css';
 
-const DESTINOS = [
+const ACESSOS = [
   {
-    titulo: 'Marketplace DoixP',
-    descricao: 'Encontre restaurantes e faça seu pedido em um só lugar.',
-    acao: 'Acessar marketplace',
+    titulo: 'COMPRAS',
+    descricao: 'Comprar na DoixP',
     href: '/pedido',
-    icon: Store,
-    classe: 'portal-card-marketplace',
   },
   {
-    titulo: 'Gestor DoixP',
-    descricao: 'Acesse vendas, estoque, financeiro e a operação do seu estabelecimento.',
-    acao: 'Entrar no gestor',
+    titulo: 'GESTOR',
+    descricao: 'Gestor DoixP para o seu comércio',
     href: '/gestor',
-    icon: LayoutDashboard,
-    classe: 'portal-card-gestor',
   },
 ];
 
@@ -27,41 +21,62 @@ export function PortalPage() {
       <div className="portal-shell">
         <header className="portal-header">
           <a href="/" className="portal-brand" aria-label="DoixP início">
-            <BrandLogo alt="DoixP" className="h-12 w-12" />
+            <BrandLogo alt="" className="h-10 w-10" />
             <span>DoixP</span>
           </a>
-          <span className="portal-header-note">Uma plataforma para conectar negócios e pessoas</span>
+          <span className="portal-header-note">Tecnologia que aproxima</span>
         </header>
 
         <section className="portal-intro" aria-labelledby="portal-title">
           <p className="portal-eyebrow">BEM-VINDO À DOIXP</p>
-          <h1 id="portal-title">O que você quer acessar?</h1>
-          <p>Escolha uma das experiências DoixP para continuar.</p>
+          <h1 id="portal-title">Obrigado por fazer parte dessa história.</h1>
+          <p>Conectamos pessoas e comércios com tecnologia simples para comprar, vender e crescer.</p>
         </section>
 
-        <section className="portal-destinos" aria-label="Aplicações DoixP">
-          {DESTINOS.map(({ titulo, descricao, acao, href, icon: Icon, classe }) => (
-            <a key={href} className={`portal-card ${classe}`} href={href}>
-              <span className="portal-card-icon"><Icon aria-hidden="true" /></span>
-              <span className="portal-card-copy">
-                <strong>{titulo}</strong>
-                <span>{descricao}</span>
-              </span>
-              <span className="portal-card-action">{acao}<ArrowUpRight aria-hidden="true" /></span>
-            </a>
+        <nav className="portal-destinos" aria-label="Acessos DoixP">
+          {ACESSOS.map(({ titulo, descricao, href }) => (
+            <div className="portal-destino" key={href}>
+              <a className="portal-button" href={href}>
+                <span>{titulo}</span>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+              <p>{descricao}</p>
+            </div>
           ))}
 
-          <button className="portal-card portal-card-delivery" type="button" disabled aria-labelledby="portal-delivery-title">
-            <span className="portal-card-icon"><Bike aria-hidden="true" /></span>
-            <span className="portal-card-copy">
-              <strong id="portal-delivery-title">DoixP Entregas</strong>
-              <span>Em breve, uma nova forma de conectar lojas, clientes e entregadores.</span>
-            </span>
-            <span className="portal-coming-soon">Em breve</span>
-          </button>
+          <div className="portal-destino">
+            <button className="portal-button portal-button-disabled" type="button" disabled>
+              <span>DOIXP ENTREGAS</span>
+              <span className="portal-coming-soon">EM BREVE</span>
+            </button>
+            <p>Seja um Parceiro</p>
+          </div>
+        </nav>
+
+        <section className="portal-story" aria-labelledby="portal-story-title">
+          <div className="portal-story-heading">
+            <p className="portal-eyebrow">NOSSA HISTÓRIA</p>
+            <h2 id="portal-story-title">Uma ideia simples: aproximar.</h2>
+            <p>A DoixP nasceu para tornar mais fácil a conexão entre quem procura e quem oferece.</p>
+          </div>
+
+          <div className="portal-story-grid">
+            <article>
+              <h3>Quem somos</h3>
+              <p>Somos uma plataforma que conecta consumidores e comércios em uma experiência digital acessível.</p>
+            </article>
+            <article>
+              <h3>O que fazemos</h3>
+              <p>Reunimos compras no Marketplace e ferramentas de gestão para apoiar o dia a dia dos estabelecimentos.</p>
+            </article>
+            <article>
+              <h3>Onde queremos chegar</h3>
+              <p>Queremos crescer junto com nossos parceiros e criar novas formas de conectar lojas, clientes e entregadores.</p>
+            </article>
+          </div>
         </section>
 
-        <footer className="portal-footer">DoixP · Tecnologia para simplificar o dia a dia</footer>
+        <footer className="portal-footer">DoixP · Feita para conectar e simplificar</footer>
       </div>
     </main>
   );
