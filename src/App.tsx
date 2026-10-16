@@ -35,6 +35,7 @@ import { FuncionariosPage } from '@/pages/FuncionariosPage';
 import { ImpressorasPage } from '@/pages/ImpressorasPage';
 import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
 import { FiscalPage } from '@/pages/FiscalPage';
+import { PortalPage } from '@/pages/PortalPage';
 import { authApi, configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
@@ -296,6 +297,7 @@ function SessionApp() {
     <>
     <NfcBridge />
     <Routes>
+        <Route path="/gestor" element={<Navigate to="/dashboard" replace />} />
       <Route path="/" element={<InicioPage />} />
       <Route path="*" element={<ProtectedApp badges={badges} empresaNome={empresa?.empresa_nome} />} />
     </Routes>
@@ -309,6 +311,8 @@ export default function App() {
     <InstallPrompt />
     <Routes>
     <Route path="/investidores" element={<Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Carregando apresentação…</div>}><InvestidoresPage /></Suspense>} />
+    <Route path="/" element={<PortalPage />} />
+    <Route path="/gestor/*" element={<SessionApp />} />
     {/* Vitrine pública: propositalmente fora da sessão e do AppShell do Gestor. */}
     <Route path="/pedido" element={<Suspense fallback={<OnlineFallback />}><OnlineStorefront /></Suspense>} />
     <Route path="/pedido/:slug/acompanhar/:chave" element={<Suspense fallback={<OnlineFallback />}><OnlineStorefront /></Suspense>} />

@@ -1,0 +1,18 @@
+{
+  "id": "/pedido",
+  "name": "DoixP Marketplace",
+  "short_name": "Marketplace DoixP",
+  "description": "Encontre lojas e faça pedidos pelo Marketplace DoixP.",
+  "prefer_related_applications": false,
+  "lang": "pt-BR",
+  "start_url": "/pedido",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#f6d44a",
+  "icons": [
+    { "src": "/brand/Logofood.png", "sizes": "2000x2000", "type": "image/png", "purpose": "any" }
+  ]
+}

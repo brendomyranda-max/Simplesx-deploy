@@ -48,7 +48,7 @@ export function Login() {
       const r = await authApi.funcionario(cnpj, usuario, senha, turnstileToken);
       setAuth(r.nome, r.perfil, r.modulos);
       toast('success', `Bem-vindo(a), ${r.nome}!`);
-      navigate('/');
+      navigate('/dashboard', { replace: true });
     } catch (err: any) {
       setTurnstileToken('');
       window.turnstile?.reset();

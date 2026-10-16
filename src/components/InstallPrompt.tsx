@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { Download, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { instalarPda, usePdaInstalacao } from '@/lib/pda-instalacao';
 
 const OCULTO = 'simplexsa-instalacao-oculta';
@@ -18,12 +19,15 @@ function ocultoNaSessao() {
 }
 
 export function InstallPrompt() {
+  const { pathname } = useLocation();
   const { instalado, podeInstalar, plataforma, passos } = usePdaInstalacao();
   const [oculto, setOculto] = useState(ocultoNaSessao);
   const [dica, setDica] = useState('');
+  const marketplace = pathname === '/pedido' || pathname.startsWith('/pedido/');
+  const gestor = pathname === '/gestor' || pathname.startsWith('/gestor/') || (pathname !== '/' && pathname !== '/investidores' && !marketplace);
   const mostraBanner = podeInstalar || plataforma === 'windows' || plataforma === 'linux' || plataforma === 'android' || plataforma === 'ios';
 
-  if (instalado || oculto || !mostraBanner) return null;
+  if (instalado || oculto || !mostraBanner || (!marketplace && !gestor)) return null;
 
   const fechar = () => {
     try {
@@ -46,13 +50,13 @@ export function InstallPrompt() {
         <Download className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-extrabold text-slate-800">Instalar o PDA</p>
+        <p className="text-sm font-extrabold text-slate-800">Instalar {marketplace ? 'Marketplace' : 'Gestor'} DoixP</p>
         <p className="text-xs text-slate-500">
           {dica
             ? dica
             : plataforma === 'ios' && !podeInstalar
-              ? 'No iPhone ou iPad, use Compartilhar e depois Adicionar à Tela de Início. O app abre em tela cheia.'
-              : 'Abre a DoixP em tela cheia no Windows, no Linux e no Android. Os dados continuam no servidor.'}
+              ? `No iPhone ou iPad, use Compartilhar e depois Adicionar à Tela de Início. O ${marketplace ? 'Marketplace' : 'Gestor'} abrirá direto.`
+              : `Abre o ${marketplace ? 'Marketplace' : 'Gestor'} diretamente no Windows, Linux e Android. Os dados continuam no servidor.`}
         </p>
       </div>
       <button type="button" className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => void instalar()}>
