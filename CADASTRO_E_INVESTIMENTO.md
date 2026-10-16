@@ -1,65 +1,41 @@
-# Cadastro pago e investimento
+# Cadastro e apresentação da DoixP
 
-O cadastro feito diretamente pela tela de acesso passa a exigir **R$ 50,00 uma
-única vez**. O preço é definido em centavos no servidor (`shared/signup-policy.js`)
-e publicado por `GET /api/auth/config`; o navegador apenas o apresenta.
+## Modelo comercial
 
-## Estado atual
+A proposta é uma mensalidade fixa para o estabelecimento, sem comissão sobre
+vendas e sem cobrança por pedido. A antiga taxa única de abertura foi retirada.
+O valor mensal ainda não foi definido no código: `valor_centavos` é `null` e
+`periodicidade` é `mensal` em `shared/signup-policy.js`.
 
-O meio de recebimento ainda aguarda definição e credenciais. A tela informa
-**Pagamento em preparação**, sem coletar dados de um novo cadastro nem oferecer
-um pagamento que ainda não pode ser confirmado. `POST /api/auth/cadastro` retorna
-HTTP 402 e não cria estabelecimento, funcionário, sessão ou configurações.
-Chamadas de versões antigas e valores/status de pagamento enviados pelo cliente
-também não liberam contas. Não existe opção de cadastro público gratuito.
-
-As contas existentes continuam entrando normalmente. A criação administrativa
-pela CLI continua disponível ao operador com acesso ao ambiente.
-
-Esta etapa não implementa cobrança real, cadastro pendente, webhook ou aprovação
-manual. Não há migração de banco necessária. A configuração Efí do restaurante
-também não habilita o pagamento de cadastro.
-
-## Próxima etapa após definir o recebimento
-
-- Confirmar o recebedor/provedor e configurar suas credenciais no servidor.
-- Criar uma solicitação pendente com senha protegida e referência de cobrança
-  única, sem conceder acesso antes da confirmação.
-- Validar no servidor a origem da confirmação, moeda, valor de 5.000 centavos e
-  vínculo com o cadastro; retornos do navegador não comprovam pagamento.
-- Liberar o estabelecimento, administrador e configurações em uma transação
-  idempotente; validar repetição, falha, expiração e retomada do pagamento.
-- Testar o fluxo no ambiente do provedor antes de habilitar recebimentos reais.
+A tela de acesso informa **Cadastro em preparação**. `POST /api/auth/cadastro`
+retorna HTTP 403 e não cria estabelecimento, funcionário, sessão ou configurações.
+Dados de pagamento enviados por clientes antigos não liberam contas.
+O login das contas existentes e a criação administrativa pela CLI continuam
+disponíveis. Não foi implementada cobrança recorrente nesta alteração.
 
 ## Apresentação da empresa
 
-**Invista na DoixP — Faça parte da nossa empresa** aparece no acesso e na
-página inicial. O link **Conhecer a proposta** abre `/investidores`, uma página
-pública que pode ser compartilhada e não depende de autenticação ou da API de
-sessão. O conteúdo foi adaptado da apresentação institucional fornecida pelo
-fundador e usa a marca DoixP no sistema.
+A página inicial, em `src/pages/PortalPage.tsx`, apresenta:
 
-A apresentação cobre a proposta, o problema, o público inicial, os cinco pilares
-atuais, os diferenciais propostos, as quatro etapas de evolução, a expansão,
-o modelo de receita e as prioridades do aporte. Os módulos futuros estão
-identificados, assim como os dados e termos ainda em definição. Não foram
-acrescentados clientes, resultados, valores de aporte ou retornos estimados.
+- Quem somos: consumidores, comércios e entregadores em uma relação mais justa.
+- O que a DoixP entrega: gestão, atendimento, validade, etiquetas e comandas NFC.
+- Onde queremos chegar: DoixP Entregas em desenvolvimento, com a proposta de
+  destinar 100% do valor das entregas ao entregador, sem comissão da DoixP.
+- Nossa história: os seis anos do fundador como garçom e bartender e a criação
+  de uma plataforma que reúne ferramentas antes separadas.
 
-O documento descreve a assinatura mensal como modelo de receita proposto,
-com preço e escopo ainda em definição. Isso não altera a taxa única de abertura
-da conta nem implementa cobrança recorrente. A aplicação do aporte é apresentada
-por prioridade; orçamento, prazos, modalidade e condições continuam em definição.
+O slogan é **Com a DoixP, todo mundo ganha.**
 
-O conteúdo editorial está em `src/content/investidores.ts`; sua apresentação
-está em `src/pages/InvestidoresPage.tsx`. A página é carregada separadamente
-para não acrescentar todo o conteúdo ao carregamento inicial do sistema.
+A apresentação pública `/investidores` segue o mesmo modelo de mensalidade.
+Sua referência anterior a impulsionamento pago foi substituída pela proposta
+para os entregadores. Valores de aporte, preço mensal, prazos e condições de
+investimento não foram definidos nesta alteração.
 
-O botão **Quero investir**, nas condições da proposta e no encerramento da página,
-abre o WhatsApp de Brendo Myranda, **+55 (11) 93941-7895**, com uma mensagem de
-interesse preenchida. O visitante decide quando enviar a mensagem. O contato e
-o texto estão centralizados em `src/content/investidores.ts`.
+O conteúdo está em `src/content/investidores.ts` e `src/pages/InvestidoresPage.tsx`.
+O botão **Quero investir** abre o WhatsApp de Brendo Myranda com uma mensagem
+preenchida; o visitante decide se deseja enviá-la.
 
-O formulário de contribuição, a rota `/api/colaboracao`, o gerador de Pix estático
-e as configurações `COLABORACAO_PIX_*` foram removidos.
+## Pagamento online
 
-Validação: `npm test`, `npm run build` e revisão da interface em desktop/celular.
+A retirada do checkout Efí está descrita em [EFI_CONFIGURACAO.md](./EFI_CONFIGURACAO.md).
+O Pix direto ao estabelecimento permanece com confirmação manual.

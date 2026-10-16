@@ -1,17 +1,17 @@
-// Taxa de abertura de conta definida no servidor, em centavos.
-// O cadastro público permanece fechado até existir confirmação de pagamento
-// pelo recebedor. Nunca liberar uma conta com base em dados enviados pelo cliente.
+// Modelo comercial da DoixP. O valor mensal ainda não foi definido aqui.
+// O cadastro público permanece fechado até a implantação do fluxo de adesão.
 export const SIGNUP_POLICY = Object.freeze({
-  valor_centavos: 15000,
+  valor_centavos: null,
   moeda: 'BRL',
-  periodicidade: 'unico',
+  periodicidade: 'mensal',
+  comissao_vendas_pct: 0,
   pagamento_disponivel: false,
 });
 
 export function cadastroHandler(c) {
   return c.json({
-    error: 'A criação da conta exige o pagamento único de R$ 150,00. O pagamento para novos cadastros ainda está em preparação.',
-    code: 'PAGAMENTO_CADASTRO_INDISPONIVEL',
+    error: 'A abertura de novas contas pelo site está em preparação. A proposta da DoixP é uma mensalidade fixa, sem comissão sobre as vendas.',
+    code: 'CADASTRO_INDISPONIVEL',
     cadastro: SIGNUP_POLICY,
-  }, 402);
+  }, 403);
 }

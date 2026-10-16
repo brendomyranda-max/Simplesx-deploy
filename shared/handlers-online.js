@@ -7,7 +7,7 @@
  */
 
 import { estabelecimentoId, getConfigValue, getFichaCompleta, httpError, kvGet, kvPut, now, num, setConfig } from './util.js';
-import { confirmarCobrancaEfi, consultarNotificacaoEfi, criarLinkCheckoutEfi, efiCheckoutDisponivel } from './efipay.js';
+import { confirmarCobrancaEfi, consultarNotificacaoEfi } from './efipay.js';
 import { areaDaLoja, cobrancaEntrega, coordenadaValida, distanciaKm, dentroDoRaio, kmExibido, localizar } from './localizacao.js';
 import { vincularInsumosOpcoes } from './acrescimos.js';
 import { copiaColaPix, normalizarChavePix, textoPix } from './pix.js';
@@ -226,7 +226,8 @@ function pixDaLoja(body, current) {
 function pagamentoDoPedido(valor) {
   const bruto = String(valor || '').trim().toLocaleLowerCase('pt-BR');
   const pagamento = bruto === 'cartao' ? 'maquininha' : bruto;
-  if (!['pix', 'dinheiro', 'maquininha', 'efi_checkout'].includes(pagamento)) throw httpError(400, 'Escolha Pix, dinheiro, maquininha ou cartão online Efí.');
+  if (pagamento === 'efi_checkout') throw httpError(410, 'O pagamento online está desativado. Escolha Pix direto à loja, dinheiro ou maquininha.');
+  if (!['pix', 'dinheiro', 'maquininha'].includes(pagamento)) throw httpError(400, 'Escolha Pix, dinheiro ou maquininha.');
   return pagamento;
 }
 
@@ -244,7 +245,7 @@ async function storeResponse(env) {
     pix_chave: store.pix_chave || null,
     pix_cidade: store.pix_cidade || null,
     pix_disponivel: store.pix_chave ? 1 : 0,
-    checkout_efi_disponivel: await efiCheckoutDisponivel(env, store.estabelecimento_id) ? 1 : 0,
+    checkout_efi_disponivel: 0,
     entrega_plataforma_disponivel: plataformaDisponivel(store, env) ? 1 : 0,
     estabelecimento_id: estabelecimentoId(env),
     site_url: `/pedido/${store.slug}`,
@@ -1393,7 +1394,7 @@ export async function getPublicOrderHandler(c, env) {
     forma_pagamento: row.forma_pagamento,
     troco_para: row.troco_para == null || row.troco_para === '' ? null : num(row.troco_para),
     pix_copia_cola: row.forma_pagamento === 'pix' ? (row.pix_copia_cola || null) : null,
-    checkout_url: row.forma_pagamento === 'efi_checkout' ? (row.checkout_url || null) : null,
+    checkout_url: null,
     checkout_capture_method: row.checkout_capture_method || null,
     total: num(row.total),
     taxa_entrega: num(row.taxa_entrega),
@@ -1490,7 +1491,7 @@ export async function getPublicStoreHandler(c, env) {
       aceita_entrega: num(store.aceita_entrega), aceita_retirada: num(store.aceita_retirada),
       aceita_pedidos_online: num(store.aceita_pedidos_online), ativo: num(store.ativo), modo_publicacao: store.modo_publicacao,
       pix_disponivel: store.pix_chave ? 1 : 0,
-      checkout_efi_disponivel: await efiCheckoutDisponivel(env, store.estabelecimento_id) ? 1 : 0,
+      checkout_efi_disponivel: 0,
       entrega_plataforma_disponivel: plataformaDisponivel(store, env) ? 1 : 0,
       whatsapp_suporte: store.whatsapp_suporte || null,
       ...areaDaLoja(store, pontoDaConsulta(c)),
@@ -1516,6 +1517,12 @@ export async function createPublicOrderHandler(c, env) {
     return c.json({ error: 'Este estabelecimento disponibiliza apenas o cardápio online e não recebe pedidos pelo site.' }, 403);
   }
   const body = await c.req.json();
+  let payment;
+  try {
+    payment = pagamentoDoPedido(body?.forma_pagamento);
+  } catch (error) {
+    return c.json({ error: error?.message || 'Escolha Pix, dinheiro ou maquininha.' }, error?.status || 400);
+  }
   const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'anon';
   const rateKey = `online-order:${store.estabelecimento_id}:${ip}`;
   const attempts = num(await kvGet(env, rateKey));
@@ -1529,7 +1536,7 @@ export async function createPublicOrderHandler(c, env) {
       id: existing.id, comanda_id: existing.comanda_id, status: existing.status, total: num(existing.total),
       forma_pagamento: existing.forma_pagamento,
       pix_copia_cola: existing.forma_pagamento === 'pix' ? (existing.pix_copia_cola || null) : null,
-      checkout_url: existing.forma_pagamento === 'efi_checkout' ? (existing.checkout_url || null) : null,
+      checkout_url: null,
       repetido: true,
     });
   }
@@ -1563,13 +1570,7 @@ export async function createPublicOrderHandler(c, env) {
   if (delivery === 'entrega' && store.valor_por_km != null && cobranca.taxa_cliente == null) {
     return c.json({ error: 'Não foi possível calcular a entrega. Confira o endereço da loja e informe rua, número e cidade.' }, 400);
   }
-  let payment;
-  try {
-    payment = pagamentoDoPedido(body?.forma_pagamento);
-  } catch (error) {
-    return c.json({ error: error?.message || 'Escolha Pix, dinheiro ou maquininha.' }, error?.status || 400);
-  }
-  if (platformDelivery && payment !== 'pix') return c.json({ error: 'A entrega pela plataforma aceita Pix nesta etapa; o checkout Efí com divisão do frete será integrado ao fluxo de entregas depois.' }, 400);
+  if (platformDelivery && payment !== 'pix') return c.json({ error: 'A entrega pela plataforma aceita Pix direto à loja, com confirmação manual do recebimento.' }, 400);
   let platformQuote = null;
   let encryptedCode = null;
   if (platformDelivery) {
@@ -1648,22 +1649,16 @@ export async function createPublicOrderHandler(c, env) {
       return c.json({ error: error?.message || 'Esta loja não recebe Pix.' }, error?.status || 400);
     }
   }
-  let checkout = null;
-  if (payment === 'efi_checkout') {
-    try { checkout = await criarLinkCheckoutEfi(env, store, store.estabelecimento_id, key, items, total, deliveryFee, platformDelivery); }
-    catch (error) { return c.json({ error: error?.message || 'Não foi possível iniciar o Checkout Efí.' }, error?.status || 502); }
-  }
   const timestamp = now();
   const data = JSON.stringify(items);
   const virtualNumber = 900000000;
   const segurarPix = payment === 'pix';
-  const segurarPagamento = payment === 'efi_checkout';
-  const etapaPendente = segurarPagamento ? 'aguardando_pagamento' : 'aguardando_pix';
+  const etapaPendente = 'aguardando_pix';
   const statements = [
     env.DB.prepare(
       `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em)
        VALUES (?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, (segurarPix || segurarPagamento) ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), checkout?.url || null, checkout?.charge_id || null, timestamp, timestamp),
+    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp),
   ];
   if (platformDelivery) {
     statements.push(env.DB.prepare(
@@ -1674,7 +1669,7 @@ export async function createPublicOrderHandler(c, env) {
     ).bind(encryptedCode, destinationPoint.latitude, destinationPoint.longitude, distanciaBruta, platformQuote.totalCents,
       platformQuote.totalCents / 100, kmExibido(distanciaBruta), platformQuote.customerCents === 0 ? 'gratis' : 'dividido', store.estabelecimento_id, key));
   }
-  if (!segurarPix && !segurarPagamento) {
+  if (!segurarPix) {
     statements.push(
       env.DB.prepare(
         `INSERT INTO mesas (estabelecimento_id,numero,nome,capacidade,setor,status,ativo,aberta_em,criado_em,tipo)
@@ -1698,10 +1693,10 @@ export async function createPublicOrderHandler(c, env) {
     `INSERT INTO pedidos_online_itens (estabelecimento_id,pedido_online_id,ordem,produto_id,cardapio_produto_id,nome,quantidade,preco_unitario,observacao,opcoes_json,combo_escolhas_json,total,criado_em)
      SELECT o.estabelecimento_id,o.id,CAST(j.key AS INTEGER),json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.cardapio_produto_id'),json_extract(j.value,'$.nome'),
      json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.opcoes_json'),json_extract(j.value,'$.combo_escolhas_json'),json_extract(j.value,'$.total'),?
-     FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND ${(segurarPix || segurarPagamento) ? 'o.etapa=?' : 'o.comanda_id IS NOT NULL'}
+     FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND ${segurarPix ? 'o.etapa=?' : 'o.comanda_id IS NOT NULL'}
      AND NOT EXISTS (SELECT 1 FROM pedidos_online_itens pi WHERE pi.pedido_online_id=o.id)`
-  ).bind(...((segurarPix || segurarPagamento) ? [timestamp, data, store.estabelecimento_id, key, etapaPendente] : [timestamp, data, store.estabelecimento_id, key])));
-  if (!segurarPix && !segurarPagamento) {
+  ).bind(...(segurarPix ? [timestamp, data, store.estabelecimento_id, key, etapaPendente] : [timestamp, data, store.estabelecimento_id, key])));
+  if (!segurarPix) {
     statements.push(env.DB.prepare(
       `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em)
        SELECT o.estabelecimento_id,o.comanda_id,NULL,json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.nome'),json_extract(j.value,'$.quantidade'),
@@ -1712,7 +1707,7 @@ export async function createPublicOrderHandler(c, env) {
   }
   await env.DB.batch(statements);
   const created = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?').bind(store.estabelecimento_id, key).first();
-  if (!created || (!segurarPix && !segurarPagamento && !created.comanda_id)) throw httpError(409, 'Não foi possível registrar o pedido. Tente novamente.');
+  if (!created || (!segurarPix && !created.comanda_id)) throw httpError(409, 'Não foi possível registrar o pedido. Tente novamente.');
   let pixCopiaCola = null;
   if (payment === 'pix') {
     pixCopiaCola = copiaColaPix({
@@ -1728,6 +1723,6 @@ export async function createPublicOrderHandler(c, env) {
   await kvPut(env, rateKey, String(attempts + 1), { expirationTtl: 900 });
   return c.json({
     id: created.id, comanda_id: created.comanda_id, status: created.status, total: num(created.total),
-    forma_pagamento: payment, pix_copia_cola: pixCopiaCola, checkout_url: checkout?.url || null, repetido: false,
+    forma_pagamento: payment, pix_copia_cola: pixCopiaCola, checkout_url: null, repetido: false,
   }, 201);
 }

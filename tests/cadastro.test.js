@@ -13,7 +13,7 @@ function context(body = {}, path = '/api/auth/cadastro', method = 'POST') {
 }
 const body = { cnpj: '11.222.333/0001-81', telefone: '(11) 99999-8888', nome: 'Restaurante Teste', senha: 'senha-teste-123', turnstile_token: 'teste' };
 
-test('cadastro público bloqueia conta gratuita e dados de pagamento forjados, inclusive chamadas simultâneas', async (t) => {
+test('cadastro público em preparação bloqueia criação e dados de pagamento forjados, inclusive chamadas simultâneas', async (t) => {
   const DB = new SqliteDb(':memory:');
   t.after(() => DB.close());
   const env = { DB, TURNSTILE_SECRET_KEY: 'teste' };
@@ -21,10 +21,10 @@ test('cadastro público bloqueia conta gratuita e dados de pagamento forjados, i
   const requests = [body, { ...body, pago: true, status: 'PAID', valor: 150 }, { ...body, valor_centavos: 0 }, {}];
   const responses = await Promise.all(requests.map((data) => handle(context(data), env)));
   for (const result of responses) {
-    assert.equal(result.status, 402);
-    assert.equal(result.data.code, 'PAGAMENTO_CADASTRO_INDISPONIVEL');
-    assert.equal(result.data.cadastro.valor_centavos, 15000);
-    assert.match(result.data.error,/R\$ 150,00/);
+    assert.equal(result.status, 403);
+    assert.equal(result.data.code, 'CADASTRO_INDISPONIVEL');
+    assert.equal(result.data.cadastro.valor_centavos, null);
+    assert.match(result.data.error, /mensalidade fixa, sem comissão/);
     assert.equal(result.data.cadastro.pagamento_disponivel, false);
     assert.equal(result.headers['set-cookie'], undefined);
   }
@@ -33,14 +33,14 @@ test('cadastro público bloqueia conta gratuita e dados de pagamento forjados, i
   }
 });
 
-test('condições públicas informam taxa única de R$ 150 sem expor credenciais', async () => {
+test('condições públicas informam mensalidade sem comissão e sem expor credenciais', async () => {
   const result = await authConfigHandler(context(), {
     TURNSTILE_SITE_KEY: 'site-publico', TURNSTILE_SECRET_KEY: 'segredo', EFI_CLIENT_SECRET: 'segredo-pagamento',
   });
   assert.equal(result.status, 200);
   assert.deepEqual(result.data, {
     turnstile_site_key: 'site-publico',
-    cadastro: { valor_centavos: 15000, moeda: 'BRL', periodicidade: 'unico', pagamento_disponivel: false },
+    cadastro: { valor_centavos: null, moeda: 'BRL', periodicidade: 'mensal', comissao_vendas_pct: 0, pagamento_disponivel: false },
   });
 });
 

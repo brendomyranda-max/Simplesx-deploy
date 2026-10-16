@@ -101,8 +101,8 @@ npm run server
 ```
 
 Em outro terminal, execute `npm run dev` e abra `http://localhost:5173`.
-O cadastro pelo acesso tem taxa única de R$ 150,00 e está aguardando a configuração
-do recebimento. Para preparar um ambiente administrativamente, use a CLI descrita
+O cadastro pelo acesso está em preparação. A proposta comercial é uma mensalidade
+fixa, sem comissão sobre vendas. Para preparar um ambiente administrativamente, use a CLI descrita
 em **Criar um estabelecimento**. A instalação começa sem usuários, senhas
 ou dados de clientes. O `.env.example` contém somente chaves públicas de teste
 do Turnstile; em produção, configure suas próprias chaves.
@@ -134,10 +134,11 @@ Android e cuidados ao publicar um repositório que já teve dados no histórico.
 Para entender a arquitetura, o fluxo dos dados, a função de cada arquivo e por
 que o repositório contém arquivos JSON, consulte [GUIA_DO_PROJETO.md](./GUIA_DO_PROJETO.md).
 
-Para configurar o checkout Efí e o split, consulte
+O pagamento online e o split estão pausados. O Pix direto à loja continua com
+confirmação manual. O estado da integração anterior está documentado em
 [EFI_CONFIGURACAO.md](./EFI_CONFIGURACAO.md).
 
-O estado atual do cadastro pago e da apresentação de investimento está documentado
+O estado atual do cadastro e da apresentação de investimento está documentado
 em [CADASTRO_E_INVESTIMENTO.md](./CADASTRO_E_INVESTIMENTO.md).
 
 ## Criar um estabelecimento

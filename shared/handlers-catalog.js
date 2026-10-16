@@ -64,7 +64,7 @@ export async function loginHandler(c, env) {
 export async function getConfigHandler(c, env) {
   const config = await getConfig(env);
   const configPublica = Object.fromEntries(
-    Object.entries(config).filter(([chave]) => !/(token|secret|senha|password|certificado|private.?key)/i.test(chave))
+    Object.entries(config).filter(([chave]) => !chave.startsWith('efi_') && !/(token|secret|senha|password|certificado|private.?key)/i.test(chave))
   );
   return c.json({
     config: configPublica,
@@ -81,7 +81,7 @@ export async function putConfigHandler(c, env) {
   const body = await c.req.json();
   if (body && typeof body === 'object') {
     for (const [k, v] of Object.entries(body)) {
-      if (k.startsWith('efi_')) return c.json({ error: 'Use a configuração de pagamentos para alterar este dado' }, 400);
+      if (k.startsWith('efi_')) return c.json({ error: 'O pagamento online está desativado.' }, 410);
       if (k === 'empresa_cnpj') {
         const cnpj = soDigitos(v);
         if (!cnpjValido(cnpj)) return c.json({ error: 'CNPJ inválido' }, 400);

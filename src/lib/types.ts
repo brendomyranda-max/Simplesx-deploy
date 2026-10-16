@@ -157,7 +157,6 @@ export interface OnlineStore {
   pix_chave?: string | null;
   pix_cidade?: string | null;
   pix_disponivel?: number | null;
-  checkout_efi_disponivel?: number | null;
   entrega_plataforma_ativo?: number;
   entrega_plataforma_disponivel?: number;
   modo_publicacao?: 'marketplace' | 'cardapio';

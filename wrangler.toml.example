@@ -4,12 +4,9 @@ name = "simplesx-projeto-beta"
 compatibility_date = "2025-01-01"
 pages_build_output_dir = "dist"
 
-# Checkout Efí começa em homologação. Só altere para `production` após validar
-# credenciais, split, notificações e a aprovação comercial da taxa.
+# Somente para conciliação de cobranças antigas. Novos checkouts estão desativados.
 [vars]
 EFI_ENVIRONMENT = "sandbox"
-EFI_PLATFORM_FEE_BPS = "2"
-EFI_NOTIFICATION_URL = "https://doixp.com/api/public/efipay/checkout/notificacao"
 
 # Recursos Cloudflare criados no deploy
 [[d1_databases]]

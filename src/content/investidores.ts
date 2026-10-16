@@ -37,7 +37,7 @@ export const pilares = [
 export const diferenciais = [
   { titulo: 'Operação integrada', texto: 'Reunir as rotinas essenciais de gestão em uma mesma plataforma.' },
   { titulo: 'Interface intuitiva', texto: 'Facilitar o treinamento de novos profissionais e o uso diário da ferramenta.' },
-  { titulo: 'Assinatura única', texto: 'Oferecer os módulos previstos na proposta comercial por uma mensalidade fixa.' },
+  { titulo: 'Mensalidade fixa', texto: 'Uma única mensalidade para o estabelecimento, sem comissão sobre as vendas e sem cobrança por pedido.' },
   { titulo: 'Gestão conectada às vendas', texto: 'Integrar, na expansão futura, os pedidos online à operação do estabelecimento.' },
 ];
 

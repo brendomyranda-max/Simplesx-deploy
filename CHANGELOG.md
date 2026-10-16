@@ -2,6 +2,9 @@
 
 ## 0.1.0-beta.2 — Pré-lançamento
 
+- Pagamento online Efí e split retirados das novas compras; Pix direto à loja com configuração própria e confirmação manual. Histórico preservado.
+- Apresentação da DoixP com a história do fundador, recursos da plataforma e proposta da DoixP Entregas em desenvolvimento.
+- Modelo comercial de mensalidade fixa, sem comissão sobre vendas; retirada da antiga taxa de abertura da apresentação do cadastro.
 - Vitrine `/pedido` com busca de restaurantes próximos por endereço ou localização, categorias de produtos e destaque para promoções.
 - Links de lojas baseados no nome, com redirecionamento dos links anteriores quando o estabelecimento muda de nome.
 - Opção de publicar somente o cardápio online, sem receber pedidos, e preços promocionais configuráveis por produto.

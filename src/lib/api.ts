@@ -121,9 +121,10 @@ export const api = {
 };
 
 export interface SignupPolicy {
-  valor_centavos: number;
+  valor_centavos: number | null;
   moeda: string;
-  periodicidade: 'unico';
+  periodicidade: 'mensal';
+  comissao_vendas_pct: number;
   pagamento_disponivel: boolean;
 }
 
@@ -147,17 +148,14 @@ export const configApi = {
   update: (body: Record<string, string | number>) => api.put('/config', body),
 };
 
-export interface EfiConfig {
-  payee_code: string;
+export interface PixConfig {
   pix_chave: string;
   pix_cidade: string;
-  api_configurada: boolean;
-  checkout_ativo: boolean;
 }
 
-export const efiApi = {
-  config: () => api.get<EfiConfig>('/efi/config'),
-  updateConfig: (body: { payee_code: string; pix_chave: string; pix_cidade: string }) => api.put<EfiConfig>('/efi/config', body),
+export const pixApi = {
+  config: () => api.get<PixConfig>('/pix/config'),
+  updateConfig: (body: PixConfig) => api.put<PixConfig>('/pix/config', body),
 };
 
 export const estadoApi = {
@@ -425,12 +423,11 @@ export const onlinePublicApi = {
   },
   order: (slug: string, body: {
     chave: string; cliente_nome: string; telefone: string; tipo_entrega: 'entrega' | 'retirada'; endereco?: string;
-    forma_pagamento: 'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'; troco_para?: number | null; observacao?: string;
+    forma_pagamento: 'pix' | 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
     entrega_plataforma?: boolean; cpf_ultimos4?: string;
     frete_cliente_esperado_centavos?: number;
     itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; combo_escolhas?: number[][]; preco_unitario_esperado?: number; observacao?: string }[];
-  }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; checkout_url?: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
-  confirmCheckout: (slug: string, chave: string, body: Record<string, string>) => api.post<{ ok: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos/${encodeURIComponent(chave)}/checkout/confirmar`, body),
+  }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
   track: (slug: string, chave: string) => api.get<{
     id: number;
     etapa: 'aguardando_pix' | 'aguardando_pagamento' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
@@ -438,8 +435,6 @@ export const onlinePublicApi = {
     forma_pagamento: string;
     troco_para?: number | null;
     pix_copia_cola: string | null;
-    checkout_url?: string | null;
-    checkout_capture_method?: string | null;
     total: number;
     taxa_entrega?: number;
     valor_entrega?: number | null;

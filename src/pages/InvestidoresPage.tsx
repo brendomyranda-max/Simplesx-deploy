@@ -102,6 +102,7 @@ export default function InvestidoresPage() {
             <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-brand-600">A proposta</p>
             <h2 id="proposta-titulo" className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">As informações essenciais do comércio, na palma da mão.</h2>
             <p className="mt-5 leading-relaxed text-slate-600">A DoixP reúne pedidos, vendas, estoque, validade e controle financeiro em uma experiência integrada, com uma interface intuitiva e recursos para apoiar o trabalho diário.</p>
+            <p className="mt-4 leading-relaxed text-slate-600">O projeto nasceu da experiência do fundador durante seis anos como garçom e bartender, conhecendo diferentes sistemas e os desafios de manter uma operação organizada.</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
             <h3 className="font-bold text-slate-900">O problema que queremos resolver</h3>
@@ -156,20 +157,20 @@ export default function InvestidoresPage() {
         </section>
 
         <section id="receita" className="scroll-mt-24">
-          <TituloSecao numero="03 / Modelo de negócio" titulo="Receita recorrente e serviços opcionais" descricao="O modelo proposto combina assinatura mensal da plataforma e impulsionamento opcional no marketplace futuro." />
+          <TituloSecao numero="03 / Modelo de negócio" titulo="Uma mensalidade. Sem comissão por venda." descricao="Nossa proposta é uma cobrança mensal fixa para os estabelecimentos, sem descontar uma parte de cada pedido." />
           <div className="grid gap-5 md:grid-cols-2">
             <article className="rounded-2xl border border-brand-200 bg-brand-50 p-6 sm:p-8">
               <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Receita principal prevista</p>
               <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">Assinatura mensal</h3>
-              <p className="mt-4 text-sm leading-relaxed text-slate-600">Uma mensalidade fixa e acessível para usar a plataforma, independentemente do porte do estabelecimento.</p>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600">Uma única mensalidade para usar a plataforma. A DoixP não cobra comissão sobre as vendas nem acrescenta uma taxa por pedido.</p>
               <p className="mt-4 text-sm leading-relaxed text-slate-600">Preço, limites de utilização e módulos incluídos ainda precisam ser definidos e validados em relação aos custos de infraestrutura, suporte e atendimento.</p>
               <p className="mt-6 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-bold text-brand-700">Preço e escopo comercial em definição</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Receita complementar futura</p>
-              <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">Impulsionamento opcional</h3>
-              <p className="mt-4 text-sm leading-relaxed text-slate-600">Destaque contratado pelos estabelecimentos no marketplace, separado da mensalidade. A regra proposta limita cada loja a duas vezes por semana, buscando ampliar a rotatividade dos espaços.</p>
-              <p className="mt-4 text-sm leading-relaxed text-slate-600">Estão previstas ofertas diárias para lojas elegíveis. Preço, duração, vagas e critérios de distribuição serão definidos; a eficácia da regra será avaliada no piloto, sem promessa antecipada de aumento de vendas ou equilíbrio de exposição.</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">DoixP Entregas · Em desenvolvimento</p>
+              <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">Valor para quem entrega</h3>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600">A proposta é que o entregador receba 100% do valor das suas entregas, sem comissão da DoixP. Queremos valorizar esse trabalho e incentivar uma experiência cuidadosa para o consumidor.</p>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600">O módulo está em desenvolvimento. Sua operação e o fluxo de recebimento serão concluídos antes da disponibilização aos parceiros.</p>
             </article>
           </div>
         </section>

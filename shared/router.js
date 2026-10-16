@@ -17,7 +17,7 @@ import { cancelarComandaHandler } from './restaurant-cancel.js';
 import { addOrderItemsHandler } from './restaurant-orders.js';
 import * as fiscal from './handlers-fiscal.js';
 import * as online from './handlers-online.js';
-import * as efi from './efipay.js';
+import * as pix from './pix-config.js';
 import * as entregas from './handlers-entregas.js';
 import { TenantDb } from './tenant-db.js';
 import { usarCartaoHandler } from './cartao-nfc.js';
@@ -50,8 +50,10 @@ const routes = [
   // config
   { m: 'GET', p: '/api/config', h: cat.getConfigHandler },
   { m: 'PUT', p: '/api/config', h: cat.putConfigHandler, mod: 'gestor' },
-  { m: 'GET', p: '/api/efi/config', h: efi.getEfiConfigHandler },
-  { m: 'PUT', p: '/api/efi/config', h: efi.putEfiConfigHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/pix/config', h: pix.getPixConfigHandler },
+  { m: 'PUT', p: '/api/pix/config', h: pix.putPixConfigHandler, mod: 'gestor' },
+  { m: 'GET', p: '/api/efi/config', h: (c) => c.json({ error: 'O pagamento online está desativado.' }, 410) },
+  { m: 'PUT', p: '/api/efi/config', h: (c) => c.json({ error: 'O pagamento online está desativado.' }, 410), mod: 'gestor' },
 
   // configuração do cardápio que alimenta o site público
   { m: 'GET', p: '/api/online/loja', h: online.getOnlineStoreHandler, mod: 'restaurante' },

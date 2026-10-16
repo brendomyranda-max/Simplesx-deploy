@@ -369,11 +369,11 @@ function LojaOnline() {
     setConfigurando(null);
   };
 
-  const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => {
+  const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => {
     if (!loja?.slug) throw new Error('Loja indisponível');
     if (somenteConsulta) throw new Error('Este cardápio está disponível apenas para consulta.');
     const chave = `web${crypto.randomUUID().replace(/-/g, '')}`;
-    const criado = await onlinePublicApi.order(loja.slug, {
+    await onlinePublicApi.order(loja.slug, {
       chave,
       cliente_nome: dados.nome,
       telefone: dados.telefone,
@@ -400,10 +400,6 @@ function LojaOnline() {
     setCheckoutOpen(false);
     const caminho = `/pedido/${loja.slug}/acompanhar/${chave}`;
     gravarUltimoPedido(caminho);
-    if (criado.checkout_url) {
-      window.location.assign(criado.checkout_url);
-      return;
-    }
     navigate(caminho);
   };
 
@@ -1216,12 +1212,12 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
   );
 }
 
-function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => Promise<void> }) {
+function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => Promise<void> }) {
   const guardado = lerPontoCliente();
   const entregaPadrao = loja.aceita_entrega ? 'entrega' : 'retirada';
   const [delivery, setDelivery] = useState<'entrega' | 'retirada'>(entregaPadrao);
   const [platform, setPlatform] = useState(false);
-  const [payment, setPayment] = useState<'pix' | 'dinheiro' | 'maquininha' | 'efi_checkout'>('dinheiro');
+  const [payment, setPayment] = useState<'pix' | 'dinheiro' | 'maquininha'>('dinheiro');
   const [cpfUltimos4, setCpfUltimos4] = useState('');
   const [valorEmDinheiro, setValorEmDinheiro] = useState('');
   const [avisoPagamento, setAvisoPagamento] = useState('');
@@ -1331,10 +1327,9 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
           <div className="online-payment-options">
             {!platform && ([['dinheiro', 'Dinheiro'], ['maquininha', 'Maquininha']] as const).map(([value, label]) => <label key={value} className={payment === value ? 'selected' : ''}><input type="radio" name="payment" checked={payment === value} onChange={() => { setPayment(value); setAvisoPagamento(''); }} />{label}</label>)}
             {loja.pix_disponivel === 1 && <label className={payment === 'pix' ? 'selected' : ''}><input type="radio" name="payment" checked={payment === 'pix'} onChange={() => { setPayment('pix'); setAvisoPagamento(''); }} />Pix</label>}
-            {!platform && loja.checkout_efi_disponivel === 1 && <label className={payment === 'efi_checkout' ? 'selected' : ''}><input type="radio" name="payment" checked={payment === 'efi_checkout'} onChange={() => { setPayment('efi_checkout'); setAvisoPagamento(''); }} /><CreditCard /><span>Cartão de crédito online<small>Pagamento pelo checkout Efí com split</small></span></label>}
           </div>
           {payment === 'dinheiro' && <div className="online-cash-change"><label>Vou pagar com<input required inputMode="decimal" value={valorEmDinheiro} onChange={(event) => { setValorEmDinheiro(event.target.value); setErro(''); }} placeholder="Ex.: 50,00" /></label><div><span>Total do pedido <b>{fmtBRL(totalPedido)}</b></span>{valorInformado != null && <span className={dinheiroInsuficiente ? 'insuficiente' : ''}>{dinheiroInsuficiente ? `Faltam ${fmtBRL(totalPedido - valorInformado)}` : `Troco ${fmtBRL(troco || 0)}`}</span>}</div></div>}
-          <p className="online-pay-note">{platform ? 'O Pix vai para a chave cadastrada pela loja. A corrida aparece aos motoboys depois que a loja confirmar o recebimento.' : payment === 'efi_checkout' ? 'Você será direcionado ao checkout Efí para pagar com cartão de crédito. O pedido só será enviado à cozinha após a confirmação.' : 'Dinheiro e maquininha são pagos na entrega ou retirada. Pix é pago antes da preparação.'}</p>
+          <p className="online-pay-note">{platform ? 'O Pix vai para a chave cadastrada pela loja. A corrida aparece aos motoboys depois que a loja confirmar o recebimento.' : 'Dinheiro e maquininha são pagos na entrega ou retirada. Pix é pago antes da preparação.'}</p>
           {avisoPagamento && <p className="online-payment-notice" role="status">{avisoPagamento}</p>}
         </fieldset>
         {erro && <p className="online-erro">{erro}</p>}
@@ -1414,11 +1409,7 @@ function AcompanharPedido() {
       buscando = true;
       setAtualizando(true);
       try {
-        let dados = await onlinePublicApi.track(slug, chave);
-        if (dados.forma_pagamento === 'efi_checkout' && dados.etapa === 'aguardando_pagamento') {
-          try { await onlinePublicApi.confirmCheckout(slug, chave, {}); } catch { /* A notificação pode ainda estar pendente. */ }
-          dados = await onlinePublicApi.track(slug, chave);
-        }
+        const dados = await onlinePublicApi.track(slug, chave);
         if (!ativo) return;
         setPedido(dados);
         setErro('');
@@ -1495,9 +1486,8 @@ function AcompanharPedido() {
               </div>
             ) : pedido.etapa === 'aguardando_pagamento' ? (
               <div className="online-track-wait">
-                <b>Aguardando confirmação da Efí</b>
-                <span>O pedido só será enviado à cozinha após a confirmação do pagamento. Se você ainda não concluiu, pode retomar o checkout.</span>
-                {pedido.checkout_url && <a className="online-place-order" href={pedido.checkout_url}>Continuar pagamento · {fmtBRL(pedido.total)}</a>}
+                <b>Pagamento online desativado</b>
+                <span>Este pedido foi iniciado antes da pausa do pagamento online. Entre em contato com o estabelecimento para conferir a situação antes de fazer outro pagamento.</span>
               </div>
             ) : (
               <ol className="online-track">

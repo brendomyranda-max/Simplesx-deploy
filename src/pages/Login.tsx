@@ -73,15 +73,15 @@ export function Login() {
           </div>
           {cadastro ? <div className="space-y-4">
             <div className="rounded-2xl border border-brand-100 bg-brand-50 p-5">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-800"><CreditCard className="h-5 w-5" aria-hidden="true" /> Abertura da conta</div>
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-800"><CreditCard className="h-5 w-5" aria-hidden="true" /> Faça parte da DoixP</div>
               {condicoesCadastro ? <>
-                <p className="text-3xl font-extrabold tracking-tight text-slate-900">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: condicoesCadastro.moeda }).format(condicoesCadastro.valor_centavos / 100)}</p>
-                <p className="mt-1 text-sm font-medium text-brand-700">Pagamento único para criar sua conta</p>
-                <p className="mt-4 text-sm leading-relaxed text-slate-600">A conta será liberada após a confirmação do pagamento.</p>
-              </> : <p role="status" className="text-sm text-slate-600">{erroConfig ? 'Não foi possível carregar o valor do cadastro. Recarregue a página para tentar novamente.' : 'Carregando condições do cadastro…'}</p>}
+                <p className="text-3xl font-extrabold tracking-tight text-slate-900">Mensalidade fixa</p>
+                <p className="mt-1 text-sm font-medium text-brand-700">Sem comissão sobre as vendas</p>
+                <p className="mt-4 text-sm leading-relaxed text-slate-600">Nossa proposta é uma única mensalidade para o estabelecimento, sem cobrança por pedido. Com a DoixP, todo mundo ganha.</p>
+              </> : <p role="status" className="text-sm text-slate-600">{erroConfig ? 'Não foi possível carregar as informações do cadastro. Recarregue a página para tentar novamente.' : 'Carregando condições do cadastro…'}</p>}
             </div>
-            <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">O pagamento para novos cadastros está em preparação. A abertura de contas estará disponível assim que ele for liberado.</p>
-            <Button type="button" disabled className="w-full" size="lg" icon={<CreditCard className="h-5 w-5" />}>Pagamento em preparação</Button>
+            <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">A abertura de novas contas pelo site está em preparação.</p>
+            <Button type="button" disabled className="w-full" size="lg" icon={<User className="h-5 w-5" />}>Cadastro em preparação</Button>
             <p className="text-center text-xs text-slate-500">Já tem uma conta? Use a opção Entrar.</p>
           </div> : <form onSubmit={entrar} className="space-y-4">
             <Field label="CNPJ da empresa" hint="O CNPJ identifica o ambiente da sua empresa">
