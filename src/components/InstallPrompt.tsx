@@ -8,7 +8,7 @@ import { Download, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { instalarPda, usePdaInstalacao } from '@/lib/pda-instalacao';
 
-const OCULTO = 'doixp-instalacao-nativa-v1';
+const OCULTO = 'doixp-instalacao-nativa-v2';
 
 function ocultoNaSessao(chave: string) {
   try {
@@ -21,22 +21,22 @@ function ocultoNaSessao(chave: string) {
 export function InstallPrompt() {
   const { pathname } = useLocation();
   const { instalado, podeInstalar, plataforma, passos } = usePdaInstalacao();
+  const portal = pathname === '/';
   const marketplace = pathname === '/pedido' || pathname.startsWith('/pedido/');
   const gestor = pathname === '/gestor' || pathname.startsWith('/gestor/') || (pathname !== '/' && pathname !== '/investidores' && !marketplace);
-  const app = marketplace ? 'Marketplace' : 'Gestor';
-  const chaveOculto = `${OCULTO}:${marketplace ? 'marketplace' : 'gestor'}`;
+  const app = portal ? 'DoixP' : marketplace ? 'Marketplace' : 'Gestor';
+  const pda = portal ? 'portal' : marketplace ? 'marketplace' : 'gestor';
+  const chaveOculto = `${OCULTO}:${pda}`;
   const [oculto, setOculto] = useState(() => ocultoNaSessao(chaveOculto));
   const [mostrarPassos, setMostrarPassos] = useState(false);
-  // Android, Windows e Linux só exibem o botão quando o navegador já pode abrir
-  // a confirmação nativa. Assim o CTA nunca vira um botão de instruções nesses sistemas.
-  const mostraBanner = podeInstalar || plataforma === 'ios';
+  const mostraBanner = podeInstalar || plataforma === 'windows' || plataforma === 'linux' || plataforma === 'android' || plataforma === 'ios';
 
   useEffect(() => {
     setOculto(ocultoNaSessao(chaveOculto));
     setMostrarPassos(false);
   }, [chaveOculto]);
 
-  if (instalado || oculto || !mostraBanner || (!marketplace && !gestor)) return null;
+  if (instalado || oculto || !mostraBanner || (!portal && !marketplace && !gestor)) return null;
 
   const fechar = () => {
     try {
@@ -69,7 +69,9 @@ export function InstallPrompt() {
         <p className="text-xs text-slate-500">
           {podeInstalar
             ? `Instale o ${app} diretamente neste aparelho.`
-            : `No iPhone ou iPad, adicione o ${app} à tela inicial pelo Safari.`}
+            : plataforma === 'ios'
+              ? `No iPhone ou iPad, adicione o ${app} à tela inicial pelo Safari.`
+              : `Instalar ${app} como aplicativo neste aparelho.`}
         </p>
       </div>
       <button type="button" className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => void instalar()}>
