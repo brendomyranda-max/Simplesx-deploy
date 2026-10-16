@@ -26,7 +26,7 @@ export function PdaInstalacaoCard() {
     try {
       const resultado = await pedido;
       if (resultado === 'aceito') {
-        setAviso('PDA instalado. Abra a DoixP pela tela inicial ou pelo menu de aplicativos. Ele entra em tela cheia.');
+        setAviso('Instalação aceita. O navegador está concluindo o pedido; depois abra a DoixP pelo ícone do aplicativo.');
       } else if (resultado === 'recusado') {
         setAviso('A instalação foi cancelada. O botão continua nesta tela.');
       } else {

@@ -16,7 +16,18 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+declare global {
+  interface Window {
+    doixpPwa?: {
+      app: 'portal' | 'gestor' | 'marketplace';
+      promptEvent: BeforeInstallPromptEvent | null;
+      installed: boolean;
+    };
+  }
+}
+
 export interface EstadoPda {
+  app: 'portal' | 'gestor' | 'marketplace';
   plataforma: PlataformaPda;
   instalado: boolean;
   podeInstalar: boolean;
@@ -27,6 +38,7 @@ export interface EstadoPda {
 }
 
 const estadoVazio: EstadoPda = {
+  app: 'portal',
   plataforma: 'outro',
   instalado: false,
   podeInstalar: false,
@@ -36,7 +48,7 @@ const estadoVazio: EstadoPda = {
   passos: [],
 };
 
-let promptInstalacao: BeforeInstallPromptEvent | null = null;
+let pedidoEmAndamento: Promise<'aceito' | 'recusado' | 'indisponivel'> | null = null;
 let instalado = false;
 let emTelaCheia = false;
 let swAtivo = false;
@@ -60,12 +72,13 @@ function montar(): EstadoPda {
   const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
   const plataforma = detectarPlataforma(ua);
   return {
+    app: typeof window === 'undefined' ? 'portal' : window.doixpPwa?.app || 'portal',
     plataforma,
     instalado,
-    podeInstalar: Boolean(promptInstalacao) && !instalado,
+    podeInstalar: Boolean(window.doixpPwa?.promptEvent) && !instalado && !pedidoEmAndamento,
     emTelaCheia,
     swAtivo,
-    compativel: Boolean(promptInstalacao) || navegadorCompativel(ua),
+    compativel: Boolean(window.doixpPwa?.promptEvent) || navegadorCompativel(ua),
     passos: passosInstalacao(plataforma, ua),
   };
 }
@@ -111,28 +124,35 @@ export function entrarTelaCheia(): Promise<boolean> {
 }
 
 export function instalarPda(): Promise<'aceito' | 'recusado' | 'indisponivel'> {
-  const atual = promptInstalacao;
+  if (pedidoEmAndamento) return pedidoEmAndamento;
+  const estado = window.doixpPwa;
+  const atual = estado?.promptEvent;
   if (!atual) return Promise.resolve('indisponivel');
+  // O evento só pode ser utilizado uma vez. Consuma antes de notificar os componentes.
+  estado.promptEvent = null;
   let pedido: Promise<void>;
   try {
+    // Mantenha esta chamada síncrona dentro do clique, preservando a ativação do usuário.
     pedido = atual.prompt();
   } catch {
+    publicar();
     return Promise.resolve('indisponivel');
   }
-  promptInstalacao = null;
-  publicar();
-  return pedido
+  pedidoEmAndamento = Promise.resolve(pedido)
     .then(() => atual.userChoice)
     .then((escolha) => {
       if (escolha.outcome === 'accepted') {
-        instalado = true;
-        publicar();
-        prepararTelaCheia();
         return 'aceito' as const;
       }
       return 'recusado' as const;
     })
-    .catch(() => 'indisponivel' as const);
+    .catch(() => 'indisponivel' as const)
+    .finally(() => {
+      pedidoEmAndamento = null;
+      publicar();
+    });
+  publicar();
+  return pedidoEmAndamento;
 }
 
 export function usePdaInstalacao() {
@@ -148,18 +168,12 @@ export function usePdaInstalacao() {
 
 function iniciar() {
   if (typeof window === 'undefined') return;
-  instalado = estaInstalado();
+  instalado = Boolean(window.doixpPwa?.installed) || estaInstalado();
   emTelaCheia = lerTelaCheia();
-  window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
-    promptInstalacao = event as BeforeInstallPromptEvent;
+  window.addEventListener('doixp:pwa-change', () => {
+    instalado = Boolean(window.doixpPwa?.installed) || estaInstalado();
     publicar();
-  });
-  window.addEventListener('appinstalled', () => {
-    promptInstalacao = null;
-    instalado = true;
-    publicar();
-    prepararTelaCheia();
+    if (instalado) prepararTelaCheia();
   });
   document.addEventListener('fullscreenchange', () => {
     emTelaCheia = lerTelaCheia();
@@ -167,7 +181,7 @@ function iniciar() {
   });
   const consulta = window.matchMedia('(display-mode: fullscreen), (display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay)');
   consulta.addEventListener?.('change', () => {
-    instalado = estaInstalado();
+    instalado = Boolean(window.doixpPwa?.installed) || estaInstalado();
     emTelaCheia = lerTelaCheia();
     publicar();
     if (instalado) prepararTelaCheia();

@@ -24,6 +24,9 @@
 /sw.js
   Cache-Control: no-cache
 
+/pwa-manifest.js
+  Cache-Control: no-cache
+
 # Concentrar a marca no domínio oficial, sem indexar cópias do deploy.
 https://simplesx-projeto-beta.pages.dev/*
   X-Robots-Tag: noindex
