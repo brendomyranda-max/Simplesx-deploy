@@ -138,12 +138,18 @@ test('produtos comuns continuam exigindo datas e gerando controle de vencimento'
   assert.equal(f.DB.prepare('SELECT COUNT(*) AS n FROM validade_controles').first().n, 2);
 });
 
-test('sem vencimento não remove a exigência de pós-abertura do insumo nem inventa prazo para etiquetas', async (t) => {
+test('insumo sem vencimento permite omitir prazo após abertura, mas etiquetas continuam exigindo prazo', async (t) => {
   const f = fixture(t);
   const insumo = { ...produto, tipo: 'insumo', sem_vencimento: 1 };
-  assert.equal((await createProdutoHandler(context(insumo), f.a)).status, 400);
-  const criado = await createProdutoHandler(context({ ...insumo, validade_aberto_dias: 5 }), f.a);
-  assert.equal((await updateProdutoHandler(context({ ...insumo, validade_aberto_dias: null }, criado.data.id), f.a)).status, 400);
+  const criado = await createProdutoHandler(context(insumo), f.a);
+  assert.equal(criado.status, 201);
+  assert.equal(criado.data.validade_aberto_dias, null);
+  assert.equal((await updateProdutoHandler(context({ ...insumo, validade_aberto_dias: 5 }, criado.data.id), f.a)).status, 200);
+  const editado = await updateProdutoHandler(context({ ...insumo, validade_aberto_dias: null }, criado.data.id), f.a);
+  assert.equal(editado.status, 200);
+  assert.equal(editado.data.validade_aberto_dias, null);
+  assert.equal((await criarValidadeHandler(context({ produto_id: criado.data.id }), f.a)).status, 400);
+  assert.equal((await createProdutoHandler(context({ ...comValidade, tipo: 'insumo' }), f.a)).status, 400);
   const simples = await createProdutoHandler(context({ ...produto, sem_vencimento: 1 }), f.a);
   assert.equal((await criarValidadeHandler(context({ produto_id: simples.data.id }), f.a)).status, 400);
 });

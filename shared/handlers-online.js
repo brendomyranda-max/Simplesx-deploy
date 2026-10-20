@@ -1664,6 +1664,7 @@ export async function createPublicOrderHandler(c, env) {
   }
   const items = await Promise.all(parsedItems.map(async (item) => {
     const catalogProduct = catalogById.get(item.cardapio_produto_id);
+    if (catalogProduct.preco == null && catalogProduct.produto_preco == null) throw httpError(409, 'Produto sem preço de venda. Atualize o cardápio.');
     const options = item.opcoes_ids.map((id) => optionsById.get(id));
     if (options.some((option) => !option || num(option.cardapio_produto_id) !== num(catalogProduct.id))) throw httpError(400, 'Uma opção não pertence a este produto');
     const precoNormal = catalogProduct.preco == null ? num(catalogProduct.produto_preco) : num(catalogProduct.preco);

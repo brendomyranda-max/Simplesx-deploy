@@ -22,7 +22,7 @@ const TEMPERATURAS = [
 ];
 
 const TIPOS: { v: ProdutoTipo | 'delivery'; label: string; desc: string }[] = [
-  { v: 'produto', label: 'Produto simples', desc: 'Vende e baixa o próprio estoque' },
+  { v: 'produto', label: 'Produto simples', desc: 'Para venda ou somente controle de estoque' },
   { v: 'insumo', label: 'Insumo', desc: 'Matéria-prima usada em fichas técnicas' },
   { v: 'composto', label: 'Produto composto', desc: 'Receita: baixa insumos do estoque ao vender' },
   { v: 'combo', label: 'Combo', desc: 'Cliente escolhe produtos já cadastrados em cada grupo' },
@@ -42,6 +42,7 @@ function initialState(p?: Produto | null, codigoInicial?: string) {
     codigo_interno: p?.codigo_interno ?? '',
     unidade: p?.unidade ?? 'UN',
     preco: p?.preco ?? '',
+    sem_preco: !!p && p.tipo === 'produto' && p.preco == null,
     produto_balanca: p ? !!p.produto_balanca : false,
     balanca_plu: p?.balanca_plu ?? '',
     custo: p?.custo ?? '',
@@ -103,6 +104,7 @@ export function ProdutoForm({
   const [saving, setSaving] = useState(false);
   const [novoComentario, setNovoComentario] = useState('');
   const [form, setForm] = useState<any>(() => initialState(produto, codigoInicial));
+  const somenteEstoque = form.tipo === 'produto' && (form.sem_preco || form.preco === '');
   const [canal, setCanal] = useState<'cadastro' | 'delivery'>(canalInicial);
   const [opcoesEstoque, setOpcoesEstoque] = useState<Produto[]>([]);
   const [catalogoDelivery, setCatalogoDelivery] = useState<OnlineCatalogProduct[]>([]);
@@ -304,7 +306,7 @@ export function ProdutoForm({
       return toast('error', 'Informe as datas de fabricação e vencimento');
     if (form.tipo !== 'composto' && form.tipo !== 'combo' && !form.sem_vencimento && form.data_vencimento < form.data_fabricacao)
       return toast('error', 'O vencimento não pode ser anterior à fabricação');
-    if (form.tipo === 'insumo' && Number(form.validade_aberto_dias) <= 0)
+    if (form.tipo === 'insumo' && !form.sem_vencimento && Number(form.validade_aberto_dias) <= 0)
       return toast('error', 'Informe a validade após abertura do insumo');
     if (form.validade_aberto_dias !== '' && Number(form.validade_aberto_dias) <= 0)
       return toast('error', 'A validade após abertura deve ser maior que zero');
@@ -319,7 +321,7 @@ export function ProdutoForm({
         nome: form.nome.trim(),
         codigo_interno: form.codigo_interno.trim(),
         unidade: form.unidade,
-        preco: form.preco === '' ? null : Number(form.preco),
+        preco: somenteEstoque || form.preco === '' ? null : Number(form.preco),
         produto_balanca: form.produto_balanca,
         balanca_plu: form.produto_balanca ? String(form.balanca_plu).padStart(6, '0') : null,
         custo: form.tipo === 'composto' ? undefined : form.tipo === 'combo' ? 0 : Number(form.custo || 0),
@@ -339,8 +341,8 @@ export function ProdutoForm({
         observacoes: form.observacoes.trim() || null,
         fornecedor_id: form.fornecedor_id ? Number(form.fornecedor_id) : null,
         ativo: form.ativo,
-        exibir_restaurante: form.exibir_restaurante,
-        exibir_mercado: form.exibir_mercado,
+        exibir_restaurante: !somenteEstoque && form.exibir_restaurante,
+        exibir_mercado: !somenteEstoque && form.exibir_mercado,
         codigos_barras: form.codigos_barras.filter((c: any) => c.codigo.trim()),
         categoria_ids: form.categoria_ids,
         comentarios: form.comentarios.map((c: string) => c.trim()).filter(Boolean),
@@ -619,6 +621,11 @@ export function ProdutoForm({
 
         {form.tipo === 'combo' && <ComboCadastro grupos={form.combo_grupos} produtos={produtosCombo} onChange={(grupos) => set('combo_grupos', grupos)} />}
 
+        {form.tipo === 'produto' && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <Toggle checked={form.sem_preco} onChange={(value) => setForm((current: any) => ({ ...current, sem_preco: value, ...(value ? { preco: '', produto_balanca: false, exibir_restaurante: false, exibir_mercado: false } : {}) }))} label="Somente estoque (sem preço de venda)" />
+          <p className="mt-2 text-xs text-slate-600">Permite cadastrar e repor o estoque sem informar preço. O custo de compra também pode ficar em branco. Para vender depois, informe o preço e escolha onde exibir.</p>
+        </div>}
+
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Unidade">
             <Select value={form.unidade} onChange={(e) => set('unidade', e.target.value)}>
@@ -627,8 +634,8 @@ export function ProdutoForm({
               ))}
             </Select>
           </Field>
-          <Field label="Preço venda (R$)" hint={form.tipo === 'insumo' ? 'Se o cliente acrescentar este item em um lanche, este valor entra como observação e soma no preço.' : undefined}>
-            <Input type="number" step="0.01" value={form.preco} onChange={(e) => set('preco', e.target.value)} placeholder="0,00" />
+          <Field label={form.tipo === 'produto' && !form.produto_balanca ? 'Preço venda (R$) — opcional' : 'Preço venda (R$)'} hint={form.tipo === 'insumo' ? 'Se o cliente acrescentar este item em um lanche, este valor entra como observação e soma no preço.' : form.tipo === 'produto' ? 'Em branco: produto somente para estoque, sem preço cadastrado.' : undefined}>
+            <Input type="number" min="0" step="0.01" value={form.preco} disabled={form.tipo === 'produto' && form.sem_preco} onChange={(e) => set('preco', e.target.value)} placeholder={somenteEstoque ? 'Sem preço' : '0,00'} />
             {form.produto_balanca && <p className="mt-1 text-[11px] text-slate-500">Valor por {form.unidade === 'L' ? 'litro' : 'quilo'}</p>}
           </Field>
           {form.tipo === 'composto' || form.tipo === 'combo' ? (
@@ -642,7 +649,7 @@ export function ProdutoForm({
           )}
         </div>
 
-        {form.tipo !== 'combo' && <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+        {form.tipo !== 'combo' && !(form.tipo === 'produto' && form.sem_preco) && <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-bold text-slate-800">Produto de balança</p>
@@ -724,11 +731,11 @@ export function ProdutoForm({
           <p className="mb-3 text-sm font-bold text-amber-800">Validades do produto</p>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-slate-800">Sem vencimento</p>
-              <p className="text-xs text-slate-600">Sem data de vencimento na embalagem fechada. O prazo após abertura continua valendo para as etiquetas.</p>
+              <p className="text-sm font-semibold text-slate-800">Validade não obrigatória</p>
+              <p className="text-xs text-slate-600">Ative para cadastrar e repor sem datas de fabricação ou vencimento. O prazo após abertura pode ficar em branco; informe somente se precisar de etiquetas com validade.</p>
             </div>
             <div className="shrink-0">
-              <Toggle checked={form.sem_vencimento} onChange={(v) => set('sem_vencimento', v)} label="Sem vencimento" />
+              <Toggle checked={form.sem_vencimento} onChange={(v) => set('sem_vencimento', v)} label="Não exigir validade" />
             </div>
           </div>
           <div className={`grid gap-4 ${form.sem_vencimento ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
@@ -738,7 +745,7 @@ export function ProdutoForm({
             {!form.sem_vencimento && <Field label="Data de vencimento *">
               <Input type="date" min={form.data_fabricacao || undefined} value={form.data_vencimento} onChange={(e) => set('data_vencimento', e.target.value)} />
             </Field>}
-            <Field label={`Vencimento pós-abertura (dias)${form.tipo === 'insumo' ? ' *' : ' (opcional)'}`} hint="Prazo usado ao registrar a abertura e gerar a etiqueta">
+            <Field label={`Vencimento pós-abertura (dias)${form.tipo === 'insumo' && !form.sem_vencimento ? ' *' : ' (opcional)'}`} hint="Prazo usado ao registrar a abertura e gerar a etiqueta">
               <Input type="number" min="1" value={form.validade_aberto_dias} onChange={(e) => set('validade_aberto_dias', e.target.value)} placeholder="ex.: 5" />
             </Field>
           </div>
@@ -838,7 +845,7 @@ export function ProdutoForm({
           </div>
         </Field>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {somenteEstoque ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Sem preço de venda: disponível para entrada e controle de estoque. Informe um preço para habilitar a exibição no restaurante ou PDV.</p> : <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
@@ -857,7 +864,7 @@ export function ProdutoForm({
               <Toggle checked={form.exibir_mercado} onChange={(v) => set('exibir_mercado', v)} />
             </div>
           </div>
-        </div>
+        </div>}
 
         <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
           <div>

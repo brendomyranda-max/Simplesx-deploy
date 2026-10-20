@@ -173,6 +173,27 @@ export async function updateCategoriaHandler(c, env) {
   return c.json({ ok: true });
 }
 
+export async function deleteCategoriaHandler(c, env) {
+  const id = Number(c.params.id);
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'Categoria inválida' }, 400);
+  const categoria = await env.DB.prepare('SELECT * FROM categorias WHERE id=?').bind(id).first();
+  if (!categoria) return c.json({ error: 'Categoria não encontrada' }, 404);
+  // Preserva produtos e subcategorias. As filhas passam a principais mantendo
+  // a impressora que herdavam, para não interromper seus pedidos.
+  await env.DB.batch([
+    env.DB.prepare('UPDATE categorias SET categoria_pai_id=NULL, impressora_agente_id=COALESCE(impressora_agente_id,?) WHERE categoria_pai_id=?')
+      .bind(categoria.impressora_agente_id, id),
+    env.DB.prepare('DELETE FROM produto_categorias WHERE categoria_id=?').bind(id),
+    env.DB.prepare('UPDATE cardapio_online_produtos SET categoria_id=NULL, atualizado_em=? WHERE categoria_id=?').bind(now(), id),
+    env.DB.prepare(`UPDATE impressora_agentes SET categorias=(
+      SELECT json_group_array(value) FROM json_each(CASE WHEN json_valid(categorias) THEN categorias ELSE '[]' END)
+      WHERE CAST(value AS INTEGER)!=?)
+      WHERE EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(categorias) THEN categorias ELSE '[]' END) WHERE CAST(value AS INTEGER)=?)`).bind(id, id),
+    env.DB.prepare('DELETE FROM categorias WHERE id=?').bind(id),
+  ]);
+  return c.json({ ok: true });
+}
+
 // ============================ FORNECEDORES ============================
 
 export async function listFornecedoresHandler(c, env) {
@@ -425,6 +446,8 @@ export function normalizeComentarios(comentarios) {
 }
 
 function validaPreco(config, preco, tipo) {
+  if (preco !== null && (!Number.isFinite(preco) || preco < 0)) throw httpError(400, 'Preço de venda inválido');
+  if (tipo === 'produto' && preco === null) return; // Cadastro somente para estoque.
   if (tipo === 'insumo') return;
   if (config.modo_operacao !== 'estoque' && (preco === null || preco <= 0)) {
     throw httpError(400, 'No modo mercado o preço de venda é obrigatório');
@@ -464,7 +487,7 @@ export async function createProdutoHandler(c, env) {
   const principal = codigos.find((x) => x.principal) || codigos[0] || null;
   const codigoInterno =
     String(b.codigo_interno || '').trim() || (principal ? principal.codigo : String(Date.now()).slice(-8));
-  const preco = b.preco === null || b.preco === undefined || b.preco === '' ? null : num(b.preco);
+  const preco = b.preco === null || b.preco === undefined || b.preco === '' ? null : Number(b.preco);
   const produtoBalanca = b.produto_balanca === true ? 1 : 0;
   const balancaPlu = produtoBalanca ? String(b.balanca_plu || '').padStart(6, '0') : null;
   if (produtoBalanca && !/^\d{6}$/.test(balancaPlu)) return c.json({ error: 'PLU da balança inválido' }, 400);
@@ -474,10 +497,11 @@ export async function createProdutoHandler(c, env) {
   if (tipo === 'combo' && produtoBalanca) return c.json({ error: 'Combo não pode ser produto de balança' }, 400);
   const gruposCombo = tipo === 'combo' ? await validarGruposCombo(env, b.combo_grupos) : null;
   validaPreco(config, preco, tipo);
+  if (produtoBalanca && !(preco > 0)) return c.json({ error: 'Informe o preço por quilo ou litro do produto de balança' }, 400);
   const semVencimento = tipo === 'combo' || (tipo !== 'composto' && (b.sem_vencimento === true || b.sem_vencimento === 1)) ? 1 : 0;
   const dataVencimento = semVencimento ? null : b.data_vencimento || null;
   if (tipo !== 'composto' && !semVencimento && (!b.data_fabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
-  if (tipo === 'insumo' && num(b.validade_aberto_dias) <= 0) {
+  if (tipo === 'insumo' && !semVencimento && num(b.validade_aberto_dias) <= 0) {
     return c.json({ error: 'Informe a validade após abertura do insumo' }, 400);
   }
   if (tipo !== 'composto' && b.data_fabricacao && dataVencimento && dataVencimento < b.data_fabricacao) {
@@ -519,8 +543,8 @@ export async function createProdutoHandler(c, env) {
       dataVencimento,
       b.temperatura || null,
       b.observacoes || null,
-      b.exibir_restaurante === true ? 1 : 0,
-      b.exibir_mercado === true ? 1 : 0,
+      !(tipo === 'produto' && preco === null) && b.exibir_restaurante === true ? 1 : 0,
+      !(tipo === 'produto' && preco === null) && b.exibir_mercado === true ? 1 : 0,
       tipo,
       tipo === 'insumo' && num(b.conteudo_quantidade) > 0 ? num(b.conteudo_quantidade) : null,
       tipo === 'insumo' && b.conteudo_unidade ? b.conteudo_unidade : null,
@@ -617,7 +641,7 @@ export async function updateProdutoHandler(c, env) {
   const atual = await env.DB.prepare('SELECT * FROM produtos WHERE id=?').bind(c.params.id).first();
   if (!atual) return c.json({ error: 'Produto não encontrado' }, 404);
   const config = await getConfig(env);
-  const preco = b.preco === null || b.preco === undefined || b.preco === '' ? null : num(b.preco);
+  const preco = b.preco === undefined ? atual.preco : b.preco === null || b.preco === '' ? null : Number(b.preco);
   const produtoBalanca = b.produto_balanca === true ? 1 : b.produto_balanca === false ? 0 : num(atual.produto_balanca);
   const balancaPlu = produtoBalanca ? String(b.balanca_plu ?? atual.balanca_plu ?? '').padStart(6, '0') : null;
   const unidadeFinal = String(b.unidade || atual.unidade || 'UN').toUpperCase();
@@ -629,6 +653,7 @@ export async function updateProdutoHandler(c, env) {
   if (b.tipo === 'insumo' || b.tipo === 'produto' || b.tipo === 'composto' || b.tipo === 'combo') tipo = b.tipo;
   else if (ingredientes) tipo = ingredientes.length ? 'composto' : 'produto';
   validaPreco(config, preco, tipo);
+  if (produtoBalanca && !(preco > 0)) return c.json({ error: 'Informe o preço por quilo ou litro do produto de balança' }, 400);
   if (tipo === 'combo' && produtoBalanca) return c.json({ error: 'Combo não pode ser produto de balança' }, 400);
   const gruposCombo = tipo === 'combo' ? await validarGruposCombo(env, b.combo_grupos ?? JSON.parse(atual.combo_grupos_json || '[]'), Number(c.params.id)) : null;
   if (tipo === 'combo' && atual.tipo !== 'combo') {
@@ -644,7 +669,7 @@ export async function updateProdutoHandler(c, env) {
   const validadeAberto = b.validade_aberto_dias === undefined ? atual.validade_aberto_dias : b.validade_aberto_dias || null;
   if (tipo !== 'composto' && !semVencimento && (!dataFabricacao || !dataVencimento)) return c.json({ error: 'Informe as datas de fabricação e vencimento' }, 400);
   if (tipo !== 'composto' && dataVencimento && dataFabricacao && dataVencimento < dataFabricacao) return c.json({ error: 'A data de vencimento não pode ser anterior à fabricação' }, 400);
-  if (tipo === 'insumo' && num(validadeAberto) <= 0) {
+  if (tipo === 'insumo' && !semVencimento && num(validadeAberto) <= 0) {
     return c.json({ error: 'Informe o vencimento pós-abertura do insumo' }, 400);
   }
 
@@ -692,8 +717,8 @@ export async function updateProdutoHandler(c, env) {
       b.temperatura || null,
       b.ativo === false ? 0 : 1,
       b.observacoes || null,
-      b.exibir_restaurante === true ? 1 : b.exibir_restaurante === false ? 0 : num(atual.exibir_restaurante),
-      b.exibir_mercado === true ? 1 : b.exibir_mercado === false ? 0 : num(atual.exibir_mercado),
+      tipo === 'produto' && preco === null ? 0 : b.exibir_restaurante === true ? 1 : b.exibir_restaurante === false ? 0 : num(atual.exibir_restaurante),
+      tipo === 'produto' && preco === null ? 0 : b.exibir_mercado === true ? 1 : b.exibir_mercado === false ? 0 : num(atual.exibir_mercado),
       tipo,
       tipo === 'insumo' && num(b.conteudo_quantidade ?? atual.conteudo_quantidade) > 0 ? num(b.conteudo_quantidade ?? atual.conteudo_quantidade) : null,
       tipo === 'insumo' ? (b.conteudo_unidade || atual.conteudo_unidade || null) : null,

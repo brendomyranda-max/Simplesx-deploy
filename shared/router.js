@@ -96,6 +96,7 @@ const routes = [
   { m: 'GET', p: '/api/categorias', h: cat.listCategoriasHandler },
   { m: 'POST', p: '/api/categorias', h: cat.createCategoriaHandler, mod: 'gestor' },
   { m: 'PUT', p: '/api/categorias/:id', h: cat.updateCategoriaHandler, mod: 'gestor' },
+  { m: 'DELETE', p: '/api/categorias/:id', h: cat.deleteCategoriaHandler, mod: 'gestor' },
 
   // fornecedores
   { m: 'GET', p: '/api/fornecedores', h: cat.listFornecedoresHandler },

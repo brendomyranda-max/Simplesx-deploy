@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Tags, Plus, Pencil, Trash2, Truck, Save, Printer, CornerDownRight } from 'lucide-react';
+import { Tags, Plus, Pencil, Trash2, Truck, Save, Printer, CornerDownRight, Power } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, IconButton, Input, Modal, Select, Spinner, Tabs, useToast } from '@/components/ui';
 import { categoriaApi, fornecedorApi, impressoraApi, deviceApi, gestorApi } from '@/lib/api';
@@ -31,6 +31,8 @@ export function CategoriasPage() {
   const [contato, setContato] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
+  const [excluirCategoria, setExcluirCategoria] = useState<Categoria | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
 
   const loadAll = async () => {
     setLoad(true);
@@ -46,8 +48,8 @@ export function CategoriasPage() {
         ...devices.map((d: any) => ({ tipo: 'android', id: String(d.id), nome: d.nome, plataforma: 'Android', online: d.status === 'online' })),
         ...gestores.map((g: any) => ({ tipo: 'desktop', id: String(g.id), nome: g.nome, plataforma: 'Windows/Linux', online: !!g.ultima_conexao && Date.now() - new Date(g.ultima_conexao).getTime() < 60_000 })),
       ]);
-    } catch {
-      /* noop */
+    } catch (error: any) {
+      toast('error', error?.error || 'Não foi possível carregar os cadastros');
     } finally {
       setLoad(false);
     }
@@ -119,6 +121,25 @@ export function CategoriasPage() {
     setModal(true);
   };
 
+  const alternarCategoria = async (categoria: Categoria) => {
+    try {
+      await categoriaApi.update(categoria.id, { ...categoria, ativo: categoria.ativo ? 0 : 1 });
+      await loadAll();
+    } catch (error: any) { toast('error', error?.error || 'Não foi possível alterar a categoria'); }
+  };
+
+  const confirmarExclusaoCategoria = async () => {
+    if (!excluirCategoria || excluindo) return;
+    setExcluindo(true);
+    try {
+      await categoriaApi.delete(excluirCategoria.id);
+      setExcluirCategoria(null);
+      toast('success', 'Categoria excluída. Os produtos foram preservados.');
+      await loadAll();
+    } catch (error: any) { toast('error', error?.error || 'Não foi possível excluir a categoria'); }
+    finally { setExcluindo(false); }
+  };
+
   if (load) return <Spinner />;
 
   return (
@@ -166,13 +187,10 @@ export function CategoriasPage() {
                   <IconButton label="Editar" icon={<Pencil className="h-4 w-4" />} onClick={() => abrir(c)} />
                   <IconButton
                     label={c.ativo ? 'Desativar' : 'Ativar'}
-                    variant="danger"
-                    icon={<Trash2 className="h-4 w-4" />}
-                    onClick={async () => {
-                      await categoriaApi.update(c.id, { ...c, ativo: c.ativo ? 0 : 1 });
-                      loadAll();
-                    }}
+                    icon={<Power className="h-4 w-4" />}
+                    onClick={() => alternarCategoria(c)}
                   />
+                  <IconButton label={`Excluir ${c.nome}`} variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setExcluirCategoria(c)} />
                 </div>
                 </div>
                 {cats.some((sub) => sub.categoria_pai_id === c.id) && (
@@ -182,9 +200,13 @@ export function CategoriasPage() {
                         <div className="flex items-center gap-2">
                           <CornerDownRight className="h-4 w-4 text-slate-400" />
                           <span className="h-3 w-3 rounded-full" style={{ backgroundColor: sub.cor }} />
-                          <div><p className="text-sm font-semibold text-slate-700">{sub.nome}</p><p className="text-xs text-slate-500">Herda: {sub.impressora_herdada_nome || 'sem impressora'}</p></div>
+                          <div><p className="text-sm font-semibold text-slate-700">{sub.nome}</p><p className="text-xs text-slate-500">Herda: {sub.impressora_herdada_nome || 'sem impressora'}</p>{!sub.ativo && <Badge color="slate">inativa</Badge>}</div>
                         </div>
-                        <IconButton label="Editar" icon={<Pencil className="h-4 w-4" />} onClick={() => abrir(sub)} />
+                        <div className="flex">
+                          <IconButton label="Editar" icon={<Pencil className="h-4 w-4" />} onClick={() => abrir(sub)} />
+                          <IconButton label={sub.ativo ? 'Desativar' : 'Ativar'} icon={<Power className="h-4 w-4" />} onClick={() => alternarCategoria(sub)} />
+                          <IconButton label={`Excluir ${sub.nome}`} variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setExcluirCategoria(sub)} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -233,6 +255,14 @@ export function CategoriasPage() {
           </div>
         </Card>
       )}
+
+      <Modal open={!!excluirCategoria} onClose={() => { if (!excluindo) setExcluirCategoria(null); }} title="Excluir categoria">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-700">Excluir <strong>{excluirCategoria?.nome}</strong>? Os produtos e seus históricos serão mantidos, apenas sem o vínculo com esta categoria.</p>
+          {cats.some((cat) => cat.categoria_pai_id === excluirCategoria?.id) && <p className="text-sm text-slate-600">As subcategorias serão mantidas como categorias principais, preservando a impressora herdada.</p>}
+          <div className="flex justify-end gap-2"><Button variant="secondary" disabled={excluindo} onClick={() => setExcluirCategoria(null)}>Cancelar</Button><Button variant="danger" loading={excluindo} onClick={confirmarExclusaoCategoria}>Excluir categoria</Button></div>
+        </div>
+      </Modal>
 
       <Modal open={modal} onClose={() => setModal(false)} title={tab === 'categorias' ? (editId ? 'Editar categoria' : 'Nova categoria') : editId ? 'Editar fornecedor' : 'Novo fornecedor'}>
         <form onSubmit={salvar} className="space-y-4">

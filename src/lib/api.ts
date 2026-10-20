@@ -166,6 +166,7 @@ export const categoriaApi = {
   list: () => api.get<Categoria[]>('/categorias'),
   create: (b: { nome: string; cor?: string; categoria_pai_id?: number | null; impressora_agente_id?: number | null }) => api.post<Categoria>('/categorias', b),
   update: (id: number, b: Partial<Categoria>) => api.put<{ ok: boolean }>(`/categorias/${id}`, b),
+  delete: (id: number) => api.del<{ ok: boolean }>(`/categorias/${id}`),
 };
 
 export const fornecedorApi = {

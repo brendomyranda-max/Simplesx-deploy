@@ -200,17 +200,31 @@ Credenciais e certificados não devem ser gravados no D1. O banco armazena apena
 o identificador da empresa no provedor; segredos globais pertencem aos secrets do
 Worker/Cloudflare.
 
+## Categorias e produtos somente para estoque
+
+Em **Categorias**, a lixeira exclui a categoria após confirmação. Os produtos e
+seus históricos são preservados, e as subcategorias passam a categorias principais
+mantendo suas impressoras. O botão de ativar/desativar continua disponível.
+
+No cadastro de produtos simples, marque **Somente estoque (sem preço de venda)**
+ou deixe o preço em branco para cadastrar itens apenas para reposição e controle.
+O preço fica ausente, sem ser convertido em zero. O custo de compra também é
+opcional. Para vender depois, informe um preço e habilite a exibição no
+restaurante/PDV. O delivery permite configurar seu próprio preço no cardápio.
+
 ## Produtos sem vencimento
 
-No cadastro de produtos simples e insumos, marque **Sem vencimento** para não
+No cadastro de produtos simples e insumos, marque **Não exigir validade** para não
 exigir uma data de vencimento da embalagem fechada. A fabricação passa a ser
 opcional. As entradas de mercadorias respeitam essa opção e registram os lotes
 sem gerar alertas de vencimento da embalagem fechada.
 
-O **Vencimento pós-abertura (dias)** continua independente: é obrigatório para
-insumos e opcional para produtos simples. Em **Controle de Validade**, procure o
+O **Vencimento pós-abertura (dias)** continua independente: pode ficar em branco
+quando a validade não é exigida; continua obrigatório para insumos com controle
+de validade habilitado. Em **Controle de Validade**, procure o
 produto, informe a abertura e use **Registrar e gerar etiqueta**. O vencimento
 da etiqueta é calculado pelo prazo após abertura, mesmo em produtos sem vencimento.
+É necessário cadastrar esse prazo antes de gerar uma etiqueta de abertura.
 Lotes e controles já registrados são preservados ao editar o cadastro.
 
 Aplique `0024_produtos_sem_vencimento.sql` antes de publicar o backend:

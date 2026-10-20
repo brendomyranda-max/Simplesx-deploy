@@ -213,7 +213,7 @@ export function EstoquePage() {
                         </Badge>
                       </td>
                       <td className="td text-slate-500">{p.tipo === 'composto' || p.tipo === 'combo' ? '—' : fmtNum(p.estoque_minimo)}</td>
-                      <td className="td font-semibold">{p.preco != null ? fmtBRL(p.preco) : <span className="text-slate-300">—</span>}</td>
+                      <td className="td font-semibold">{p.preco != null ? fmtBRL(p.preco) : <span className="text-xs text-slate-500">Sem preço</span>}</td>
                       <td className="td text-slate-500">{p.tipo === 'combo' ? 'Conforme escolhas' : fmtBRL(p.custo)}</td>
                       <td className="td">
                         <div className="flex justify-end gap-1">
