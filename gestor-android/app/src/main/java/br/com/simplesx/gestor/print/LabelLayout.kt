@@ -19,18 +19,18 @@ internal data class LabelLayout(
 )
 
 internal object LabelLayouts {
-    fun calculate(text: String, widthMm: Int, fixedHeightMm: Int?, dpi: Int): LabelLayout {
+    fun calculate(text: String, widthMm: Int, fixedHeightMm: Int?, dpi: Int, requestedScale: Double = 1.0): LabelLayout {
         val safeWidth = widthMm.coerceIn(20, 320)
         val safeDpi = dpi.coerceIn(100, 1200)
         val dpiScale = safeDpi / 203.0
         val baseColumns = ((safeWidth * 32) / 58).coerceAtLeast(8)
         val fixedHeightDots = fixedHeightMm?.coerceIn(10, 500)?.let { mmToDots(it, safeDpi) }
-        var fontScale = 1.0
+        var fontScale = requestedScale.coerceIn(0.75, 2.0)
         var lines: List<String>
         var margin: Int
         var lineHeight: Int
         while (true) {
-            val columns = (baseColumns / fontScale).toInt().coerceAtLeast(baseColumns)
+            val columns = (baseColumns / fontScale).toInt().coerceAtLeast(1)
             lines = normalize(text).lines().flatMap { wrap(it, columns) }.ifEmpty { listOf("") }
             margin = (16 * dpiScale * fontScale).toInt().coerceAtLeast(4)
             lineHeight = (28 * dpiScale * fontScale).toInt().coerceAtLeast(6)

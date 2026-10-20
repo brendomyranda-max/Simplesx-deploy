@@ -208,3 +208,11 @@ O aplicativo processa `PRINT_ORDER`, `PRINT_RECEIPT`, `PRINT_LABEL`,
 `text` ou `texto`; cópias, corte e avanço aceitam nomes em inglês ou português.
 Cada trabalho muda de `sent` para `processing` e depois `success` ou `failed`,
 sempre usando o `lease_id` fornecido pelo servidor.
+
+## Fonte por impressora (1.5.21)
+
+Na configuração da impressora, abaixo das dimensões do papel, escolha **Pequena**,
+**Normal** ou **Grande** em **Tamanho da fonte** e salve a impressora. A escolha
+é individual e vale para pedidos, contas, etiquetas e testes. Configurações
+antigas usam Normal. A quebra de linha acompanha a fonte; etiquetas de altura
+fixa ainda reduzem o texto quando necessário para caber.

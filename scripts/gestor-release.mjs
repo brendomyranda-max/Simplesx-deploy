@@ -2,15 +2,22 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { GESTOR_VERSION, GESTOR_ANDROID_CODE, GESTOR_RELEASE } from '../shared/gestor-releases.js';
+
 
 const directory = process.argv[2];
 if (!directory) throw new Error('Informe o diretório dos instaladores');
 const desktop = JSON.parse(await fs.readFile(new URL('../gestor-impressora/package.json', import.meta.url), 'utf8'));
 const android = await fs.readFile(new URL('../gestor-android/app/build.gradle.kts', import.meta.url), 'utf8');
-if (desktop.version !== GESTOR_VERSION || !android.includes(`versionName = "${GESTOR_VERSION}"`) || !android.includes(`versionCode = ${GESTOR_ANDROID_CODE}\n`)) {
-  throw new Error('As versões do site, desktop e Android precisam coincidir');
+// O feed do site só avança depois que estes instaladores forem publicados.
+const GESTOR_VERSION = desktop.version;
+const GESTOR_ANDROID_CODE = Number(android.match(/versionCode = (\d+)/)?.[1]);
+if (!/^\d+\.\d+\.\d+$/.test(GESTOR_VERSION) || !Number.isInteger(GESTOR_ANDROID_CODE) || !android.includes(`versionName = "${GESTOR_VERSION}"`)) {
+  throw new Error('As versões desktop e Android precisam coincidir');
 }
+if (process.env.GITHUB_REF_NAME?.startsWith('gestor-v') && process.env.GITHUB_REF_NAME !== `gestor-v${GESTOR_VERSION}`) {
+  throw new Error('A tag precisa corresponder à versão dos instaladores');
+}
+const GESTOR_RELEASE = `https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v${GESTOR_VERSION}/`;
 for (const [metadata, filename] of [
   ['latest.yml', 'servidor-doixp-windows-x64.exe'],
   ['latest-linux.yml', 'servidor-doixp-linux-x86_64.AppImage'],

@@ -76,6 +76,7 @@ function configPadrao() {
     largurasImpressoras: {},
     alturasImpressoras: {},
     dpisImpressoras: {},
+    fontesImpressoras: {},
     protocolosImpressoras: {},
     iniciarComSistema: true,
     conectado: true,
@@ -117,6 +118,7 @@ async function salvarConfig(novaConfig) {
     largurasImpressoras: normalizarLarguras(novaConfig.largurasImpressoras || config?.largurasImpressoras),
     alturasImpressoras: normalizarAlturas(novaConfig.alturasImpressoras || config?.alturasImpressoras),
     dpisImpressoras: normalizarDpis(novaConfig.dpisImpressoras || config?.dpisImpressoras),
+    fontesImpressoras: normalizarFontes(novaConfig.fontesImpressoras || config?.fontesImpressoras),
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
     conectado: novaConfig.conectado ?? config?.conectado ?? true,
@@ -158,6 +160,15 @@ function normalizarProtocolos(value) {
   for (const [nome, protocolo] of Object.entries(value)) {
     const normalizado = String(protocolo || '').toUpperCase()
     if (nome && permitidos.has(normalizado)) result[nome] = normalizado
+  }
+  return result
+}
+
+function normalizarFontes(value) {
+  const result = {}
+  if (!value || typeof value !== 'object') return result
+  for (const [nome, fonte] of Object.entries(value)) {
+    if (nome && ['small', 'normal', 'large'].includes(fonte)) result[nome] = fonte
   }
   return result
 }
@@ -245,10 +256,12 @@ async function resolverImpressora(nomeSolicitado) {
   return selectPrinter(await listarImpressoras(), nomeSolicitado, config.impressoraPadrao)
 }
 
-function quebrarPorLargura(texto, larguraMm) {
-  const colunas = Math.max(8, Math.floor((Number(larguraMm) || 58) * 32 / 58))
+function quebrarPorLargura(texto, larguraMm, fonte = 'normal') {
+  const colunas = Math.max(1, Math.floor((Number(larguraMm) || 58) * 32 / 58 / escalaDaFonte(fonte)))
   return quebrarPorColunas(texto, colunas)
 }
+
+function escalaDaFonte(fonte) { return fonte === 'small' ? 0.75 : fonte === 'large' ? 2 : 1 }
 
 function quebrarPorColunas(texto, colunas) {
   return String(texto || '').replace(/\r\n?/g, '\n').split('\n').flatMap((linha) => {
@@ -266,8 +279,8 @@ function quebrarPorColunas(texto, colunas) {
   }).join('\n')
 }
 
-function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, centralizar = false } = {}) {
-  const normalizado = quebrarPorLargura(texto, larguraMm)
+function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, centralizar = false, tamanhoFonte = 'normal' } = {}) {
+  const normalizado = quebrarPorLargura(texto, larguraMm, tamanhoFonte)
     .replace(/\r\n?/g, '\n')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -275,7 +288,8 @@ function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, cent
     .replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
     .trimEnd()
-  const partes = [Buffer.from([0x1b, 0x40])]
+  const partes = [Buffer.from([0x1b, 0x40, 0x1b, 0x4d, tamanhoFonte === 'small' ? 1 : 0, 0x1d, 0x21, tamanhoFonte === 'large' ? 0x11 : 0])]
+  if (tamanhoFonte === 'large') partes.push(Buffer.from([0x1b, 0x33, 56]))
   if (centralizar) partes.push(Buffer.from([0x1b, 0x61, 0x01]))
   partes.push(Buffer.from(normalizado + '\n', 'ascii'))
   if (centralizar) partes.push(Buffer.from([0x1b, 0x61, 0x00]))
@@ -293,16 +307,16 @@ function textoAscii(texto) {
 
 function mmDots(mm, dpi = 203) { return Math.max(0, Math.round(Number(mm || 0) * Number(dpi || 203) / 25.4)) }
 
-function layoutEtiqueta(texto, { larguraMm = 58, alturaMm = null, dpi = 203 } = {}) {
+function layoutEtiqueta(texto, { larguraMm = 58, alturaMm = null, dpi = 203, tamanhoFonte = 'normal' } = {}) {
   const escalaDpi = dpi / 203
   const colunasBase = Math.max(8, Math.floor(larguraMm * 32 / 58))
   const alturaFixa = Number(alturaMm) >= 10 ? mmDots(alturaMm, dpi) : null
-  let escalaFonte = 1
+  let escalaFonte = escalaDaFonte(tamanhoFonte)
   let linhas
   let margem
   let alturaLinha
   for (;;) {
-    const colunas = Math.max(colunasBase, Math.floor(colunasBase / escalaFonte))
+    const colunas = Math.max(1, Math.floor(colunasBase / escalaFonte))
     linhas = quebrarPorColunas(textoAscii(texto), colunas).split('\n')
     margem = Math.max(4, Math.round(16 * escalaDpi * escalaFonte))
     alturaLinha = Math.max(6, Math.round(28 * escalaDpi * escalaFonte))
@@ -318,8 +332,8 @@ function layoutEtiqueta(texto, { larguraMm = 58, alturaMm = null, dpi = 203 } = 
   }
 }
 
-function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm = null, dpi = 203, centralizar = false } = {}) {
-  const { linhas, escalaFonte, margem, alturaLinha, fonte, largura, altura } = layoutEtiqueta(texto, { larguraMm, alturaMm, dpi })
+function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm = null, dpi = 203, centralizar = false, tamanhoFonte = 'normal' } = {}) {
+  const { linhas, escalaFonte, margem, alturaLinha, fonte, largura, altura } = layoutEtiqueta(texto, { larguraMm, alturaMm, dpi, tamanhoFonte })
   const escala = (dpi / 203) * escalaFonte
   const quantidade = Math.min(20, Math.max(1, Number(copias) || 1))
   const xCentralizado = (linha, larguraCaractere = 12) => centralizar
@@ -328,8 +342,9 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm 
   let comandos
   if (protocolo === 'TSPL') {
     comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / (dpi / 25.4))} mm\r\nGAP 0 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n`
-    const fonteTspl = escalaFonte < 0.72 ? '1' : '0'
-    comandos += linhas.map((linha, i) => `TEXT ${xCentralizado(linha)},${margem + i * alturaLinha},"${fonteTspl}",0,1,1,"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
+    // TSPL2 font 0 receives a size in points, not a bitmap multiplier.
+    const pontosTspl = Math.max(1, Math.round(24 / 203 * 72 * escalaFonte))
+    comandos += linhas.map((linha, i) => `TEXT ${xCentralizado(linha)},${margem + i * alturaLinha},"0",0,${pontosTspl},${pontosTspl},"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
     comandos += `\r\nPRINT ${quantidade},1\r\n`
   } else if (protocolo === 'ZPL') {
     comandos = `^XA\n^PW${largura}\n^LL${altura}\n^LH0,0\n`
@@ -339,24 +354,27 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm 
     comandos += `\n^PQ${quantidade}\n^XZ\n`
   } else if (protocolo === 'CPCL') {
     comandos = `! 0 ${dpi} ${dpi} ${altura} ${quantidade}\r\nPW ${largura}\r\n`
-    const fonteCpcl = escalaFonte < 0.72 ? 7 : 0
-    const tamanhoCpcl = escalaFonte < 0.72 ? 0 : 2
+    const multiplicador = Math.max(1, Math.floor(escala))
+    comandos += `SETMAG ${multiplicador} ${multiplicador}\r\n`
+    const fonteCpcl = escalaFonte < 0.85 ? 7 : 0
+    const tamanhoCpcl = escalaFonte < 0.85 ? 0 : 2
     comandos += linhas.map((linha, i) => `TEXT ${fonteCpcl} ${tamanhoCpcl} ${xCentralizado(linha)} ${margem + i * alturaLinha} ${linha}`).join('\r\n')
     comandos += '\r\nFORM\r\nPRINT\r\n'
   } else if (protocolo === 'EPL') {
     comandos = `N\nq${largura}\nQ${altura},0\n`
-    const fonteEpl = escalaFonte < 0.72 ? 1 : 3
-    comandos += linhas.map((linha, i) => `A${xCentralizado(linha)},${margem + i * alturaLinha},0,${fonteEpl},1,1,N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
+    const multiplicador = Math.max(1, Math.floor(escala))
+    const fonteEpl = escalaFonte < 0.85 ? 1 : 3
+    comandos += linhas.map((linha, i) => `A${xCentralizado(linha)},${margem + i * alturaLinha},0,${fonteEpl},${multiplicador},${multiplicador},N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
     comandos += `\nP${quantidade}\n`
   } else {
-    return bytesEscPos(texto, { larguraMm })
+    return bytesEscPos(texto, { larguraMm, tamanhoFonte })
   }
   return Buffer.from(comandos, 'ascii')
 }
 
-function layoutDriver(texto, larguraMm, alturaMm) {
+function layoutDriver(texto, larguraMm, alturaMm, tamanhoFonte = 'normal') {
   const alturaFixa = Number(alturaMm) >= 10 ? Number(alturaMm) : null
-  let escala = 1
+  let escala = 1 / escalaDaFonte(tamanhoFonte)
   let ajustado
   let linhas
   for (;;) {
@@ -365,8 +383,8 @@ function layoutDriver(texto, larguraMm, alturaMm) {
     ajustado = quebrarPorColunas(texto, colunas).trimEnd()
     linhas = Math.max(1, ajustado.split('\n').length)
     const necessaria = Math.max(10, (linhas + 1) * 25.4 / (6 * escala))
-    if (alturaFixa === null) return { texto: ajustado, alturaMm: necessaria, cpi: 10, lpi: 6 }
-    if (necessaria <= alturaFixa || escala >= 10) return { texto: ajustado, alturaMm: alturaFixa, cpi, lpi: 6 * escala }
+    if (alturaFixa === null) return { texto: ajustado, alturaMm: necessaria, cpi, lpi: 6 * escala, fontePt: 10 / escala }
+    if (necessaria <= alturaFixa || escala >= 10) return { texto: ajustado, alturaMm: alturaFixa, cpi, lpi: 6 * escala, fontePt: 10 / escala }
     escala += 0.02
   }
 }
@@ -377,15 +395,16 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
     (Number.isFinite(solicitada) && solicitada >= 20 && solicitada <= 320 ? solicitada : 58)
   const alturaMm = Number(config.alturasImpressoras?.[printer.name]) || null
   const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
+  const tamanhoFonte = config.fontesImpressoras?.[printer.name] || 'normal'
   const protocolo = config.protocolosImpressoras?.[printer.name] || (printer.raw || /RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
   const filaRaw = protocolo !== 'DRIVER'
   const temporario = path.join(app.getPath('temp'), `simplexsa-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
-  const layout = layoutDriver(texto, larguraMm, alturaMm)
-  const textoAjustado = filaRaw ? quebrarPorLargura(texto, larguraMm).trimEnd() : layout.texto
+  const layout = layoutDriver(texto, larguraMm, alturaMm, tamanhoFonte)
+  const textoAjustado = filaRaw ? texto : layout.texto
   await fs.writeFile(temporario, filaRaw
     ? (protocolo === 'ESC_POS'
-        ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm, centralizar })
-        : bytesEtiqueta(protocolo, texto, { copias, larguraMm, alturaMm, dpi, centralizar }))
+        ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte })
+        : bytesEtiqueta(protocolo, texto, { copias, larguraMm, alturaMm, dpi, centralizar, tamanhoFonte }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
     const repeticoes = filaRaw && protocolo !== 'ESC_POS' ? 1 : Math.max(1, Number(copias) || 1)
@@ -407,7 +426,7 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
           '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
           '-File', externalFilePath(path.join(__dirname, script)), '-PrinterName', printer.name, '-FilePath', temporario,
         ]
-        if (script === 'windows-fit.ps1') argumentos.push('-WidthMm', String(larguraMm), '-HeightMm', String(layout.alturaMm))
+        if (script === 'windows-fit.ps1') argumentos.push('-WidthMm', String(larguraMm), '-HeightMm', String(layout.alturaMm), '-FontSizePt', String(layout.fontePt))
         await executarArquivo('powershell.exe', argumentos, { timeout: 15000, windowsHide: true })
       } else {
         throw new Error(`Impressao RAW ainda nao suportada em ${process.platform}`)
@@ -634,6 +653,8 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
   const larguraMm = Number(value?.larguraMm)
   const alturaMm = value?.alturaMm === null || value?.alturaMm === '' || value?.alturaMm === undefined ? null : Number(value.alturaMm)
   const dpi = Number(value?.dpi)
+  const tamanhoFonte = value?.tamanhoFonte ?? 'normal'
+  if (!['small', 'normal', 'large'].includes(tamanhoFonte)) throw new Error('Tamanho da fonte inválido')
   const protocolo = String(value?.protocolo || 'DRIVER').toUpperCase()
   if (!impressora) throw new Error('Selecione uma impressora')
   if (!Number.isFinite(larguraMm) || larguraMm < 20 || larguraMm > 320) throw new Error('Largura deve estar entre 20 e 320 mm')
@@ -645,6 +666,7 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
     largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm },
     alturasImpressoras: { ...config.alturasImpressoras, [impressora]: alturaMm },
     dpisImpressoras: { ...config.dpisImpressoras, [impressora]: dpi },
+    fontesImpressoras: { ...config.fontesImpressoras, [impressora]: tamanhoFonte },
     protocolosImpressoras: { ...config.protocolosImpressoras, [impressora]: protocolo },
   })
 })

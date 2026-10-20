@@ -22,6 +22,20 @@ O empacotamento gera `latest.yml`/`latest-linux.yml` e seus checksums para o fee
 `https://doixp.com/atualizacoes/`. O workflow publica esses arquivos junto dos
 instaladores; o site só deve apontar para a nova release depois de publicada.
 
+## Fonte por impressora (1.5.21)
+
+Selecione a impressora e abra **Configurar → Tamanho da fonte**. Escolha
+**Pequena**, **Normal** ou **Grande** e salve. A preferência fica gravada para
+essa fila e vale para pedidos, contas, etiquetas e testes. Impressoras sem
+preferência mantêm Normal. As quebras de linha e a altura automática acompanham
+a fonte; com altura fixa, o texto é reduzido somente quando precisa caber.
+No driver, os tamanhos iniciais são 7,5, 10 e 20 pontos. Em impressoras térmicas,
+o tamanho usa os comandos de fonte suportados pelo protocolo.
+
+Referências: [Epson ESC M](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/esc_cm.html),
+[Epson GS !](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_exclamation.html),
+[TSC TSPL/TSPL2](https://fs.tscprinters.com/system/files/31-0000001-00_tspl_tspl2_programming_3_0.pdf).
+
 ## Desenvolvimento
 
 ```bash

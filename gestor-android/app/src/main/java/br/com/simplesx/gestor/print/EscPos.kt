@@ -5,12 +5,14 @@
 
 package br.com.simplesx.gestor.print
 
+import br.com.simplesx.gestor.data.PrinterFontSize
+
 import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 
 object EscPos {
-    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false): ByteArray {
-        val wrapped = wrapToWidth(text, widthMm)
+    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL): ByteArray {
+        val wrapped = wrapToWidth(text, widthMm, fontSize.scale)
         val normalized = Normalizer.normalize(wrapped.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD)
             .replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "")
             .replace('º', 'o').replace('ª', 'a').replace('–', '-').replace('—', '-')
@@ -18,6 +20,9 @@ object EscPos {
             .trimEnd()
         return ByteArrayOutputStream().use { out ->
             out.write(byteArrayOf(0x1B, 0x40))
+            out.write(byteArrayOf(0x1B, 0x4D, (if (fontSize == PrinterFontSize.SMALL) 1 else 0).toByte()))
+            out.write(byteArrayOf(0x1D, 0x21, (if (fontSize == PrinterFontSize.LARGE) 0x11 else 0).toByte()))
+            if (fontSize == PrinterFontSize.LARGE) out.write(byteArrayOf(0x1B, 0x33, 56))
             if (centered) out.write(byteArrayOf(0x1B, 0x61, 0x01))
             out.write((normalized + "\n").toByteArray(Charsets.US_ASCII))
             if (centered) out.write(byteArrayOf(0x1B, 0x61, 0x00))
@@ -27,8 +32,8 @@ object EscPos {
         }
     }
 
-    private fun wrapToWidth(text: String, widthMm: Int): String {
-        val columns = ((widthMm.coerceIn(20, 320) * 32) / 58).coerceAtLeast(8)
+    private fun wrapToWidth(text: String, widthMm: Int, scale: Double): String {
+        val columns = ((widthMm.coerceIn(20, 320) * 32) / 58 / scale).toInt().coerceAtLeast(1)
         return text.replace("\r\n", "\n").replace('\r', '\n').lines().flatMap { source ->
             if (source.isEmpty()) return@flatMap listOf("")
             val parts = mutableListOf<String>()

@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory = $true)][string]$PrinterName,
   [Parameter(Mandatory = $true)][string]$FilePath,
   [Parameter(Mandatory = $true)][double]$WidthMm,
-  [Parameter(Mandatory = $true)][double]$HeightMm
+  [Parameter(Mandatory = $true)][double]$HeightMm,
+  [ValidateRange(1, 30)][double]$FontSizePt = 10.0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,10 +28,10 @@ $handler = [System.Drawing.Printing.PrintPageEventHandler] {
   $format = New-Object System.Drawing.StringFormat
   $format.Trimming = [System.Drawing.StringTrimming]::None
   $format.FormatFlags = [System.Drawing.StringFormatFlags]::LineLimit
-  $fontSize = 10.0
+  $fontSize = $FontSizePt
   $font = $null
   try {
-    while ($fontSize -ge 3.0) {
+    while ($fontSize -ge 1.0) {
       if ($null -ne $font) { $font.Dispose() }
       $font = New-Object System.Drawing.Font('Consolas', $fontSize, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Point)
       $measured = $eventArgs.Graphics.MeasureString($text, $font, [int]$bounds.Width, $format)

@@ -73,3 +73,23 @@ test('erro de envio é propagado e arquivo temporário é removido', async () =>
   await assert.rejects(context.imprimirRawAgora({ texto: 'Teste' }, { name: 'Caixa' }), /Spooler indisponível/)
   assert.equal(calls.length, 1)
 })
+
+test('fonte salva por impressora chega ao driver Windows e CUPS sem afetar outra fila', async () => {
+  const config = { fontesImpressoras: { Caixa: 'large', Etiqueta: 'small' } }
+  const windows = fixture('win32', config)
+  await windows.print({ texto: 'Teste' }, { name: 'Caixa' })
+  await windows.print({ texto: 'Teste' }, { name: 'Etiqueta' })
+  await windows.print({ texto: 'Teste' }, { name: 'Outra' })
+  assert.deepEqual(windows.calls.map(({ args }) => args[args.indexOf('-FontSizePt') + 1]), ['20', '7.5', '10'])
+  const linux = fixture('linux', config)
+  await linux.print({ texto: 'Teste' }, { name: 'Caixa' })
+  assert.ok(linux.calls[0].args.includes('cpi=5.00'))
+  assert.ok(linux.calls[0].args.includes('lpi=3.00'))
+})
+
+test('fonte pequena RAW não recebe quebra antecipada no tamanho normal', async () => {
+  const f = fixture('linux', { fontesImpressoras: { Caixa: 'small' } })
+  const text = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  await f.print({ texto: text }, { name: 'Caixa', raw: true })
+  assert.ok([...f.files.values()][0].toString('ascii').includes(text))
+})

@@ -6,6 +6,7 @@
 package br.com.simplesx.gestor.print
 
 import br.com.simplesx.gestor.data.PrinterConfig
+import br.com.simplesx.gestor.data.PrinterFontSize
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
 import org.junit.Assert.assertEquals
@@ -100,6 +101,33 @@ class PrinterCommandsTest {
         ).toString(Charsets.US_ASCII)
         assertTrue(zpl.contains("^LL159"))
         assertFalse(zpl.contains("^A0N,24,24"))
+    }
+
+    @Test fun escPosFontSizesChangeCommandsAndWrapWithoutLosingText() {
+        val text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        val small = PrinterCommands.document(text, config(PrinterProtocol.ESC_POS).copy(fontSize = PrinterFontSize.SMALL))
+        val large = PrinterCommands.document(text, config(PrinterProtocol.ESC_POS).copy(fontSize = PrinterFontSize.LARGE))
+        assertTrue(small.indexOfSubsequence(byteArrayOf(0x1B, 0x4D, 1)) >= 0)
+        assertTrue(large.indexOfSubsequence(byteArrayOf(0x1D, 0x21, 0x11)) >= 0)
+        assertTrue(large.indexOfSubsequence(byteArrayOf(0x1B, 0x33, 56)) >= 0)
+        assertTrue(small.toString(Charsets.US_ASCII).contains(text))
+        assertTrue(large.toString(Charsets.US_ASCII).contains("ABCDEFGHIJKLMNOP\nQRSTUVWXYZ012345\n6789"))
+        assertEquals(PrinterFontSize.NORMAL, config(PrinterProtocol.ESC_POS).fontSize)
+    }
+
+    @Test fun labelProtocolsUseConfiguredFontAndExpandAutomaticHeight() {
+        fun command(protocol: PrinterProtocol, size: PrinterFontSize) = PrinterCommands.document("Teste", config(protocol).copy(fontSize = size)).toString(Charsets.US_ASCII)
+        assertTrue(command(PrinterProtocol.TSPL, PrinterFontSize.LARGE).contains("\"0\",0,17,17,"))
+        assertTrue(command(PrinterProtocol.ZPL, PrinterFontSize.LARGE).contains("^A0N,48,48"))
+        assertTrue(command(PrinterProtocol.CPCL, PrinterFontSize.LARGE).contains("SETMAG 2 2"))
+        assertTrue(command(PrinterProtocol.EPL, PrinterFontSize.LARGE).contains(",3,2,2,N,"))
+        assertTrue(command(PrinterProtocol.CPCL, PrinterFontSize.SMALL).contains("TEXT 7 0 "))
+        val normal = LabelLayouts.calculate("Linha um\nLinha dois", 58, null, 203)
+        val large = LabelLayouts.calculate("Linha um\nLinha dois", 58, null, 203, 2.0)
+        assertTrue(large.heightDots > normal.heightDots)
+        val fixed = LabelLayouts.calculate("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\nSegunda linha", 58, 20, 203, 2.0)
+        assertTrue(fixed.fontScale < 2.0)
+        assertTrue(fixed.margin * 2 + fixed.lines.size * fixed.lineHeight <= fixed.heightDots)
     }
 
     private fun ByteArray.indexOfSubsequence(value: ByteArray): Int =

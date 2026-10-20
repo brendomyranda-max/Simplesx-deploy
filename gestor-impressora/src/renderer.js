@@ -120,6 +120,7 @@ $('tamanho').onclick = () => {
   $('altura').value = alturaAtual(nome) ?? ''
   $('protocolo').value = protocoloAtual(nome)
   $('dpi').value = dpiAtual(nome)
+  $('tamanhoFonte').value = estado?.fontesImpressoras?.[nome] || 'normal'
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
   $('tamanhoDialog').showModal()
 }
@@ -135,10 +136,10 @@ $('salvarTamanho').onclick = async (event) => {
   try {
     const dpi = Number($('dpi').value)
     if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) return toast('Informe um DPI entre 100 e 1200')
-    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi)
+    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, $('tamanhoFonte').value)
     render(status)
     $('tamanhoDialog').close()
-    toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
+    toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${$('tamanhoFonte').selectedOptions[0].textContent} · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
   } catch (e) { toast(`Erro: ${e.message}`) }
 }
 

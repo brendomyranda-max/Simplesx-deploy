@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.ConnectionType
+import br.com.simplesx.gestor.data.PrinterFontSize
 import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
@@ -462,6 +463,22 @@ private fun GestorScreen(activity: ComponentActivity) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text("Tamanho da fonte", fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrinterFontSize.entries.forEach { size ->
+                        val label = when (size) {
+                            PrinterFontSize.SMALL -> "Pequena"
+                            PrinterFontSize.NORMAL -> "Normal"
+                            PrinterFontSize.LARGE -> "Grande"
+                        }
+                        if (printer.fontSize == size) {
+                            Button(onClick = { printer = printer.copy(fontSize = size) }, modifier = Modifier.weight(1f)) { Text(label) }
+                        } else {
+                            OutlinedButton(onClick = { printer = printer.copy(fontSize = size) }, modifier = Modifier.weight(1f)) { Text(label) }
+                        }
+                    }
+                }
+                Text("Salva por impressora. Fontes maiores usam mais linhas; em etiquetas de altura fixa, a fonte diminui se necessário.", style = MaterialTheme.typography.bodySmall)
                 Text("Resolução da cabeça", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(203, 300, 600).forEach { dpi ->

@@ -11,9 +11,9 @@ import br.com.simplesx.gestor.data.PrinterProtocol
 object PrinterCommands {
     fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = 3, cut: Boolean = true, centered: Boolean = false): ByteArray =
         when (printer.protocol) {
-            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered)
+            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize)
             PrinterProtocol.TSPL -> Tspl.label(
-                text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered,
+                text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered, printer.fontSize,
             )
             PrinterProtocol.ZPL -> zpl(text, printer, copies, centered)
             PrinterProtocol.CPCL -> cpcl(text, printer, copies, centered)
@@ -44,10 +44,12 @@ object PrinterCommands {
         val layout = labelLayout(text, printer)
         val dpi = printer.dpi.coerceIn(100, 1200)
         val scale = layout.dpiScale * layout.fontScale
-        val cpclFont = if (layout.fontScale < 0.72) "7 0" else "0 2"
+        val cpclFont = if (layout.fontScale < 0.85) "7 0" else "0 2"
         return buildString {
             append("! 0 $dpi $dpi ${layout.heightDots} ${copies.coerceIn(1, 20)}\r\n")
             append("PW ${layout.widthDots}\r\n")
+            val multiplier = scale.toInt().coerceAtLeast(1)
+            append("SETMAG $multiplier $multiplier\r\n")
             layout.lines.forEachIndexed { index, line ->
                 val x = if (centered) ((layout.widthDots - line.length * 12 * scale) / 2).toInt().coerceAtLeast(layout.margin) else layout.margin
                 append("TEXT $cpclFont $x ${layout.margin + index * layout.lineHeight} $line\r\n")
@@ -59,12 +61,13 @@ object PrinterCommands {
     private fun epl(text: String, printer: PrinterConfig, copies: Int, centered: Boolean): ByteArray {
         val layout = labelLayout(text, printer)
         val scale = layout.dpiScale * layout.fontScale
-        val eplFont = if (layout.fontScale < 0.72) 1 else 3
+        val multiplier = scale.toInt().coerceAtLeast(1)
+        val eplFont = if (layout.fontScale < 0.85) 1 else 3
         return buildString {
             append("N\nq${layout.widthDots}\nQ${layout.heightDots},${LabelLayouts.mmToDots(printer.gapMm, printer.dpi)}\n")
             layout.lines.forEachIndexed { index, line ->
                 val x = if (centered) ((layout.widthDots - line.length * 12 * scale) / 2).toInt().coerceAtLeast(layout.margin) else layout.margin
-                append("A$x,${layout.margin + index * layout.lineHeight},0,$eplFont,1,1,N,\"${line.replace("\\", " ").replace("\"", "'")}\"\n")
+                append("A$x,${layout.margin + index * layout.lineHeight},0,$eplFont,$multiplier,$multiplier,N,\"${line.replace("\\", " ").replace("\"", "'")}\"\n")
             }
             append("P${copies.coerceIn(1, 20)}\n")
         }.toByteArray(Charsets.US_ASCII)
@@ -73,6 +76,6 @@ object PrinterCommands {
     private fun labelLayout(text: String, printer: PrinterConfig): LabelLayout = LabelLayouts.calculate(
         text, printer.widthMm,
         printer.labelHeightMm.takeIf { printer.tsplPaperMode.name != "CONTINUOUS" },
-        printer.dpi,
+        printer.dpi, printer.fontSize.scale,
     )
 }

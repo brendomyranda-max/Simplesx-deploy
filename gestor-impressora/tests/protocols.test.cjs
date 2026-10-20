@@ -87,3 +87,42 @@ test('altura fixa reduz conteúdo apenas quando necessário', () => {
   assert.ok(driver.lpi > 6)
   assert.equal(driver.alturaMm, 20)
 })
+
+test('fontes ESC/POS mudam os comandos e a quebra de linha sem perder texto', () => {
+  const text = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const small = context.bytesEscPos(text, { tamanhoFonte: 'small', cortar: false })
+  const large = context.bytesEscPos(text, { tamanhoFonte: 'large', cortar: false })
+  assert.ok(small.includes(Buffer.from([0x1b, 0x4d, 1])))
+  assert.ok(large.includes(Buffer.from([0x1d, 0x21, 0x11])))
+  assert.ok(large.includes(Buffer.from([0x1b, 0x33, 56])))
+  assert.ok(small.toString('ascii').includes(text))
+  assert.ok(large.toString('ascii').includes('ABCDEFGHIJKLMNOP\nQRSTUVWXYZ012345\n6789'))
+  assert.ok(!context.bytesEscPos(text).includes(Buffer.from([0x1d, 0x21, 0x11])))
+})
+
+test('fontes alteram tamanho real nos quatro protocolos de etiqueta', () => {
+  const large = { tamanhoFonte: 'large' }
+  assert.match(context.bytesEtiqueta('TSPL', 'Teste', large).toString(), /"0",0,17,17,/)
+  assert.match(context.bytesEtiqueta('ZPL', 'Teste', large).toString(), /\^A0N,48,48/)
+  assert.match(context.bytesEtiqueta('CPCL', 'Teste', large).toString(), /SETMAG 2 2/)
+  assert.match(context.bytesEtiqueta('EPL', 'Teste', large).toString(), /,3,2,2,N,/)
+  assert.match(context.bytesEtiqueta('TSPL', 'Teste', { tamanhoFonte: 'small' }).toString(), /"0",0,6,6,/)
+  assert.match(context.bytesEtiqueta('CPCL', 'Teste', { tamanhoFonte: 'small' }).toString(), /TEXT 7 0 /)
+  assert.match(context.bytesEtiqueta('EPL', 'Teste', { tamanhoFonte: 'small' }).toString(), /,1,1,1,N,/)
+})
+
+test('fonte grande aumenta altura automática e se ajusta quando a altura é fixa', () => {
+  const text = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\nSegunda linha'
+  const normal = context.layoutEtiqueta(text)
+  const large = context.layoutEtiqueta(text, { tamanhoFonte: 'large' })
+  assert.equal(large.escalaFonte, 2)
+  assert.ok(large.altura > normal.altura)
+  const fixed = context.layoutEtiqueta(text, { tamanhoFonte: 'large', alturaMm: 20 })
+  assert.ok(fixed.escalaFonte < 2)
+  assert.ok(fixed.margem * 2 + fixed.linhas.length * fixed.alturaLinha <= fixed.altura)
+  const driver = context.layoutDriver(text, 58, null, 'large')
+  assert.equal(driver.fontePt, 20)
+  assert.equal(driver.cpi, 5)
+  assert.equal(driver.lpi, 3)
+  assert.ok(driver.alturaMm > context.layoutDriver(text, 58, null).alturaMm)
+})
