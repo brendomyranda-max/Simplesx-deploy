@@ -43,10 +43,10 @@ export async function saveOrderItems(c, env, body) {
   const productIds = [...new Set([...input.map((b) => b.produto_id).filter(Boolean), ...barcodes.map((b) => b.produto_id)])];
   const products = (await env.DB.prepare(`SELECT * FROM produtos WHERE id IN (SELECT value FROM json_each(?))
     OR codigo_interno IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(productIds), JSON.stringify(codes)).all()).results;
-  const extras = input.some((b) => b.acrescimos.length) ? (await env.DB.prepare(`SELECT a.produto_id,a.insumo_id,p.preco AS valor,p.nome AS insumo_nome
-    FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco>0 AND p.preco<=10000
+  const extras = input.some((b) => b.acrescimos.length) ? (await env.DB.prepare(`SELECT a.produto_id,a.insumo_id,CASE WHEN p.preco>0 AND p.preco<=10000 THEN p.preco ELSE a.valor END AS valor,p.nome AS insumo_nome
+    FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1
       AND p.tipo IN ('produto','insumo','composto')
-    WHERE a.produto_id IN (SELECT value FROM json_each(?)) ORDER BY a.ordem,a.id`)
+    WHERE a.produto_id IN (SELECT value FROM json_each(?)) AND (p.preco>0 AND p.preco<=10000 OR a.valor>0 AND a.valor<=10000) ORDER BY a.ordem,a.id`)
     .bind(JSON.stringify(products.map((p) => p.id))).all()).results : [];
   const byId = new Map(products.map((p) => [p.id, p]));
   const byCode = new Map(products.filter((p) => p.codigo_interno).map((p) => [p.codigo_interno, p]));
@@ -73,6 +73,7 @@ export async function saveOrderItems(c, env, body) {
       nome: b.nome || product?.nome || 'Item avulso',
       preco_unitario: preco,
       observacao,
+      acrescimos_json: escolhidos.length ? JSON.stringify(escolhidos.map((extra) => Number(extra.insumo_id))) : null,
       combo_escolhas_json: combo ? JSON.stringify(combo.escolhas) : null,
     });
   }
@@ -93,9 +94,9 @@ export async function saveOrderItems(c, env, body) {
       ON CONFLICT(estabelecimento_id,chave) DO NOTHING`)
       .bind(id, tenant, key, hash, command.id, c.user.id, timestamp, command.id, tenant, timestamp, data, command.id, tenant, tenant),
     db.prepare(`INSERT INTO comanda_itens
-      (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em,lancamento_id,funcionario_id)
+      (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,acrescimos_json,combo_escolhas_json,status,responsavel,criado_em,lancamento_id,funcionario_id)
       SELECT ?,?,json_extract(j.value,'$.pessoa_id'),json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.nome'),
-        json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.combo_escolhas_json'),
+        json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.acrescimos_json'),json_extract(j.value,'$.combo_escolhas_json'),
         'novo',?,?,?,? FROM json_each(?) j WHERE EXISTS (SELECT 1 FROM comanda_lancamentos WHERE id=?)`)
       .bind(tenant, command.id, c.user.nome || `Funcionário ${c.user.id}`, timestamp, id, c.user.id, data, id),
   ]);

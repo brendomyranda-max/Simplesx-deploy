@@ -1,5 +1,5 @@
 /**
- * Acréscimo de produto: um item cadastrado entra como observação e cobra o próprio preço de venda.
+ * Acréscimo de produto: usa o preço de venda do item ou um valor configurado para itens sem preço.
  */
 
 import { httpError, num } from './util.js';
@@ -9,7 +9,7 @@ export function precoDeVenda(valor) {
   const texto = typeof valor === 'string' ? valor.replace(',', '.') : valor;
   const numero = arredondar(texto);
   if (!Number.isFinite(numero) || numero <= 0 || numero > 10000) {
-    throw httpError(400, 'Cadastre o preço de venda do item. Ele é o valor do acréscimo.');
+    throw httpError(400, 'Cadastre o preço de venda do item ou informe o valor do acréscimo.');
   }
   return numero;
 }
@@ -22,10 +22,9 @@ export async function normalizarAcrescimos(env, produtoId, lista) {
   for (const item of lista) {
     const insumoId = Number(item?.insumo_id);
     if (!Number.isInteger(insumoId) || insumoId <= 0) throw httpError(400, 'Escolha o produto ou insumo do acréscimo');
-    if (produtoId && insumoId === Number(produtoId)) throw httpError(400, 'O acréscimo não pode ser o próprio produto');
     if (vistos.has(insumoId)) continue;
     vistos.add(insumoId);
-    itens.push({ insumo_id: insumoId });
+    itens.push({ insumo_id: insumoId, valor: item?.valor });
   }
   if (!itens.length) return [];
   const ph = itens.map(() => '?').join(',');
@@ -36,7 +35,8 @@ export async function normalizarAcrescimos(env, produtoId, lista) {
     if (!insumo || !num(insumo.ativo) || !['produto', 'insumo', 'composto'].includes(insumo.tipo)) {
       throw httpError(400, 'Escolha um produto simples, composto ou insumo ativo para o acréscimo');
     }
-    return { insumo_id: item.insumo_id, valor: precoDeVenda(insumo.preco), nome: String(insumo.nome || '').trim() };
+    const preco = num(insumo.preco) > 0 ? insumo.preco : item.valor;
+    return { insumo_id: item.insumo_id, valor: precoDeVenda(preco), nome: String(insumo.nome || '').trim() };
   });
 }
 
@@ -99,7 +99,6 @@ export async function vincularInsumosOpcoes(env, options, produtoId) {
   const vistos = new Set();
   for (const option of options) {
     if (!option.insumo_id) continue;
-    if (Number(option.insumo_id) === Number(produtoId)) throw httpError(400, 'O acréscimo não pode ser o próprio produto');
     if (option.tipo !== 'adicional') throw httpError(400, 'Somente acréscimo pode vincular um produto ou insumo');
     if (vistos.has(option.insumo_id)) throw httpError(400, 'Este item já está no acréscimo');
     vistos.add(option.insumo_id);
@@ -108,7 +107,7 @@ export async function vincularInsumosOpcoes(env, options, produtoId) {
       throw httpError(400, 'Escolha um produto simples, composto ou insumo ativo para o acréscimo');
     }
     option.nome = String(insumo.nome || '').trim().slice(0, 100);
-    option.preco_adicional = precoDeVenda(insumo.preco);
+    option.preco_adicional = precoDeVenda(num(insumo.preco) > 0 ? insumo.preco : option.preco_adicional);
   }
   return options;
 }

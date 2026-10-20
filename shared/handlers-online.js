@@ -1107,8 +1107,8 @@ async function liberarPedidoPagamento(env, row) {
        etapa='recebido', atualizado_em=? WHERE id=? AND comanda_id IS NULL AND etapa=?`
     ).bind(virtualNumber, virtualNumber, timestamp, id, etapaPendente),
     env.DB.prepare(
-      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em)
-       SELECT i.estabelecimento_id,o.comanda_id,NULL,i.produto_id,i.nome,i.quantidade,i.preco_unitario,NULLIF(i.observacao,''),i.combo_escolhas_json,'novo','Pedido online',?
+      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,acrescimos_json,combo_escolhas_json,status,responsavel,criado_em)
+       SELECT i.estabelecimento_id,o.comanda_id,NULL,i.produto_id,i.nome,i.quantidade,i.preco_unitario,NULLIF(i.observacao,''),i.acrescimos_json,i.combo_escolhas_json,'novo','Pedido online',?
        FROM pedidos_online o JOIN pedidos_online_itens i ON i.pedido_online_id=o.id AND i.estabelecimento_id=o.estabelecimento_id
        WHERE o.id=? AND o.comanda_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM comanda_itens ci WHERE ci.comanda_id=o.comanda_id)`
@@ -1504,7 +1504,7 @@ export async function getPublicStoreHandler(c, env) {
     const result = await env.DB.prepare(
       `SELECT * FROM cardapio_online_opcoes WHERE estabelecimento_id=? AND cardapio_produto_id IN (${placeholders}) AND ativo=1
        AND (insumo_id IS NULL OR EXISTS (SELECT 1 FROM produtos p WHERE p.id=cardapio_online_opcoes.insumo_id
-         AND p.estabelecimento_id=cardapio_online_opcoes.estabelecimento_id AND p.ativo=1 AND p.preco>0 AND p.preco<=10000
+         AND p.estabelecimento_id=cardapio_online_opcoes.estabelecimento_id AND p.ativo=1
          AND p.tipo IN ('produto','insumo','composto'))) ORDER BY ordem,id`
     ).bind(store.estabelecimento_id, ...ids).all();
     for (const option of result.results) {
@@ -1662,7 +1662,7 @@ export async function createPublicOrderHandler(c, env) {
     const options = await env.DB.prepare(
       `SELECT * FROM cardapio_online_opcoes WHERE estabelecimento_id=? AND id IN (${optPlaceholders}) AND ativo=1
        AND (insumo_id IS NULL OR EXISTS (SELECT 1 FROM produtos p WHERE p.id=cardapio_online_opcoes.insumo_id
-         AND p.estabelecimento_id=cardapio_online_opcoes.estabelecimento_id AND p.ativo=1 AND p.preco>0 AND p.preco<=10000
+         AND p.estabelecimento_id=cardapio_online_opcoes.estabelecimento_id AND p.ativo=1
          AND p.tipo IN ('produto','insumo','composto')))`
     ).bind(store.estabelecimento_id, ...optionIds).all();
     if (options.results.length !== optionIds.length) return c.json({ error: 'Uma opção escolhida não está mais disponível' }, 409);
@@ -1685,6 +1685,7 @@ export async function createPublicOrderHandler(c, env) {
     return {
       cardapio_produto_id: num(catalogProduct.id), produto_id: num(catalogProduct.produto_id), nome: catalogProduct.nome_exibicao || catalogProduct.produto_nome,
       quantidade: item.quantidade, preco_unitario: unitPrice, observacao: [combo?.descricao, orderNote(item.observacao, options)].filter(Boolean).join(' · '),
+      acrescimos_json: JSON.stringify(options.filter((option) => option.tipo === 'adicional' && option.insumo_id).map((option) => Number(option.insumo_id))),
       combo_escolhas_json: combo ? JSON.stringify(combo.escolhas) : null,
       opcoes_json: JSON.stringify(options.map((option) => ({ id: num(option.id), nome: option.nome, tipo: option.tipo, preco_adicional: num(option.preco_adicional) }))),
       total: Math.round(unitPrice * item.quantidade * 100) / 100,
@@ -1754,17 +1755,17 @@ export async function createPublicOrderHandler(c, env) {
     );
   }
   statements.push(env.DB.prepare(
-    `INSERT INTO pedidos_online_itens (estabelecimento_id,pedido_online_id,ordem,produto_id,cardapio_produto_id,nome,quantidade,preco_unitario,observacao,opcoes_json,combo_escolhas_json,total,criado_em)
+    `INSERT INTO pedidos_online_itens (estabelecimento_id,pedido_online_id,ordem,produto_id,cardapio_produto_id,nome,quantidade,preco_unitario,observacao,opcoes_json,acrescimos_json,combo_escolhas_json,total,criado_em)
      SELECT o.estabelecimento_id,o.id,CAST(j.key AS INTEGER),json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.cardapio_produto_id'),json_extract(j.value,'$.nome'),
-     json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.opcoes_json'),json_extract(j.value,'$.combo_escolhas_json'),json_extract(j.value,'$.total'),?
+     json_extract(j.value,'$.quantidade'),json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.opcoes_json'),json_extract(j.value,'$.acrescimos_json'),json_extract(j.value,'$.combo_escolhas_json'),json_extract(j.value,'$.total'),?
      FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND ${segurarPix ? 'o.etapa=?' : 'o.comanda_id IS NOT NULL'}
      AND NOT EXISTS (SELECT 1 FROM pedidos_online_itens pi WHERE pi.pedido_online_id=o.id)`
   ).bind(...(segurarPix ? [timestamp, data, store.estabelecimento_id, key, etapaPendente] : [timestamp, data, store.estabelecimento_id, key])));
   if (!segurarPix) {
     statements.push(env.DB.prepare(
-      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,combo_escolhas_json,status,responsavel,criado_em)
+      `INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario,observacao,acrescimos_json,combo_escolhas_json,status,responsavel,criado_em)
        SELECT o.estabelecimento_id,o.comanda_id,NULL,json_extract(j.value,'$.produto_id'),json_extract(j.value,'$.nome'),json_extract(j.value,'$.quantidade'),
-       json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.combo_escolhas_json'),'novo','Pedido online',?
+       json_extract(j.value,'$.preco_unitario'),NULLIF(json_extract(j.value,'$.observacao'),''),json_extract(j.value,'$.acrescimos_json'),json_extract(j.value,'$.combo_escolhas_json'),'novo','Pedido online',?
        FROM pedidos_online o,json_each(?) j WHERE o.estabelecimento_id=? AND o.chave=? AND o.comanda_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM comanda_itens ci WHERE ci.comanda_id=o.comanda_id)`
     ).bind(timestamp, data, store.estabelecimento_id, key));

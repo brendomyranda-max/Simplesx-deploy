@@ -3,7 +3,7 @@
  * Responsabilidade: Monta menu, cabeçalho e área principal das telas autenticadas.
  */
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -63,7 +63,10 @@ export function AppShell({
   const navigate = useNavigate();
   const toast = useToast();
 
-  const { pathname } = useLocation();
+  const { pathname, key: locationKey } = useLocation();
+  useEffect(() => { setOpen(false); }, [locationKey]);
+  // O carregamento de uma tela deve preservar o menu e sua animação de saída.
+  const content = <Suspense fallback={<div className="flex min-h-40 items-center justify-center text-sm text-slate-500" role="status">Carregando…</div>}>{children}</Suspense>;
   const isGestor = can('gestor');
   const isPdv = can('pdv_mercado');
   const isRest = can('restaurante');
@@ -111,7 +114,7 @@ export function AppShell({
             </button>
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{content}</main>
       </div>
     );
   }
@@ -199,6 +202,7 @@ export function AppShell({
         <button
           className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-white/10 md:hidden"
           onClick={() => setOpen(false)}
+          aria-label="Fechar menu"
         >
           <X className="h-5 w-5" />
         </button>
@@ -289,6 +293,7 @@ export function AppShell({
               onClick={() => setOpen(false)}
             />
             <motion.aside
+              id="menu-lateral-mobile"
               key="sidebar-drawer"
               initial={{ x: -280 }}
               animate={{ x: 0 }}
@@ -309,6 +314,8 @@ export function AppShell({
             className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 md:hidden"
             onClick={() => setOpen(true)}
             aria-label="Abrir menu"
+            aria-controls="menu-lateral-mobile"
+            aria-expanded={open}
           >
             <Menu className="h-6 w-6" />
           </button>
@@ -322,7 +329,7 @@ export function AppShell({
           <p className="ml-1 min-w-0 truncate font-extrabold text-slate-800">{empresaNome || 'DoixP'}</p>
 
         </header>
-        <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-6">{content}</main>
       </div>
     </div>
   );

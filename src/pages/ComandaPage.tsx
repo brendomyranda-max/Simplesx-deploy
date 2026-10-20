@@ -268,14 +268,16 @@ export function ComandaPage() {
     if (locked || item.status !== 'novo' || !item.produto_id) return;
     try {
       const produtoCompleto = produtos.find((p) => p.id === item.produto_id) || await produtoApi.get(item.produto_id);
-      const linhas = String(item.observacao || '').split('\n').map((o) => o.replace(/^\(|\)$/g, '').trim()).filter(Boolean);
+      const linhas = String(item.observacao || '').split(/\n| · /).map((o) => o.replace(/^\(|\)$/g, '').trim()).filter(Boolean);
       const cadastrados = produtoCompleto.acrescimos || [];
-      const ids: number[] = [];
+      const ids: number[] = item.acrescimos_json ? JSON.parse(item.acrescimos_json) : [];
       const livres: string[] = [];
       for (const linha of linhas) {
-        const acrescimo = cadastrados.find((itemAcrescimo) => `Adicionar: ${itemAcrescimo.insumo_nome}` === linha);
-        if (acrescimo) ids.push(acrescimo.insumo_id);
-        else {
+        const adicionais = linha.startsWith('Adicionar: ') ? linha.slice('Adicionar: '.length).split(',').map((nome) => nome.trim()) : [];
+        const reconhecidos = adicionais.map((nome) => cadastrados.find((extra) => extra.insumo_nome === nome));
+        if (adicionais.length && reconhecidos.every(Boolean)) {
+          if (!item.acrescimos_json) ids.push(...reconhecidos.map((extra) => extra!.insumo_id));
+        } else {
           for (const parte of linha.split(',')) {
             const texto = parte.trim();
             if (texto) livres.push(texto);

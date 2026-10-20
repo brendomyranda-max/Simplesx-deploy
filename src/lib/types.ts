@@ -470,6 +470,7 @@ export interface ComandaPessoa {
 }
 
 export interface ComandaItem {
+  acrescimos_json?: string | null;
   funcionario_id?: number | null;
   impressoes?: { impressora_id: number; status: string; erro: string | null }[];
   id: number;

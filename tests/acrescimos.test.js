@@ -5,6 +5,7 @@ import { TenantDb } from '../shared/tenant-db.js';
 import { createProdutoHandler, listProdutosHandler, updateProdutoHandler } from '../shared/handlers-catalog.js';
 import { updateItemComandaHandler } from '../shared/handlers-vendas.js';
 import { saveOrderItems } from '../shared/restaurant-orders.js';
+import { criarVendaRestaurante } from '../shared/restaurant-sale.js';
 import { createPublicOrderHandler, getPublicStoreHandler, updateOnlineStoreHandler, upsertOnlineCatalogProductHandler } from '../shared/handlers-online.js';
 
 function context(body = {}, params = {}, query = {}) {
@@ -53,14 +54,8 @@ test('produto composto guarda o acréscimo do insumo e o lançamento soma o valo
     ingredientes: [{ insumo_id: bacon.data.id, quantidade: 1, unidade: 'UN' }],
     acrescimos: [{ insumo_id: sal.data.id, valor: 3 }],
   }), f.a);
-  assert.equal(semPreco.status, 400);
-  assert.match(semPreco.data.error, /preço de venda/);
-  assert.equal((await updateProdutoHandler(context({
-    nome: 'X-Salada', tipo: 'composto', preco: 20,
-    ingredientes: [{ insumo_id: bacon.data.id, quantidade: 1, unidade: 'UN' }],
-    acrescimos: [{ insumo_id: composto.data.id, valor: 2 }],
-  }, { id: String(composto.data.id) }), f.a)).status, 400);
-
+  assert.equal(semPreco.status, 201);
+  assert.deepEqual(semPreco.data.acrescimos.map((item) => [item.insumo_nome, item.valor]), [['Sal', 3]]);
   f.DB.prepare("INSERT INTO mesas (id,estabelecimento_id,numero,status) VALUES (1,1,1,'ocupada')").run();
   f.DB.prepare("INSERT INTO comandas (id,estabelecimento_id,mesa_id,garcom_nome,status) VALUES (1,1,1,'Ana','aberta')").run();
   const pedido = await saveOrderItems(context({}, { id: '1' }), f.a, {
@@ -181,20 +176,18 @@ test('produto simples cadastra bife e bebida como adicionais e preserva os vínc
   assert.equal(cadastrados.data.acrescimos[0].insumo_id, bebida.data.id);
 });
 
-test('adicionais simples exigem preço e produto ativo da mesma loja, sem aceitar o próprio produto', async (t) => {
+test('adicionais simples exigem valor configurado, produto ativo e mesma loja', async (t) => {
   const f = fixture(t);
   const semPreco = await createProdutoHandler(context({ ...simplesBase, nome: 'Embalagem' }), f.a);
   const inativo = await createProdutoHandler(context({ ...simplesBase, nome: 'Bebida pausada', preco: 6 }), f.a);
   f.DB.prepare('UPDATE produtos SET ativo=0 WHERE id=?').bind(inativo.data.id).run();
   const outraLoja = await createProdutoHandler(context({ ...simplesBase, nome: 'Bebida alheia', preco: 7 }), f.b);
-  for (const adicional of [semPreco, inativo, outraLoja]) {
+  const semValor = await createProdutoHandler(context({ ...simplesBase, nome: 'Inválido', preco: 20, acrescimos: [{ insumo_id: semPreco.data.id }] }), f.a);
+  assert.equal(semValor.status, 400);
+  for (const adicional of [inativo, outraLoja]) {
     const result = await createProdutoHandler(context({ ...simplesBase, nome: 'Inválido', preco: 20, acrescimos: [{ insumo_id: adicional.data.id, valor: 1 }] }), f.a);
     assert.equal(result.status, 400);
   }
-  const prato = await createProdutoHandler(context({ ...simplesBase, nome: 'Prato', preco: 20 }), f.a);
-  const result = await updateProdutoHandler(context({ ...simplesBase, nome: 'Prato', preco: 20, acrescimos: [{ insumo_id: prato.data.id }] }, { id: String(prato.data.id) }), f.a);
-  assert.equal(result.status, 400);
-  assert.match(result.data.error, /próprio produto/);
   assert.equal(f.DB.prepare('SELECT COUNT(*) AS n FROM produtos WHERE nome=?').bind('Inválido').first().n, 0);
 });
 
@@ -214,15 +207,56 @@ test('produto composto também oferece bebida simples, com preço atualizado pel
   assert.equal(f.DB.prepare('SELECT valor FROM produto_acrescimos WHERE insumo_id=?').bind(bebida.data.id).first().valor, 8);
 });
 
+test('composto usa produto simples e insumo na receita e como acréscimos com valor próprio', async (t) => {
+  const f = fixture(t);
+  const pao = await createProdutoHandler(context({ ...simplesBase, nome: 'Pão simples', preco: null, custo:1, estoque_atual: 4 }), f.a);
+  const carne = await createProdutoHandler(context({ ...insumoBase, nome: 'Hambúrguer insumo', custo: 3, estoque_atual: 4 }), f.a);
+  const lanche = await createProdutoHandler(context({
+    nome: 'X-Burger', tipo: 'composto', unidade: 'UN', preco: 20,
+    ingredientes: [
+      { insumo_id: pao.data.id, quantidade: 1, unidade: 'UN' },
+      { insumo_id: carne.data.id, quantidade: 1, unidade: 'UN' },
+    ],
+    acrescimos: [{ insumo_id: pao.data.id, valor: 2 }, { insumo_id: carne.data.id, valor: 5 }],
+  }), f.a);
+  assert.equal(lanche.status, 201);
+  assert.deepEqual(lanche.data.ficha.map((item) => item.insumo_nome), ['Pão simples', 'Hambúrguer insumo']);
+  assert.deepEqual(lanche.data.acrescimos.map((item) => [item.insumo_nome, item.valor]), [['Pão simples', 2], ['Hambúrguer insumo', 5]]);
+  f.DB.prepare("INSERT INTO mesas (id,estabelecimento_id,numero,status) VALUES (1,1,1,'ocupada')").run();
+  f.DB.prepare("INSERT INTO comandas (id,estabelecimento_id,mesa_id,status) VALUES (1,1,1,'aberta')").run();
+  const pedido = await saveOrderItems(context({}, { id: '1' }), f.a, {
+    chave: 'burger-insumos-sem-preco-01', itens: [{ produto_id: lanche.data.id, quantidade: 1, acrescimos: [pao.data.id, carne.data.id] }],
+  });
+  assert.equal(pedido.itens[0].preco_unitario, 27);
+  await criarVendaRestaurante(f.a, {
+    numero: 'V-BURGER-INSUMOS-01', tipo: 'restaurante', comanda_id: 1, mesa_id: 1,
+    subtotal: 27, desconto: 0, taxa_servico: 0, total: 27,
+    responsavel: 'Ana', itens: [{ ...pedido.itens[0], total: 27 }], pagamentos: [{ forma: 'dinheiro', valor: 27 }],
+  });
+  assert.equal(f.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(pao.data.id).first().estoque_atual, 2);
+  assert.equal(f.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(carne.data.id).first().estoque_atual, 2);
+
+  await updateOnlineStoreHandler(context({ slug: 'burger-insumos', nome: 'Burger', ativo: true }), f.a);
+  const publicado = await upsertOnlineCatalogProductHandler(context({
+    produto_id: lanche.data.id, preco: 20,
+    opcoes: [{ nome: 'Pão', tipo: 'adicional', insumo_id: pao.data.id, preco_adicional: 2 }, { nome: 'Carne', tipo: 'adicional', insumo_id: carne.data.id, preco_adicional: 5 }],
+  }), f.a);
+  assert.equal(publicado.status, 201);
+  const menu = await getPublicStoreHandler(context({}, { slug: 'burger-insumos' }), { DB: f.DB });
+  assert.deepEqual(menu.data.produtos[0].opcoes.map((item) => [item.nome, item.preco_adicional]), [['Pão simples', 2], ['Hambúrguer insumo', 5]]);
+  const pedidoOnline = await createPublicOrderHandler(context({
+    chave: 'pedido-burger-insumos-01', cliente_nome: 'Ana', telefone: '11999990000', tipo_entrega: 'retirada', forma_pagamento: 'dinheiro',
+    itens: [{ cardapio_produto_id: publicado.data.id, quantidade: 1, opcoes_ids: menu.data.produtos[0].opcoes.map((item) => item.id) }],
+  }, { slug: 'burger-insumos' }), { DB: f.DB });
+  assert.equal(pedidoOnline.status, 201);
+  assert.equal(pedidoOnline.data.total, 27);
+});
+
 test('delivery aceita bebida simples como adicional e bloqueia opção que ficou sem preço ou inativa', async (t) => {
   const f = fixture(t);
   const bebida = await createProdutoHandler(context({ ...simplesBase, nome: 'Refrigerante', preco: 6 }), f.a);
   const prato = await createProdutoHandler(context({ ...simplesBase, nome: 'Prato', preco: 25 }), f.a);
   await updateOnlineStoreHandler(context({ slug: 'prato-bebida', nome: 'Prato e bebida', ativo: true }), f.a);
-  const proprio = await upsertOnlineCatalogProductHandler(context({
-    produto_id: prato.data.id, opcoes: [{ insumo_id: prato.data.id, tipo: 'adicional' }],
-  }), f.a);
-  assert.equal(proprio.status, 400);
   const catalogo = await upsertOnlineCatalogProductHandler(context({
     produto_id: prato.data.id, opcoes: [{ insumo_id: bebida.data.id, nome: 'Nome enviado', tipo: 'adicional', preco_adicional: 1 }],
   }), f.a);
@@ -240,12 +274,87 @@ test('delivery aceita bebida simples como adicional e bloqueia opção que ficou
   assert.equal(pedido.status, 201);
   assert.equal(pedido.data.total, 64);
   assert.match(f.DB.prepare('SELECT observacao FROM comanda_itens').first().observacao, /Adicionar: Refrigerante/);
-  for (const patch of [{ preco: null }, { preco: 7, ativo: false }]) {
-    await updateProdutoHandler(context({ ...simplesBase, nome: 'Refrigerante', ...patch }, { id: String(bebida.data.id) }), f.a);
-    const atualizado = await getPublicStoreHandler(context({}, { slug: 'prato-bebida' }), { DB: f.DB });
-    assert.deepEqual(atualizado.data.produtos[0].opcoes, []);
-    const recusado = await createPublicOrderHandler(context({ ...body, chave: 'simples-bebida-delivery-02' }, { slug: 'prato-bebida' }), { DB: f.DB });
-    assert.equal(recusado.status, 409);
-  }
-  assert.equal(f.DB.prepare('SELECT COUNT(*) AS n FROM pedidos_online').first().n, 1);
+  await updateProdutoHandler(context({ ...simplesBase, nome: 'Refrigerante', preco: null }, { id: String(bebida.data.id) }), f.a);
+  const semPreco = await getPublicStoreHandler(context({}, { slug: 'prato-bebida' }), { DB: f.DB });
+  assert.equal(semPreco.data.produtos[0].opcoes[0].preco_adicional, 7);
+  const pedidoSemPreco = await createPublicOrderHandler(context({ ...body, chave: 'simples-bebida-delivery-02' }, { slug: 'prato-bebida' }), { DB: f.DB });
+  assert.equal(pedidoSemPreco.status, 201);
+  await updateProdutoHandler(context({ ...simplesBase, nome: 'Refrigerante', preco: null, ativo: false }, { id: String(bebida.data.id) }), f.a);
+  const inativo = await getPublicStoreHandler(context({}, { slug: 'prato-bebida' }), { DB: f.DB });
+  assert.deepEqual(inativo.data.produtos[0].opcoes, []);
+  const recusado = await createPublicOrderHandler(context({ ...body, chave: 'simples-bebida-delivery-03' }, { slug: 'prato-bebida' }), { DB: f.DB });
+  assert.equal(recusado.status, 409);
+  assert.equal(f.DB.prepare('SELECT COUNT(*) AS n FROM pedidos_online').first().n, 2);
+});
+
+test('hambúrguer composto aceita a si mesmo como acréscimo e baixa duas receitas', async (t) => {
+  const f = fixture(t);
+  const pao = await createProdutoHandler(context({ ...insumoBase, nome: 'Pão', estoque_atual: 3 }), f.a);
+  const hamburguer = await createProdutoHandler(context({
+    nome: 'Hambúrguer', tipo: 'composto', unidade: 'UN', preco: 20,
+    ingredientes: [{ insumo_id: pao.data.id, quantidade: 1, unidade: 'UN' }],
+  }), f.a);
+  const id = hamburguer.data.id;
+  const editado = await updateProdutoHandler(context({
+    nome: 'Hambúrguer', tipo: 'composto', unidade: 'UN', preco: 20,
+    ingredientes: [{ insumo_id: pao.data.id, quantidade: 1, unidade: 'UN' }],
+    acrescimos: [{ insumo_id: id }],
+  }, { id: String(id) }), f.a);
+  assert.equal(editado.status, 200);
+  assert.deepEqual(editado.data.acrescimos.map((item) => item.insumo_id), [id]);
+  f.DB.prepare("INSERT INTO mesas (id,estabelecimento_id,numero,status) VALUES (1,1,1,'ocupada')").run();
+  f.DB.prepare("INSERT INTO comandas (id,estabelecimento_id,mesa_id,garcom_nome,status) VALUES (1,1,1,'Ana','aberta')").run();
+  const pedido = await saveOrderItems(context({}, { id: '1' }), f.a, {
+    chave: 'hamburguer-extra-self-01', itens: [{ produto_id: id, quantidade: 1, acrescimos: [id] }],
+  });
+  assert.equal(pedido.itens[0].preco_unitario, 40);
+  assert.equal(pedido.itens[0].observacao, 'Adicionar: Hambúrguer');
+  assert.equal(pedido.itens[0].acrescimos_json, JSON.stringify([id]));
+  const venda = await criarVendaRestaurante(f.a, {
+    numero: 'V-SELF-01', tipo: 'restaurante', comanda_id: 1, mesa_id: 1,
+    subtotal: 40, desconto: 0, taxa_servico: 0, total: 40,
+    responsavel: 'Ana', itens: [{ ...pedido.itens[0], total: 40 }], pagamentos: [{ forma: 'dinheiro', valor: 40 }],
+  });
+  assert.ok(venda.id);
+  assert.equal(f.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(pao.data.id).first().estoque_atual, 1);
+  assert.equal(f.DB.prepare('SELECT custo_unitario FROM venda_itens WHERE venda_id=?').bind(venda.id).first().custo_unitario, 2);
+  await assert.rejects(() => criarVendaRestaurante(f.a, {
+    numero: 'V-SELF-02', tipo: 'restaurante', comanda_id: 1, mesa_id: 1,
+    subtotal: 40, desconto: 0, taxa_servico: 0, total: 40,
+    responsavel: 'Ana', itens: [{ ...pedido.itens[0], total: 40 }], pagamentos: [{ forma: 'dinheiro', valor: 40 }],
+  }), (error) => error.status === 400 && /Estoque insuficiente/.test(error.message));
+});
+
+test('delivery aceita o próprio hambúrguer composto como adicional e preserva a baixa', async (t) => {
+  const f = fixture(t);
+  const pao = await createProdutoHandler(context({ ...insumoBase, nome: 'Pão', estoque_atual: 3 }), f.a);
+  const hamburguer = await createProdutoHandler(context({
+    nome: 'Hambúrguer', tipo: 'composto', unidade: 'UN', preco: 20,
+    ingredientes: [{ insumo_id: pao.data.id, quantidade: 1, unidade: 'UN' }],
+  }), f.a);
+  await updateOnlineStoreHandler(context({ slug: 'burger-extra', nome: 'Burger', ativo: true, taxa_entrega: 0 }), f.a);
+  const publicado = await upsertOnlineCatalogProductHandler(context({
+    produto_id: hamburguer.data.id, preco: 20,
+    opcoes: [{ nome: 'Extra', tipo: 'adicional', insumo_id: hamburguer.data.id }],
+  }), f.a);
+  assert.equal(publicado.status, 201);
+  const menu = await getPublicStoreHandler(context({}, { slug: 'burger-extra' }), { DB: f.DB });
+  const opcao = menu.data.produtos[0].opcoes[0];
+  assert.equal(opcao.nome, 'Hambúrguer');
+  const pedido = await createPublicOrderHandler(context({
+    chave: 'pedido-burger-self-01', cliente_nome: 'Ana', telefone: '11999990000',
+    tipo_entrega: 'retirada', forma_pagamento: 'dinheiro',
+    itens: [{ cardapio_produto_id: publicado.data.id, quantidade: 1, opcoes_ids: [opcao.id] }],
+  }, { slug: 'burger-extra' }), { DB: f.DB });
+  assert.equal(pedido.status, 201);
+  assert.equal(pedido.data.total, 40);
+  const item = f.DB.prepare('SELECT * FROM comanda_itens').first();
+  assert.equal(item.acrescimos_json, JSON.stringify([hamburguer.data.id]));
+  await criarVendaRestaurante(f.a, {
+    numero: 'V-ONLINE-SELF-01', tipo: 'restaurante', comanda_id: item.comanda_id,
+    mesa_id: f.DB.prepare('SELECT mesa_id FROM comandas WHERE id=?').bind(item.comanda_id).first().mesa_id,
+    subtotal: 40, desconto: 0, taxa_servico: 0, total: 40,
+    responsavel: 'Ana', itens: [{ ...item, total: 40 }], pagamentos: [{ forma: 'dinheiro', valor: 40 }],
+  });
+  assert.equal(f.DB.prepare('SELECT estoque_atual FROM produtos WHERE id=?').bind(pao.data.id).first().estoque_atual, 1);
 });

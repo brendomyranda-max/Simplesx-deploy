@@ -127,7 +127,7 @@ export function ProdutoForm({
     fornecedorApi.list().then(setFornecedores).catch(() => {});
     produtoApi.list().then((lista) => {
       const ativos = lista.filter((item) => item.ativo);
-      setInsumos(ativos.filter((item) => item.tipo === 'insumo' || item.tipo === 'composto'));
+      setInsumos(ativos.filter((item) => ['produto', 'insumo', 'composto'].includes(item.tipo || '')));
       setProdutosCombo(ativos.filter((item) => item.id !== produto?.id && (item.tipo === 'produto' || item.tipo === 'composto')));
       setOpcoesAcrescimo(ativos.filter((item) => ['produto', 'insumo', 'composto'].includes(item.tipo || '')));
     }).catch(() => {});
@@ -428,7 +428,7 @@ export function ProdutoForm({
                 <AcrescimoCadastro
                   linhas={entregaAcrescimos}
                   onChange={setEntregaAcrescimos}
-                  insumos={opcoesAcrescimo.filter((item) => item.id !== Number(entregaId))}
+                  insumos={opcoesAcrescimo}
                 />
                 <Field label="Descrição para o cliente" hint={opcoesEstoque.find((item) => item.id === Number(entregaId))?.tipo === 'composto' ? 'Os ingredientes da ficha já estão escritos. Acrescente algo a mais se quiser.' : undefined}>
                   <Textarea value={entregaDescricao} onChange={(event) => setEntregaDescricao(event.target.value)} rows={3} placeholder="O que vem neste item" />
@@ -528,7 +528,7 @@ export function ProdutoForm({
               <h3 className="text-sm font-bold text-slate-800">Ficha técnica (receita)</h3>
             </div>
             <p className="mb-3 text-xs text-slate-500">
-              Adicione os insumos usados em uma unidade deste produto. O CMV é calculado automaticamente e a venda baixa os insumos do estoque.
+              Adicione os produtos simples, insumos ou compostos usados em uma unidade deste produto. O CMV é calculado automaticamente e a venda baixa os itens do estoque.
             </p>
             <div className="space-y-2">
               {form.ficha.map((l: LinhaFicha, i: number) => {
@@ -539,10 +539,10 @@ export function ProdutoForm({
                 return (
                   <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
                     <Select value={String(l.insumo_id)} onChange={(e) => setFicha(i, 'insumo_id', e.target.value ? Number(e.target.value) : '')} className="min-w-[180px] flex-1">
-                      <option value="">Selecione o insumo...</option>
+                      <option value="">Selecione o produto ou insumo...</option>
                       {insumos.filter((ins) => ins.id !== produto?.id).map((ins) => (
                         <option key={ins.id} value={ins.id}>
-                          {ins.nome} ({ins.tipo === 'composto' ? 'produto composto' : ins.conteudo_quantidade ? `${ins.conteudo_quantidade} ${ins.conteudo_unidade}/${ins.unidade}` : ins.unidade})
+                          {ins.nome} ({ins.tipo === 'composto' ? 'produto composto' : ins.tipo === 'produto' ? 'produto simples' : ins.conteudo_quantidade ? `insumo · ${ins.conteudo_quantidade} ${ins.conteudo_unidade}/${ins.unidade}` : `insumo · ${ins.unidade}`})
                         </option>
                       ))}
                     </Select>
@@ -591,7 +591,7 @@ export function ProdutoForm({
                 icon={<Plus className="h-4 w-4" />}
                 onClick={() => set('ficha', [...form.ficha, { insumo_id: '', quantidade: '', unidade: form.unidade || 'UN' }])}
               >
-                Adicionar insumo ou composto
+                Adicionar produto ou insumo
               </Button>
             </div>
 
@@ -806,7 +806,7 @@ export function ProdutoForm({
           <AcrescimoCadastro
             linhas={form.acrescimos}
             onChange={(linhas) => set('acrescimos', linhas)}
-            insumos={opcoesAcrescimo.filter((item) => item.id !== produto?.id)}
+            insumos={opcoesAcrescimo}
           />
         )}
 

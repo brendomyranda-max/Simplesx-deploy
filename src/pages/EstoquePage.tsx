@@ -3,7 +3,7 @@
  * Responsabilidade: Implementa a tela EstoquePage.tsx e coordena seus dados e ações.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Boxes, Plus, Search, Pencil, Trash2, PackageMinus, ChefHat } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
@@ -57,26 +57,38 @@ export function EstoquePage() {
   const [ajusteQtd, setAjusteQtd] = useState('');
   const [ajusteMotivo, setAjusteMotivo] = useState('');
   const [config, setConfig] = useState<ConfigEmpresa | null>(null);
+  const carregamentoSeq = useRef(0);
+  const ativoRef = useRef(true);
   const toast = useToast();
   const confirm = useConfirm();
 
   const carregar = async () => {
+    if (!ativoRef.current || tipo === 'delivery') return;
+    const sequencia = ++carregamentoSeq.current;
     setLoad(true);
     try {
-      const [p, c] = await Promise.all([produtoApi.list(busca, undefined, tipo === 'todos' ? undefined : tipo), configApi.get()]);
-      setProdutos(p);
-      setConfig(c);
+      const p = await produtoApi.list(busca, undefined, tipo === 'todos' ? undefined : tipo);
+      if (ativoRef.current && sequencia === carregamentoSeq.current) setProdutos(p);
     } catch (e: any) {
-      toast('error', e?.error || 'Erro ao carregar produtos');
+      if (ativoRef.current && sequencia === carregamentoSeq.current) toast('error', e?.error || 'Erro ao carregar produtos');
     } finally {
-      setLoad(false);
+      if (ativoRef.current && sequencia === carregamentoSeq.current) setLoad(false);
     }
   };
 
   useEffect(() => {
+    let ativo = true;
+    ativoRef.current = true;
+    configApi.get().then((c) => { if (ativo) setConfig(c); })
+      .catch((e: any) => { if (ativo) toast('error', e?.error || 'Erro ao carregar configurações'); });
+    return () => { ativo = false; ativoRef.current = false; carregamentoSeq.current++; };
+  }, []);
+
+  useEffect(() => {
+    carregamentoSeq.current++;
     if (tipo === 'delivery') return;
     const t = setTimeout(carregar, 250);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); carregamentoSeq.current++; };
   }, [busca, tipo]);
 
   const porCategoria = (p: Produto) => p.categorias?.map((c) => c.nome).join(', ') || '-';

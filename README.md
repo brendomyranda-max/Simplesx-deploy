@@ -12,10 +12,10 @@ instalações, os dados e os endereços existentes.
 
 ## Versão da aplicação
 
-**DoixP 0.1.0-beta.3 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
+**DoixP 0.1.0-beta.4 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
 A versão exibida na aplicação vem do `package.json`, sincronizado com o
 `package-lock.json`. As próximas versões de pré-lançamento seguem
-`0.1.0-beta.4`, `0.1.0-beta.5` e assim por diante. Cada publicação recebe uma tag
+`0.1.0-beta.5`, `0.1.0-beta.6` e assim por diante. Cada publicação recebe uma tag
 `doixp-v<VERSÃO>` e uma release marcada como pré-lançamento no GitHub.
 Ao liberar a versão estável, retire o sufixo beta e a identificação de
 pré-lançamento da interface.

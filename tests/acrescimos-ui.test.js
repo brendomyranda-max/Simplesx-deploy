@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
 
-test('cadastro de produto simples permite selecionar bebida e salva seu acréscimo', async (t) => {
+test('cadastro oferece produto simples e insumo no acréscimo e na ficha do composto', async (t) => {
   const prato = { id: 1, nome: 'Prato', tipo: 'produto', unidade: 'UN', ativo: 1, preco: 25, sem_vencimento: 1 };
+  let selecionado = prato;
   const lista = [
     prato,
     { id: 2, nome: 'Bife extra', tipo: 'insumo', ativo: 1, preco: 8 },
@@ -56,7 +57,7 @@ test('cadastro de produto simples permite selecionar bebida e salva seu acrésci
   const source = prepare(readFileSync('src/components/ProdutoForm.tsx', 'utf8')).replace("'@/components/AcrescimoCadastro'", JSON.stringify(extrasModule));
   const { ProdutoForm } = await import(module(source));
   const { lerAcrescimos } = await import(extrasModule);
-  const render = () => { index = 0; return ProdutoForm({ open: true, produto: prato, onClose() {}, onSaved() {} }); };
+  const render = () => { index = 0; return ProdutoForm({ open: true, produto: selecionado, onClose() {}, onSaved() {} }); };
   const nodes = (node) => Array.isArray(node) ? node.flatMap(nodes) : node && typeof node === 'object' ? [node, ...nodes(node.props.children)] : [];
   const find = (tree, predicate) => { const node = nodes(tree).find(predicate); assert.ok(node, 'controle esperado disponível'); return node; };
   render();
@@ -69,14 +70,21 @@ test('cadastro de produto simples permite selecionar bebida e salva seu acrésci
   tree = render();
   const field = find(tree, (node) => node.type === 'Field' && node.props.label === 'Acréscimo de produto');
   const choices = nodes(field).filter((node) => node.type === 'option').map((node) => node.props.value);
-  assert.deepEqual(choices, ['', 2, 3]);
-  find(field, (node) => node.type === 'Select').props.onChange({ target: { value: '3' } });
+  assert.deepEqual(choices, ['', 1, 2, 3, 4]);
+  find(field, (node) => node.type === 'Select').props.onChange({ target: { value: '4' } });
+  tree = render();
+  find(tree, (node) => node.type === 'Input' && node.props['aria-label'] === 'Valor do acréscimo').props.onChange({ target: { value: '5,50' } });
+  tree = render();
+  await find(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(saved.acrescimos, [{ insumo_id: 4, valor: 5.5 }]);
+  const fieldComValor = find(tree, (node) => node.type === 'Field' && node.props.label === 'Acréscimo de produto');
+  find(fieldComValor, (node) => node.type === 'Select').props.onChange({ target: { value: '3' } });
   tree = render();
   await find(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
   assert.deepEqual(errors, []);
   assert.equal(saved.tipo, 'produto');
   assert.deepEqual(saved.acrescimos, [{ insumo_id: 3, valor: 6 }]);
-  assert.match(lerAcrescimos([{ insumo_id: 4, nome: 'Somente estoque', preco: 10 }], lista).erro, /preço de venda/);
+  assert.match(lerAcrescimos([{ insumo_id: 4, valor: '', nome: 'Somente estoque', preco: 10 }], lista).erro, /preço de venda/);
 
   // O preço e a disponibilidade no restaurante são configurações independentes.
   find(tree, (node) => node.type === 'Toggle' && node.props.label === 'Aparece no Restaurante').props.onChange(true);
@@ -100,4 +108,18 @@ test('cadastro de produto simples permite selecionar bebida e salva seu acrésci
   await find(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
   assert.equal(saved.preco, null);
   assert.equal(saved.exibir_restaurante, true);
+
+  selecionado = { id: 7, nome: 'Lanche', tipo: 'composto', unidade: 'UN', ativo: 1, preco: 20, sem_vencimento: 1,
+    ficha: [{ insumo_id: 2, quantidade: 1, unidade: 'UN' }] };
+  states.length = 0;
+  effects.length = 0;
+  mount = true;
+  render();
+  mount = false;
+  for (const effect of effects) effect();
+  await new Promise((resolve) => setImmediate(resolve));
+  tree = render();
+  const receita = nodes(tree).find((node) => node.type === 'Select' && nodes(node).some((option) => option.type === 'option' && option.props.children.includes('Selecione o produto ou insumo...')));
+  assert.ok(receita, 'seletor da ficha técnica disponível');
+  assert.deepEqual(nodes(receita).filter((node) => node.type === 'option').map((node) => node.props.value), ['', 1, 2, 3, 4]);
 });

@@ -4,6 +4,14 @@ import { quantidadeEmUnidadesEstoque } from './units.js';
 // Uma leitura carrega o grafo da receita. Repetir 50 drinks não deve fazer
 // 50 viagens ao banco para buscar os mesmos três ingredientes.
 async function planejarVenda(env, itens) {
+  const acrescimosDe = (item) => {
+    if (!item.acrescimos_json) return [];
+    try {
+      const ids = JSON.parse(item.acrescimos_json);
+      if (!Array.isArray(ids) || ids.length > 25 || ids.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error();
+      return ids;
+    } catch { throw httpError(400, 'Acréscimos do pedido inválidos'); }
+  };
   const escolhasDe = (item) => {
     if (!item.combo_escolhas_json) return [];
     try {
@@ -14,7 +22,7 @@ async function planejarVenda(env, itens) {
       return ids;
     } catch { throw httpError(400, 'Escolhas do combo inválidas'); }
   };
-  const ids = [...new Set(itens.flatMap((item) => [item.produto_id, ...escolhasDe(item)]).filter(Boolean))];
+  const ids = [...new Set(itens.flatMap((item) => [item.produto_id, ...escolhasDe(item), ...acrescimosDe(item)]).filter(Boolean))];
   const rows = await env.DB.prepare(`WITH RECURSIVE receita_ids(id) AS (
     SELECT CAST(value AS INTEGER) FROM json_each(?)
     UNION
@@ -52,20 +60,26 @@ async function planejarVenda(env, itens) {
     if (p?.tipo === 'combo' && !it.combo_escolhas_json) throw httpError(400, 'Combo sem escolhas registradas');
     const comboIds = p?.tipo === 'combo' ? escolhasDe(it) : [];
     if (p?.tipo === 'combo' && !comboIds.length) throw httpError(400, 'Combo sem produtos escolhidos');
-    const folhas = p?.tipo === 'combo' ? comboIds.flatMap((id) => folhasDe(id)) : p ? folhasDe(p.id) : [];
+    const folhas = [
+      ...(p?.tipo === 'combo' ? comboIds.flatMap((id) => folhasDe(id)) : p ? folhasDe(p.id) : []),
+      ...acrescimosDe(it).flatMap((id) => folhasDe(id).map((folha) => ({
+        ...folha, acrescimo: true, verificarAcrescimo: produtos.get(id)?.tipo === 'composto',
+      }))),
+    ];
     for (const folha of folhas) {
       const insumo = produtos.get(folha.produto_id);
       const baixa = baixas.get(insumo.id) || { produto_id: insumo.id, nome: insumo.nome, quantidade: 0,
         custo_unitario: num(insumo.custo), disponivel: num(insumo.estoque_atual), verificar: false, receita_direta: 0, descricoes: new Set() };
       baixa.quantidade += folha.quantidade * num(it.quantidade);
-      baixa.verificar ||= p.tipo === 'composto' || p.tipo === 'combo';
-      if (p.id === insumo.id) baixa.receita_direta += num(it.quantidade) * num(it.preco_unitario);
-      baixa.descricoes.add(p.nome);
+      baixa.verificar ||= p?.tipo === 'composto' || p?.tipo === 'combo' || folha.verificarAcrescimo;
+      if (!folha.acrescimo && p?.id === insumo.id) baixa.receita_direta += num(it.quantidade) * num(it.preco_unitario);
+      baixa.descricoes.add(folha.acrescimo ? `${p?.nome || it.nome} + ${produtos.get(folha.produto_id)?.nome}` : p?.nome || it.nome);
       baixas.set(insumo.id, baixa);
     }
-    const custoCombo = folhas.reduce((s, folha) => s + folha.quantidade * num(produtos.get(folha.produto_id)?.custo), 0);
+    const custoAdicionais = folhas.filter((folha) => folha.acrescimo).reduce((s, folha) => s + folha.quantidade * num(produtos.get(folha.produto_id)?.custo), 0);
+    const custoCombo = folhas.filter((folha) => !folha.acrescimo).reduce((s, folha) => s + folha.quantidade * num(produtos.get(folha.produto_id)?.custo), 0);
     return { produto_id: it.produto_id ?? null, nome: it.nome, quantidade: num(it.quantidade),
-      custo_unitario: p?.tipo === 'combo' ? custoCombo : it.custo_unitario ?? num(p?.custo), preco_unitario: num(it.preco_unitario), total: it.total,
+      custo_unitario: (p?.tipo === 'combo' ? custoCombo : it.custo_unitario ?? num(p?.custo)) + custoAdicionais, preco_unitario: num(it.preco_unitario), total: it.total,
       combo_escolhas_json: it.combo_escolhas_json || null };
   });
   for (const baixa of baixas.values()) {

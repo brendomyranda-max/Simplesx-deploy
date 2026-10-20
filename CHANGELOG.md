@@ -1,5 +1,13 @@
 # Histórico de versões do DoixP
 
+## 0.1.0-beta.4 — Correções de navegação e cadastro
+
+- Menu lateral fecha ao escolher uma tela, inclusive no primeiro acesso a telas carregadas sob demanda. O carregamento fica na área de conteúdo, preservando o menu e o cabeçalho.
+- Busca e abas de estoque ignoram respostas antigas; a configuração da empresa é consultada uma vez por abertura da página.
+- Remoção de pessoas valida a comanda, preserva pedidos na conta geral e atualiza a contagem na mesma transação, protegendo contas em fechamento e cartões em atendimento.
+- Produtos compostos aceitam produtos simples, insumos e outros compostos na ficha técnica. Acréscimos exibem também itens sem preço de venda, com valor configurável no formulário.
+- Acréscimos podem usar o próprio produto. Os itens escolhidos ficam registrados no pedido e entram no custo e na baixa de estoque, inclusive no delivery e em pagamentos individuais.
+
 ## 0.1.0-beta.3 — Otimização do atendimento
 
 - Telas carregadas conforme o acesso e arquivos com hash reutilizados pelo navegador, reduzindo o download inicial.

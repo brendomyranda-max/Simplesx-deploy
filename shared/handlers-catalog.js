@@ -259,10 +259,10 @@ export async function listProdutosHandler(c, env) {
       'SELECT produto_id, texto FROM produto_comentarios ORDER BY ordem, id'
     ).all(),
     env.DB.prepare(
-      `SELECT a.produto_id, a.insumo_id, p.preco AS valor, p.nome AS insumo_nome
-       FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco > 0 AND p.preco<=10000
+      `SELECT a.produto_id, a.insumo_id, CASE WHEN p.preco>0 AND p.preco<=10000 THEN p.preco ELSE a.valor END AS valor, p.nome AS insumo_nome
+       FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1
          AND p.tipo IN ('produto','insumo','composto')
-       ORDER BY a.ordem, a.id`
+       WHERE (p.preco>0 AND p.preco<=10000 OR a.valor>0 AND a.valor<=10000) ORDER BY a.ordem, a.id`
     ).all(),
     env.DB.prepare(
       `SELECT f.produto_id, f.insumo_id, f.quantidade, f.unidade, p.unidade AS insumo_unidade, p.estoque_atual AS insumo_estoque,

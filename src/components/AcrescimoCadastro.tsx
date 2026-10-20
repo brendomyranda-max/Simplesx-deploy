@@ -1,9 +1,9 @@
 /**
- * Cadastro do acréscimo: o item entra como observação e cobra o próprio preço de venda.
+ * Cadastro do acréscimo: usa o preço de venda do item ou um valor informado para itens sem preço.
  */
 
 import { Plus, Trash2 } from 'lucide-react';
-import { Button, Field, Select } from '@/components/ui';
+import { Button, Field, Input, Select } from '@/components/ui';
 import { fmtBRL } from '@/lib/format';
 
 export interface LinhaAcrescimo {
@@ -20,9 +20,10 @@ export function lerAcrescimos(linhas: LinhaAcrescimo[], insumos: { id: number; n
     if (linha.insumo_id === '') continue;
     const insumo = insumos.find((item) => item.id === Number(linha.insumo_id));
     const nome = insumo?.nome || linha.nome || '';
-    const valor = Number(insumo ? insumo.preco : linha.preco);
+    const precoVenda = Number(insumo ? insumo.preco : linha.preco);
+    const valor = Number.isFinite(precoVenda) && precoVenda > 0 ? precoVenda : Number(String(linha.valor).replace(',', '.'));
     if (!nome || !Number.isFinite(valor) || valor <= 0 || valor > 10000) {
-      return { erro: 'Cadastre o preço de venda do item. Ele é o valor do acréscimo.', itens: [] };
+      return { erro: 'Informe o preço de venda do item ou o valor do acréscimo.', itens: [] };
     }
     if (usados.has(Number(linha.insumo_id))) return { erro: 'Este item já está no acréscimo', itens: [] };
     usados.add(Number(linha.insumo_id));
@@ -44,11 +45,12 @@ export function AcrescimoCadastro({
     onChange(linhas.map((linha, i) => (i === indice ? { ...linha, ...patch } : linha)));
   };
   return (
-    <Field label="Acréscimo de produto" hint="Escolha um produto ou insumo, como bife extra ou bebida. O preço de venda do item soma no pedido e o adicional aparece na observação.">
+    <Field label="Acréscimo de produto" hint="Escolha um produto simples, insumo ou composto. Se ele não tiver preço de venda, informe quanto cobrar pelo acréscimo.">
       <div className="space-y-2">
         {linhas.map((linha, indice) => {
           const insumo = insumos.find((item) => item.id === linha.insumo_id);
           const preco = Number(insumo ? insumo.preco : linha.preco);
+          const temPrecoVenda = Number.isFinite(preco) && preco > 0;
           return (
           <div key={indice} className="flex flex-wrap items-center gap-2">
             <Select
@@ -60,7 +62,7 @@ export function AcrescimoCadastro({
                   insumo_id: id,
                   nome: escolhido?.nome || linha.nome,
                   preco: escolhido?.preco ?? null,
-                  valor: escolhido?.preco != null ? String(escolhido.preco) : '',
+                  valor: escolhido?.preco != null && Number(escolhido.preco) > 0 ? String(escolhido.preco) : '',
                 });
               }}
               className="min-w-[180px] flex-1"
@@ -69,11 +71,20 @@ export function AcrescimoCadastro({
               {linha.insumo_id !== '' && !insumos.some((item) => item.id === linha.insumo_id) && (
                 <option value={linha.insumo_id}>{linha.nome || `Item ${linha.insumo_id}`}</option>
               )}
-              {insumos.filter((item) => item.preco != null && Number(item.preco) > 0).map((item) => (
-                <option key={item.id} value={item.id}>{item.nome} · {fmtBRL(item.preco)}</option>
+              {insumos.map((item) => (
+                <option key={item.id} value={item.id}>{item.nome} · {item.preco != null && Number(item.preco) > 0 ? fmtBRL(item.preco) : 'definir valor'}</option>
               ))}
             </Select>
-            <span className="w-28 text-sm font-bold text-slate-700">{Number.isFinite(preco) && preco > 0 ? fmtBRL(preco) : 'Sem preço de venda'}</span>
+            {temPrecoVenda ? <span className="w-28 text-sm font-bold text-slate-700">{fmtBRL(preco)}</span> : (
+              <Input
+                aria-label="Valor do acréscimo"
+                inputMode="decimal"
+                className="w-28"
+                placeholder="R$ 0,00"
+                value={linha.valor}
+                onChange={(event) => alterar(indice, { valor: event.target.value })}
+              />
+            )}
             <button
               type="button"
               onClick={() => onChange(linhas.filter((_, i) => i !== indice))}

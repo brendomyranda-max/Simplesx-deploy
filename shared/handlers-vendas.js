@@ -763,10 +763,41 @@ export async function addPessoaHandler(c, env) {
 }
 
 export async function removePessoaHandler(c, env) {
+  const pessoa = await env.DB.prepare(`SELECT p.id,c.status,c.fechamento_bloqueado_ate FROM comanda_pessoas p
+    JOIN comandas c ON c.id=p.comanda_id WHERE p.id=? AND p.comanda_id=?`)
+    .bind(c.params.pid, c.params.id).first();
+  if (!pessoa) return c.json({ error: 'Pessoa não encontrada nesta comanda' }, 404);
+  const timestamp = now();
+  if (pessoa.status !== 'aberta' || pessoa.fechamento_bloqueado_ate > timestamp) {
+    return c.json({ error: 'A comanda não está aberta para remover pessoas' }, 409);
+  }
   const cartao = await env.DB.prepare('SELECT id FROM cartao_atendimentos WHERE pessoa_id=? AND encerrado_em IS NULL').bind(c.params.pid).first();
   if (cartao) return c.json({ error: 'Esta pessoa tem um cartão em atendimento. Feche sua conta na Recepção antes de remover.' }, 409);
-  await env.DB.prepare('DELETE FROM comanda_pessoas WHERE id=?').bind(c.params.pid).run();
-  await env.DB.prepare('UPDATE comanda_itens SET pessoa_id=NULL WHERE pessoa_id=?').bind(c.params.pid).run();
+  const tenant = estabelecimentoId(env), db = env.rawDB;
+  const aberta = `EXISTS (SELECT 1 FROM comandas WHERE id=? AND estabelecimento_id=? AND status='aberta'
+    AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?))`;
+  let removida;
+  try {
+    // Preserva todos os pedidos na conta geral. A remoção e a contagem precisam
+    // confirmar juntas para a divisão da conta nunca usar pessoas inexistentes.
+    [, removida] = await db.batch([
+      db.prepare(`UPDATE comanda_itens SET pessoa_id=NULL WHERE pessoa_id=? AND comanda_id=? AND estabelecimento_id=?
+        AND EXISTS (SELECT 1 FROM comanda_pessoas WHERE id=? AND comanda_id=? AND estabelecimento_id=?) AND ${aberta}`)
+        .bind(c.params.pid, c.params.id, tenant, c.params.pid, c.params.id, tenant, c.params.id, tenant, timestamp),
+      db.prepare(`DELETE FROM comanda_pessoas WHERE id=? AND comanda_id=? AND estabelecimento_id=? AND ${aberta}`)
+        .bind(c.params.pid, c.params.id, tenant, c.params.id, tenant, timestamp),
+      db.prepare(`UPDATE comandas SET pessoas_count=(SELECT COUNT(*) FROM comanda_pessoas
+        WHERE comanda_id=? AND estabelecimento_id=?) WHERE id=? AND estabelecimento_id=? AND status='aberta'
+        AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?)`)
+        .bind(c.params.id, tenant, c.params.id, tenant, timestamp),
+    ]);
+  } catch (error) {
+    if (String(error?.message).includes('cartao_em_atendimento')) {
+      return c.json({ error: 'Esta pessoa tem um cartão em atendimento. Feche sua conta na Recepção antes de remover.' }, 409);
+    }
+    throw error;
+  }
+  if (!removida.meta.changes) return c.json({ error: 'A comanda ou a pessoa mudou. Atualize antes de remover novamente.' }, 409);
   return c.json({ ok: true });
 }
 
@@ -803,12 +834,14 @@ export async function updateItemComandaHandler(c, env) {
 
   let observacao = '';
   let preco = num(item.preco_unitario);
+  let ids = [];
   try {
     const cadastrados = item.produto_id ? await acrescimosDoProduto(env, item.produto_id) : [];
     const anteriores = separarObservacao(item.observacao, cadastrados);
-    const ids = Array.isArray(b.acrescimos) ? idsAcrescimo(b.acrescimos) : anteriores.ids;
+    const idsAntes = item.acrescimos_json ? idsAcrescimo(JSON.parse(item.acrescimos_json)) : anteriores.ids;
+    ids = Array.isArray(b.acrescimos) ? idsAcrescimo(b.acrescimos) : idsAntes;
     const escolhidos = selecionarAcrescimos(ids, cadastrados);
-    const extraAntes = precoComAcrescimos(0, selecionarAcrescimos(anteriores.ids, cadastrados));
+    const extraAntes = precoComAcrescimos(0, selecionarAcrescimos(idsAntes, cadastrados));
     const base = arredondar(num(item.preco_unitario) - extraAntes);
     preco = precoComAcrescimos(Math.max(0, base), escolhidos);
     const livres = typeof b.observacao === 'string' ? b.observacao : anteriores.livres.join('\n');
@@ -816,13 +849,13 @@ export async function updateItemComandaHandler(c, env) {
   } catch (error) {
     return c.json({ error: error?.message || 'Acréscimo inválido' }, error?.status || 400);
   }
-  const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=?, preco_unitario=? WHERE id=? AND comanda_id=? AND versao=?
+  const updated = await env.DB.prepare(`UPDATE comanda_itens SET observacao=?, preco_unitario=?, acrescimos_json=? WHERE id=? AND comanda_id=? AND versao=?
     AND status='novo' AND NOT EXISTS (SELECT 1 FROM pedido_impressoes WHERE item_id=comanda_itens.id)
     AND EXISTS (SELECT 1 FROM comandas WHERE id=? AND status='aberta' AND (fechamento_bloqueado_ate IS NULL OR fechamento_bloqueado_ate<=?))`)
-    .bind(observacao || null, preco, item.id, item.comanda_id, item.versao, item.comanda_id, now())
+    .bind(observacao || null, preco, ids.length ? JSON.stringify(ids) : null, item.id, item.comanda_id, item.versao, item.comanda_id, now())
     .run();
   if (!updated.meta.changes) return c.json({ error: 'Pedido alterado em outra tela. Atualize e tente novamente.' }, 409);
-  return c.json({ ...item, observacao: observacao || null, preco_unitario: preco, versao: item.versao + 1 });
+  return c.json({ ...item, observacao: observacao || null, preco_unitario: preco, acrescimos_json: ids.length ? JSON.stringify(ids) : null, versao: item.versao + 1 });
 }
 
 export async function updateItemStatusHandler(c, env) {

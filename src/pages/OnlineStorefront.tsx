@@ -966,7 +966,7 @@ function ConfigurarProduto({ produto, categorias, composto = false, onClose, onS
           <label>Preço normal no delivery<input inputMode="decimal" value={preco} onChange={(event) => setPreco(event.target.value)} /></label>
           <label>Preço promocional (opcional)<input inputMode="decimal" value={precoPromocional} onChange={(event) => setPrecoPromocional(event.target.value)} placeholder="Sem promoção" /><small>O cliente verá o preço normal riscado e pagará este valor.</small></label>
           <label>Categoria no cardápio<select value={categoriaId} onChange={(event) => setCategoriaId(event.target.value)}><option value="">Sem categoria</option>{categorias.map((categoria) => <option key={categoria.id} value={categoria.id}>{categoria.nome}</option>)}</select></label>
-          <AcrescimoCadastro linhas={acrescimos} onChange={setAcrescimos} insumos={insumos.filter((item) => item.id !== produto.produto_id)} />
+          <AcrescimoCadastro linhas={acrescimos} onChange={setAcrescimos} insumos={insumos} />
           <label>Descrição{composto ? <small> Os ingredientes da ficha já estão escritos. Acrescente algo a mais se quiser.</small> : null}<textarea value={descricao} onChange={(event) => setDescricao(event.target.value)} rows={3} /></label>
           <label>Ingredientes que o cliente pode tirar<input value={ingredientes} onChange={(event) => setIngredientes(event.target.value)} placeholder="Separe por vírgula" /></label>
           <button className="online-photo-btn" type="button" onClick={() => setDisponivel((valor) => !valor)}>{disponivel ? 'Disponível para compra' : 'Pausado · aparece como indisponível'}</button>

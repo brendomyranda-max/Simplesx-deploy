@@ -203,10 +203,10 @@ export async function getFichaCompleta(env, id) {
 
 export async function acrescimosDoProduto(env, produtoId) {
   const rows = await env.DB.prepare(
-    `SELECT a.insumo_id, p.preco AS valor, p.nome AS insumo_nome
-     FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco > 0 AND p.preco<=10000
+    `SELECT a.insumo_id, CASE WHEN p.preco>0 AND p.preco<=10000 THEN p.preco ELSE a.valor END AS valor, p.nome AS insumo_nome
+     FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1
        AND p.tipo IN ('produto','insumo','composto')
-     WHERE a.produto_id=? ORDER BY a.ordem, a.id`
+     WHERE a.produto_id=? AND (p.preco>0 AND p.preco<=10000 OR a.valor>0 AND a.valor<=10000) ORDER BY a.ordem, a.id`
   ).bind(produtoId).all();
   return rows.results.map((row) => ({ insumo_id: Number(row.insumo_id), valor: num(row.valor), insumo_nome: row.insumo_nome }));
 }
