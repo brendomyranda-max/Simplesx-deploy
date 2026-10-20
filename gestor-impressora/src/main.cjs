@@ -77,6 +77,7 @@ function configPadrao() {
     alturasImpressoras: {},
     dpisImpressoras: {},
     fontesImpressoras: {},
+    colunasImpressoras: {},
     protocolosImpressoras: {},
     iniciarComSistema: true,
     conectado: true,
@@ -119,6 +120,7 @@ async function salvarConfig(novaConfig) {
     alturasImpressoras: normalizarAlturas(novaConfig.alturasImpressoras || config?.alturasImpressoras),
     dpisImpressoras: normalizarDpis(novaConfig.dpisImpressoras || config?.dpisImpressoras),
     fontesImpressoras: normalizarFontes(novaConfig.fontesImpressoras || config?.fontesImpressoras),
+    colunasImpressoras: normalizarColunas(novaConfig.colunasImpressoras || config?.colunasImpressoras),
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
     conectado: novaConfig.conectado ?? config?.conectado ?? true,
@@ -154,7 +156,7 @@ function normalizarAlturas(value) {
 }
 
 function normalizarProtocolos(value) {
-  const permitidos = new Set(['DRIVER', 'ESC_POS', 'TSPL', 'ZPL', 'CPCL', 'EPL'])
+  const permitidos = new Set(['DRIVER', 'ESC_POS', 'DIEBOLD', 'TSPL', 'ZPL', 'CPCL', 'EPL'])
   const result = {}
   if (!value || typeof value !== 'object') return result
   for (const [nome, protocolo] of Object.entries(value)) {
@@ -169,6 +171,16 @@ function normalizarFontes(value) {
   if (!value || typeof value !== 'object') return result
   for (const [nome, fonte] of Object.entries(value)) {
     if (nome && ['small', 'normal', 'large'].includes(fonte)) result[nome] = fonte
+  }
+  return result
+}
+
+function normalizarColunas(value) {
+  const result = {}
+  if (!value || typeof value !== 'object') return result
+  for (const [nome, colunas] of Object.entries(value)) {
+    const numero = Number(colunas)
+    if (nome && Number.isInteger(numero) && numero >= 8 && numero <= 160) result[nome] = numero
   }
   return result
 }
@@ -256,8 +268,10 @@ async function resolverImpressora(nomeSolicitado) {
   return selectPrinter(await listarImpressoras(), nomeSolicitado, config.impressoraPadrao)
 }
 
-function quebrarPorLargura(texto, larguraMm, fonte = 'normal') {
-  const colunas = Math.max(1, Math.floor((Number(larguraMm) || 58) * 32 / 58 / escalaDaFonte(fonte)))
+function quebrarPorLargura(texto, larguraMm, fonte = 'normal', colunasNormal = null) {
+  const base = Number.isInteger(colunasNormal) && colunasNormal >= 8 && colunasNormal <= 160
+    ? colunasNormal : (Number(larguraMm) || 58) * 32 / 58
+  const colunas = Math.max(1, Math.floor(base / escalaDaFonte(fonte)))
   return quebrarPorColunas(texto, colunas)
 }
 
@@ -279,8 +293,8 @@ function quebrarPorColunas(texto, colunas) {
   }).join('\n')
 }
 
-function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, centralizar = false, tamanhoFonte = 'normal' } = {}) {
-  const normalizado = quebrarPorLargura(texto, larguraMm, tamanhoFonte)
+function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null } = {}) {
+  const normalizado = quebrarPorLargura(textoAscii(texto).replaceAll('\t', '    '), larguraMm, tamanhoFonte, colunasNormal)
     .replace(/\r\n?/g, '\n')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -295,6 +309,31 @@ function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, cent
   if (centralizar) partes.push(Buffer.from([0x1b, 0x61, 0x00]))
   if (alimentar > 0) partes.push(Buffer.from([0x1b, 0x64, Math.min(255, Number(alimentar) || 0)]))
   if (cortar) partes.push(Buffer.from([0x1d, 0x56, 0x00]))
+  return Buffer.concat(partes)
+}
+
+// IM453H em modo Padrão/Padrão II: ESC M não recebe parâmetro e GS ! não
+// seleciona fonte. SO é reaplicado por linha porque Padrão II o cancela no LF.
+// Manual do firmware I43.51.00.PD1.XX, seções 3.1 e 3.3.
+function bytesDiebold(texto, { alimentar = 0, cortar = true, larguraMm = 80, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null } = {}) {
+  const base = Number.isInteger(colunasNormal) && colunasNormal >= 8 && colunasNormal <= 160
+    ? colunasNormal : larguraMm <= 58 ? Math.max(8, Math.floor(larguraMm * 32 / 58)) : Math.floor(Math.min(larguraMm, 80) * 48 / 80)
+  // A densidade condensada varia com o CPP do firmware. Conserva o limite
+  // normal na fonte pequena; a expandida precisa de metade das colunas.
+  const colunas = Math.max(1, Math.floor(base / (tamanhoFonte === 'large' ? 2 : 1)))
+  const linhas = quebrarPorColunas(textoAscii(texto).replaceAll('\t', '    '), colunas).split('\n')
+  const reset = Buffer.from([0x1b, 0x4d, 0x1b, 0x5d, 0])
+  const partes = [reset]
+  if (tamanhoFonte === 'small') partes.push(Buffer.from([0x0f]))
+  if (tamanhoFonte === 'large') partes.push(Buffer.from([0x1b, 0x5d, 1]))
+  for (const linha of linhas) {
+    if (tamanhoFonte === 'large') partes.push(Buffer.from([0x0e]))
+    const espacos = centralizar ? ' '.repeat(Math.max(0, Math.floor((colunas - linha.length) / 2))) : ''
+    partes.push(Buffer.from(espacos + linha + (tamanhoFonte === 'large' ? '\n\n' : '\n'), 'ascii'))
+  }
+  partes.push(reset)
+  if (alimentar > 0) partes.push(Buffer.from('\n'.repeat(Math.min(255, Math.floor(Number(alimentar) || 0))), 'ascii'))
+  if (cortar) partes.push(Buffer.from([0x11]))
   return Buffer.concat(partes)
 }
 
@@ -396,18 +435,20 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
   const alturaMm = Number(config.alturasImpressoras?.[printer.name]) || null
   const dpi = Number(config.dpisImpressoras?.[printer.name]) || 203
   const tamanhoFonte = config.fontesImpressoras?.[printer.name] || 'normal'
+  const colunasNormal = config.colunasImpressoras?.[printer.name] || null
   const protocolo = config.protocolosImpressoras?.[printer.name] || (printer.raw || /RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
   const filaRaw = protocolo !== 'DRIVER'
+  const cupomRaw = protocolo === 'ESC_POS' || protocolo === 'DIEBOLD'
   const temporario = path.join(app.getPath('temp'), `simplexsa-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
   const layout = layoutDriver(texto, larguraMm, alturaMm, tamanhoFonte)
   const textoAjustado = filaRaw ? texto : layout.texto
   await fs.writeFile(temporario, filaRaw
-    ? (protocolo === 'ESC_POS'
-        ? bytesEscPos(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte })
+    ? (cupomRaw
+        ? (protocolo === 'DIEBOLD' ? bytesDiebold : bytesEscPos)(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte, colunasNormal })
         : bytesEtiqueta(protocolo, texto, { copias, larguraMm, alturaMm, dpi, centralizar, tamanhoFonte }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
-    const repeticoes = filaRaw && protocolo !== 'ESC_POS' ? 1 : Math.max(1, Number(copias) || 1)
+    const repeticoes = filaRaw && !cupomRaw ? 1 : Math.max(1, Number(copias) || 1)
     for (let copia = 0; copia < repeticoes; copia += 1) {
       if (process.platform === 'linux') {
         if (filaRaw) {
@@ -654,19 +695,22 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
   const alturaMm = value?.alturaMm === null || value?.alturaMm === '' || value?.alturaMm === undefined ? null : Number(value.alturaMm)
   const dpi = Number(value?.dpi)
   const tamanhoFonte = value?.tamanhoFonte ?? 'normal'
+  const colunasNormal = value?.colunasNormal == null || value.colunasNormal === '' ? null : Number(value.colunasNormal)
+  if (colunasNormal !== null && (!Number.isInteger(colunasNormal) || colunasNormal < 8 || colunasNormal > 160)) throw new Error('Colunas devem estar entre 8 e 160 ou vazias para automático')
   if (!['small', 'normal', 'large'].includes(tamanhoFonte)) throw new Error('Tamanho da fonte inválido')
   const protocolo = String(value?.protocolo || 'DRIVER').toUpperCase()
   if (!impressora) throw new Error('Selecione uma impressora')
   if (!Number.isFinite(larguraMm) || larguraMm < 20 || larguraMm > 320) throw new Error('Largura deve estar entre 20 e 320 mm')
   if (alturaMm !== null && (!Number.isFinite(alturaMm) || alturaMm < 10 || alturaMm > 500)) throw new Error('Altura deve estar entre 10 e 500 mm')
   if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) throw new Error('DPI deve estar entre 100 e 1200')
-  if (!['DRIVER', 'ESC_POS', 'TSPL', 'ZPL', 'CPCL', 'EPL'].includes(protocolo)) throw new Error('Protocolo inválido')
+  if (!['DRIVER', 'ESC_POS', 'DIEBOLD', 'TSPL', 'ZPL', 'CPCL', 'EPL'].includes(protocolo)) throw new Error('Protocolo inválido')
   return salvarConfig({
     ...config,
     largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm },
     alturasImpressoras: { ...config.alturasImpressoras, [impressora]: alturaMm },
     dpisImpressoras: { ...config.dpisImpressoras, [impressora]: dpi },
     fontesImpressoras: { ...config.fontesImpressoras, [impressora]: tamanhoFonte },
+    colunasImpressoras: { ...config.colunasImpressoras, [impressora]: colunasNormal },
     protocolosImpressoras: { ...config.protocolosImpressoras, [impressora]: protocolo },
   })
 })

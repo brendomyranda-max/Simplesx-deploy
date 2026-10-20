@@ -11,7 +11,8 @@ import br.com.simplesx.gestor.data.PrinterProtocol
 object PrinterCommands {
     fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = 3, cut: Boolean = true, centered: Boolean = false): ByteArray =
         when (printer.protocol) {
-            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize)
+            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal)
+            PrinterProtocol.DIEBOLD -> Diebold.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal)
             PrinterProtocol.TSPL -> Tspl.label(
                 text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered, printer.fontSize,
             )
@@ -22,6 +23,7 @@ object PrinterCommands {
 
     fun displayName(protocol: PrinterProtocol): String = when (protocol) {
         PrinterProtocol.ESC_POS -> "ESC/POS (cupons)"
+        PrinterProtocol.DIEBOLD -> "Diebold IM453H (Padrão / Padrão II)"
         PrinterProtocol.TSPL -> "TSPL/TSPL2 (etiquetas)"
         PrinterProtocol.ZPL -> "ZPL (Zebra)"
         PrinterProtocol.CPCL -> "CPCL (portáteis)"

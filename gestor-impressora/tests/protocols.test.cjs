@@ -126,3 +126,33 @@ test('fonte grande aumenta altura automática e se ajusta quando a altura é fix
   assert.equal(driver.lpi, 3)
   assert.ok(driver.alturaMm > context.layoutDriver(text, 58, null).alturaMm)
 })
+
+test('Diebold usa fonte e corte nativos sem enviar comandos ESC/POS incompatíveis', () => {
+  const options = { larguraMm: 80, alimentar: 2 }
+  const normal = context.bytesDiebold('Ação 123', options)
+  const small = context.bytesDiebold('Texto', { ...options, tamanhoFonte: 'small' })
+  const large = context.bytesDiebold('Primeira\nSegunda', { ...options, tamanhoFonte: 'large' })
+  assert.deepEqual([...normal.subarray(0, 5)], [0x1b, 0x4d, 0x1b, 0x5d, 0])
+  assert.ok(normal.toString('ascii').includes('Acao 123'))
+  assert.ok(small.includes(Buffer.from([0x0f])))
+  assert.ok(large.includes(Buffer.from([0x1b, 0x5d, 1])))
+  assert.ok(large.includes(Buffer.from('\x0ePrimeira\n\n\x0eSegunda\n\n', 'ascii')))
+  for (const bytes of [normal, small, large]) {
+    assert.ok(!bytes.includes(Buffer.from([0x1d, 0x21])))
+    assert.ok(!bytes.includes(Buffer.from([0x1d, 0x56])))
+    assert.equal(bytes.at(-1), 0x11)
+    assert.ok(bytes.subarray(-8, -3).equals(Buffer.from([0x1b, 0x4d, 0x1b, 0x5d, 0])))
+  }
+  assert.notEqual(context.bytesDiebold('Sem corte', { cortar: false }).at(-1), 0x11)
+})
+
+test('Diebold ajusta bobina e fonte sem perder texto; colunas calibradas prevalecem', () => {
+  const text = '1234567890'.repeat(8)
+  const line = (width, size, columns) => context.bytesDiebold(text, { larguraMm: width, tamanhoFonte: size, colunasNormal: columns, cortar: false }).toString('ascii')
+  assert.ok(line(80, 'normal').includes(text.slice(0, 48) + '\n' + text.slice(48)))
+  assert.ok(line(58, 'normal').includes(text.slice(0, 32) + '\n'))
+  assert.ok(line(80, 'large', 42).includes('\x0e' + text.slice(0, 21) + '\n\n'))
+  assert.ok(context.bytesDiebold('ABC', { colunasNormal: 10, centralizar: true }).toString('ascii').includes('   ABC\n'))
+  assert.ok(context.bytesEscPos(text, { colunasNormal: 42, larguraMm: 80 }).toString('ascii').includes(text.slice(0, 42) + '\n'))
+  assert.ok(context.bytesEscPos(text, { colunasNormal: 42, tamanhoFonte: 'large' }).toString('ascii').includes(text.slice(0, 21) + '\n'))
+})

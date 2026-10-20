@@ -29,4 +29,13 @@ test('salvar fonte persiste por impressora e preserva token, papel e demais fila
   assert.equal(saved.fontesImpressoras.Antiga, 'normal')
   await assert.rejects(handlers['salvar-impressora']({}, { ...body, tamanhoFonte: 'enorme' }), /fonte inválido/)
   assert.equal(saved.fontesImpressoras.Caixa, 'large')
+  await handlers['salvar-impressora']({}, { ...body, protocolo: 'DIEBOLD', colunasNormal: 48 })
+  assert.equal(saved.protocolosImpressoras.Caixa, 'DIEBOLD')
+  assert.equal(saved.colunasImpressoras.Caixa, 48)
+  assert.equal(saved.fontesImpressoras.Bar, 'small')
+  for (const colunasNormal of [0, 7, 161, 42.5, 'abc']) {
+    await assert.rejects(handlers['salvar-impressora']({}, { ...body, colunasNormal }), /Colunas/)
+  }
+  await handlers['salvar-impressora']({}, { ...body, colunasNormal: null })
+  assert.equal(saved.colunasImpressoras.Caixa, undefined)
 })

@@ -100,13 +100,13 @@ jobs:
           files: artefatos/*
           make_latest: false
           body: |
-            Servidor DoixP 1.5.21 para Windows, Linux e Android.
+            Servidor DoixP 1.5.22 para Windows, Linux e Android.
 
-            - Tamanho da fonte por impressora: Pequena, Normal ou Grande, junto das dimensões do papel.
-            - Aplica a fonte aos pedidos, contas, etiquetas e testes, com quebras de linha ajustadas.
-            - Preserva a fonte Normal nas impressoras que ainda não têm preferência salva.
-            - Papel de altura automática acompanha o conteúdo; altura fixa reduz a fonte quando necessário.
-            - Preserva pareamento, dimensões, protocolos e histórico de impressão.
+            - Modo Diebold IM453H para tabelas Padrão/Padrão II, com comandos próprios de fonte e corte.
+            - Calibração de caracteres por linha por impressora para cupons ESC/POS e Diebold.
+            - Fonte expandida reaplicada em cada linha no modo Diebold, com espaço para a altura dupla.
+            - A configuração distingue cupons de texto de etiquetas com altura fixa.
+            - Preserva pareamento, dimensões, protocolos selecionados e histórico de impressão.
 
-            Use Atualizar servidor. No Android, autorize a fonte e confirme Atualizar no instalador do sistema. Após atualizar, escolha a impressora, abra Configurar, ajuste Tamanho da fonte e salve.
+            Use Atualizar servidor. No Android, autorize a fonte e confirme Atualizar no instalador do sistema. Para a IM453H, escolha o protocolo Diebold somente se o autoteste indicar Padrão/Padrão II; emulação ESC/POS continua usando ESC/POS. Informe a largura real da bobina e ajuste os caracteres por linha conforme o autoteste.
 # Testa e publica os instaladores Android, Linux e Windows do Servidor DoixP.

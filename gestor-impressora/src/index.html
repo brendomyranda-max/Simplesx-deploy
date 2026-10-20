@@ -72,14 +72,17 @@
   <dialog id="tamanhoDialog">
     <form method="dialog">
       <h2>Configurar impressora</h2><p id="tamanhoImpressora"></p>
-      <label>Protocolo<select id="protocolo"><option value="DRIVER">Driver do Windows/Linux</option><option value="ESC_POS">ESC/POS (cupons)</option><option value="TSPL">TSPL/TSPL2 (etiquetas)</option><option value="ZPL">ZPL (Zebra)</option><option value="CPCL">CPCL (portáteis)</option><option value="EPL">EPL/EPL2 (etiquetas antigas)</option></select></label>
+      <label>Protocolo<select id="protocolo"><option value="DRIVER">Driver do Windows/Linux</option><option value="ESC_POS">ESC/POS (cupons)</option><option value="DIEBOLD">Diebold IM453H (Padrão / Padrão II)</option><option value="TSPL">TSPL/TSPL2 (etiquetas)</option><option value="ZPL">ZPL (Zebra)</option><option value="CPCL">CPCL (portáteis)</option><option value="EPL">EPL/EPL2 (etiquetas antigas)</option></select></label>
+      <small>Na Diebold IM453H, confira a tabela de comandos no autoteste: Padrão/Padrão II usa o modo Diebold; emulação ESC/POS usa ESC/POS.</small>
       <label>Resolução da cabeça (DPI)<input id="dpi" type="number" min="100" max="1200" step="1" list="dpiComuns"><datalist id="dpiComuns"><option value="203"><option value="300"><option value="600"></datalist></label>
       <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>
       <label id="larguraCustomLabel">Largura personalizada (mm)<input id="larguraCustom" type="number" min="20" max="320" step="0.1"></label>
       <label>Tamanho da fonte<select id="tamanhoFonte"><option value="small">Pequena</option><option value="normal">Normal</option><option value="large">Grande</option></select></label>
       <small>A fonte é salva para esta impressora e usada em pedidos, contas, etiquetas e testes. Fontes maiores usam mais linhas.</small>
+      <label id="colunasLabel">Caracteres por linha na fonte Normal (opcional)<input id="colunasNormal" type="number" min="8" max="160" step="1" placeholder="Vazio = automático"></label>
+      <small id="colunasAjuda">Ajuste ao limite informado no autoteste, por exemplo 32, 42 ou 48. Reduza se o texto passar da borda. Na fonte Grande, o limite cai pela metade.</small>
       <label>Altura da etiqueta (opcional)<input id="altura" type="number" min="10" max="500" step="0.1" placeholder="Vazio = automática"></label>
-      <small>Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.</small>
+      <small id="alturaAjuda">Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.</small>
       <small>Use Driver para impressoras comuns instaladas no sistema. Para filas RAW, escolha a linguagem indicada no autoteste da impressora.</small>
       <div class="dialog-actions"><button value="cancel" class="secondary">Cancelar</button><button id="salvarTamanho" value="default">Salvar</button></div>
     </form>

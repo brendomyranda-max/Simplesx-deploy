@@ -11,8 +11,9 @@ import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 
 object EscPos {
-    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL): ByteArray {
-        val wrapped = wrapToWidth(text, widthMm, fontSize.scale)
+    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL, columnsNormal: Int? = null): ByteArray {
+        val clean = Normalizer.normalize(text, Normalizer.Form.NFD).replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "").replace("\t", "    ")
+        val wrapped = wrapToWidth(clean, widthMm, fontSize.scale, columnsNormal)
         val normalized = Normalizer.normalize(wrapped.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD)
             .replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "")
             .replace('º', 'o').replace('ª', 'a').replace('–', '-').replace('—', '-')
@@ -32,8 +33,9 @@ object EscPos {
         }
     }
 
-    private fun wrapToWidth(text: String, widthMm: Int, scale: Double): String {
-        val columns = ((widthMm.coerceIn(20, 320) * 32) / 58 / scale).toInt().coerceAtLeast(1)
+    internal fun wrapToWidth(text: String, widthMm: Int, scale: Double, columnsNormal: Int? = null): String {
+        val base = columnsNormal?.takeIf { it in 8..160 } ?: ((widthMm.coerceIn(20, 320) * 32) / 58)
+        val columns = (base / scale).toInt().coerceAtLeast(1)
         return text.replace("\r\n", "\n").replace('\r', '\n').lines().flatMap { source ->
             if (source.isEmpty()) return@flatMap listOf("")
             val parts = mutableListOf<String>()

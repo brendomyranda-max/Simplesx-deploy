@@ -15,6 +15,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PrinterCommandsTest {
+    @Test fun dieboldUsesNativeFontsAndCutAndReappliesExpandedOnEveryLine() {
+        val normal = PrinterCommands.document("Ação", config(PrinterProtocol.DIEBOLD), feed = 0)
+        assertTrue(normal.take(5).toByteArray().contentEquals(byteArrayOf(0x1B, 0x4D, 0x1B, 0x5D, 0)))
+        assertTrue(normal.toString(Charsets.US_ASCII).contains("Acao\n"))
+        assertEquals(0x11.toByte(), normal.last())
+        assertEquals(-1, normal.indexOfSubsequence(byteArrayOf(0x1D, 0x21)))
+        assertEquals(-1, normal.indexOfSubsequence(byteArrayOf(0x1D, 0x56)))
+        val small = PrinterCommands.document("Texto", config(PrinterProtocol.DIEBOLD).copy(fontSize = PrinterFontSize.SMALL))
+        assertTrue(small.contains(0x0F.toByte()))
+        val large = PrinterCommands.document("Primeira\nSegunda", config(PrinterProtocol.DIEBOLD).copy(fontSize = PrinterFontSize.LARGE), feed = 0, cut = false)
+        assertTrue(large.indexOfSubsequence(byteArrayOf(0x1B, 0x5D, 1)) >= 0)
+        assertTrue(large.toString(Charsets.US_ASCII).contains("\u000ePrimeira\n\n\u000eSegunda\n\n"))
+        assertTrue(large.takeLast(5).toByteArray().contentEquals(byteArrayOf(0x1B, 0x4D, 0x1B, 0x5D, 0)))
+        assertTrue(PrinterProtocol.DIEBOLD.isReceipt)
+        assertFalse(PrinterProtocol.TSPL.isReceipt)
+    }
+
+    @Test fun calibratedColumnsRespectFontAndPrinterProtocol() {
+        val text = "1234567890".repeat(8)
+        for (protocol in listOf(PrinterProtocol.ESC_POS, PrinterProtocol.DIEBOLD)) {
+            val printer = config(protocol, width = 80).copy(columnsNormal = 42)
+            val normal = PrinterCommands.document(text, printer).toString(Charsets.US_ASCII)
+            val large = PrinterCommands.document(text, printer.copy(fontSize = PrinterFontSize.LARGE)).toString(Charsets.US_ASCII)
+            assertTrue(normal.contains(text.take(42) + "\n"))
+            assertTrue(large.contains(text.take(21) + "\n"))
+        }
+        assertTrue(PrinterCommands.document(text, config(PrinterProtocol.DIEBOLD, width = 80)).toString(Charsets.US_ASCII).contains(text.take(48) + "\n"))
+        assertTrue(PrinterCommands.document(text, config(PrinterProtocol.DIEBOLD, width = 58)).toString(Charsets.US_ASCII).contains(text.take(32) + "\n"))
+        assertTrue(PrinterCommands.document("ABC", config(PrinterProtocol.DIEBOLD).copy(columnsNormal = 10), centered = true).toString(Charsets.US_ASCII).contains("   ABC\n"))
+    }
+
     private fun config(
         protocol: PrinterProtocol,
         dpi: Int = 203,
@@ -67,7 +98,7 @@ class PrinterCommandsTest {
     }
 
     @Test fun copiesAreClampedForLabelProtocols() {
-        PrinterProtocol.entries.filter { it != PrinterProtocol.ESC_POS }.forEach { protocol ->
+        PrinterProtocol.entries.filter { !it.isReceipt }.forEach { protocol ->
             val command = PrinterCommands.document("x", config(protocol), copies = 99).toString(Charsets.US_ASCII)
             assertFalse(command.contains("99"))
         }

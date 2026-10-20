@@ -216,3 +216,17 @@ Na configuração da impressora, abaixo das dimensões do papel, escolha **Peque
 é individual e vale para pedidos, contas, etiquetas e testes. Configurações
 antigas usam Normal. A quebra de linha acompanha a fonte; etiquetas de altura
 fixa ainda reduzem o texto quando necessário para caber.
+
+## Diebold IM453H e calibração de cupons (1.5.22)
+
+Selecione **DIEBOLD** somente quando o autoteste indicar tabela **Padrão/Padrão II**.
+Para emulação ESC/POS, use **ESC/POS**. A seleção é salva individualmente e usa
+comandos próprios de fonte e corte, inclusive reaplicando a expansão por linha.
+Use **Caracteres por linha na fonte Normal** para ajustar a quebra ao CPP do
+autoteste; Grande usa metade do limite. Na Diebold, Pequena mantém uma quebra
+conservadora, pois a densidade condensada depende do firmware. Vazio usa o cálculo
+automático. Cupons de texto têm altura automática e não usam DPI para mudar a fonte.
+
+O perfil não altera o firmware nem presume a emulação pelo nome da impressora.
+Confira a saída no papel após **Salvar rota e imprimir teste**.
+Referência: [Manual do firmware IM453H](https://www.bztech.com.br/arquivos/manual-firmware-diebold-im453hu.pdf).

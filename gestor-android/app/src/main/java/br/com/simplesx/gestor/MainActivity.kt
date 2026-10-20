@@ -107,6 +107,7 @@ private fun GestorScreen(activity: ComponentActivity) {
     var labelHeightInput by remember { mutableStateOf(printer.labelHeightMm.toString()) }
     var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
+    var columnsInput by remember(selectedPrinterIndex, printers) { mutableStateOf(printer.columnsNormal?.toString() ?: "") }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
     var disconnecting by remember { mutableStateOf(false) }
@@ -340,7 +341,10 @@ private fun GestorScreen(activity: ComponentActivity) {
                     }
                 }
                 Text("Selecionado: ${PrinterCommands.displayName(printer.protocol)}", style = MaterialTheme.typography.bodySmall)
-                if (printer.protocol != PrinterProtocol.ESC_POS) {
+                if (printer.protocol == PrinterProtocol.DIEBOLD) {
+                    Text("Use para IM453H com tabela Padrão/Padrão II no autoteste. Se o autoteste indicar emulação ESC/POS, selecione ESC/POS.", style = MaterialTheme.typography.bodySmall)
+                }
+                if (!printer.protocol.isReceipt) {
                     Text("Tipo de papel/etiqueta", fontWeight = FontWeight.Bold)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         OutlinedButton(onClick = { printer = printer.copy(tsplPaperMode = TsplPaperMode.CONTINUOUS) }, modifier = Modifier.weight(1f)) { Text("Contínuo") }
@@ -479,6 +483,19 @@ private fun GestorScreen(activity: ComponentActivity) {
                     }
                 }
                 Text("Salva por impressora. Fontes maiores usam mais linhas; em etiquetas de altura fixa, a fonte diminui se necessário.", style = MaterialTheme.typography.bodySmall)
+                if (printer.protocol.isReceipt) {
+                    OutlinedTextField(
+                        value = columnsInput,
+                        onValueChange = { value -> if (value.length <= 3 && value.all(Char::isDigit)) columnsInput = value },
+                        label = { Text("Caracteres por linha na fonte Normal") },
+                        placeholder = { Text("Automático") },
+                        supportingText = { Text("Opcional: 8 a 160. Use o limite do autoteste, como 32 ou 48. Grande usa metade; reduza se o texto passar da borda.") },
+                        isError = columnsInput.isNotBlank() && columnsInput.toIntOrNull() !in 8..160,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("A altura do cupom acompanha o conteúdo. O DPI não altera as letras neste modo.", style = MaterialTheme.typography.bodySmall)
+                }
                 Text("Resolução da cabeça", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(203, 300, 600).forEach { dpi ->
@@ -500,7 +517,7 @@ private fun GestorScreen(activity: ComponentActivity) {
                     isError = dpiInput.toIntOrNull() !in 100..1200,
                     label = { Text("DPI personalizado (100 a 1200)") },
                     supportingText = {
-                        Text(if (printer.protocol == PrinterProtocol.ESC_POS) "ESC/POS em modo texto não depende do DPI." else "O DPI altera largura, altura, margens e espaçamento em pontos.")
+                        Text(if (printer.protocol.isReceipt) "Cupons em modo texto não dependem do DPI." else "O DPI altera largura, altura, margens e espaçamento em pontos.")
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -540,8 +557,13 @@ private fun GestorScreen(activity: ComponentActivity) {
                         message = "Informe um DPI entre 100 e 1200"
                         return@Button
                     }
-                    var validatedPrinter = printer.copy(widthMm = customWidth, dpi = customDpi)
-                    if (validatedPrinter.protocol != PrinterProtocol.ESC_POS && validatedPrinter.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
+                    val columns = columnsInput.toIntOrNull()
+                    if (columnsInput.isNotBlank() && columns !in 8..160) {
+                        message = "Informe de 8 a 160 caracteres por linha ou deixe vazio"
+                        return@Button
+                    }
+                    var validatedPrinter = printer.copy(widthMm = customWidth, dpi = customDpi, columnsNormal = columns)
+                    if (!validatedPrinter.protocol.isReceipt && validatedPrinter.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
                         val customHeight = labelHeightInput.toIntOrNull()
                         val customGap = gapInput.toIntOrNull()
                         if (customHeight == null || customHeight !in 10..500) {

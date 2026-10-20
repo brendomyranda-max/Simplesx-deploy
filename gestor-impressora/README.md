@@ -36,6 +36,29 @@ Referências: [Epson ESC M](https://download4.epson.biz/sec_pubs/pos/reference_e
 [Epson GS !](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_exclamation.html),
 [TSC TSPL/TSPL2](https://fs.tscprinters.com/system/files/31-0000001-00_tspl_tspl2_programming_3_0.pdf).
 
+## Diebold IM453H e calibração de cupons (1.5.22)
+
+Em **Configurar → Protocolo**, escolha **Diebold IM453H (Padrão / Padrão II)**
+quando essa tabela estiver indicada no autoteste. Se o equipamento estiver em
+emulação ESC/POS, mantenha **ESC/POS**. O nome da fila não determina a emulação:
+a atualização preserva o protocolo selecionado e não altera o firmware.
+
+A IM453H nativa usa comandos diferentes de ESC/POS: `ESC M` restaura o modo
+normal sem parâmetro, `SI` seleciona condensado e `SO` expande. O modo Grande
+reaplica `SO` por linha e ativa altura dupla; o corte usa `GUIL` (`11h`). Isso
+evita interpretar o parâmetro `11h` de `GS !` como corte no protocolo nativo.
+
+Informe a largura real da bobina e, se necessário, **Caracteres por linha na
+fonte Normal** conforme o CPP do autoteste (por exemplo, 48). A fonte Grande
+usa metade desse limite. Na Diebold, a pequena mantém uma quebra conservadora,
+pois o condensado varia com o CPP do firmware. O campo vazio usa cálculo
+automático; esse ajuste fica salvo por impressora e também funciona em ESC/POS.
+Cupons de texto têm comprimento automático: DPI e altura fixa não alteram a fonte.
+
+Referência: [Manual do firmware IM453H, seções 3.1 e 3.3](https://www.bztech.com.br/arquivos/manual-firmware-diebold-im453hu.pdf).
+Comandos e transporte são testados automaticamente; confirme o resultado físico
+com **Testar impressão** após selecionar a tabela correspondente à impressora.
+
 ## Desenvolvimento
 
 ```bash

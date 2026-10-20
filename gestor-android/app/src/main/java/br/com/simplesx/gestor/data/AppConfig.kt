@@ -10,7 +10,10 @@ import android.provider.Settings
 import org.json.JSONObject
 
 enum class ConnectionType { NETWORK, BLUETOOTH, USB }
-enum class PrinterProtocol { ESC_POS, TSPL, ZPL, CPCL, EPL }
+enum class PrinterProtocol {
+    ESC_POS, DIEBOLD, TSPL, ZPL, CPCL, EPL;
+    val isReceipt: Boolean get() = this == ESC_POS || this == DIEBOLD
+}
 enum class PrinterFontSize(val scale: Double) { SMALL(0.75), NORMAL(1.0), LARGE(2.0) }
 enum class TsplPaperMode { CONTINUOUS, GAP, BLACK_MARK }
 
@@ -27,6 +30,7 @@ data class PrinterConfig(
     val widthMm: Int = 80,
     val dpi: Int = 203,
     val fontSize: PrinterFontSize = PrinterFontSize.NORMAL,
+    val columnsNormal: Int? = null,
     val protocol: PrinterProtocol = PrinterProtocol.ESC_POS,
     val tsplPaperMode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
     val labelHeightMm: Int = 30,
@@ -118,6 +122,7 @@ class AppConfig(context: Context) {
         widthMm = json.optInt("widthMm", 80),
         dpi = json.optInt("dpi", 203).coerceIn(100, 1200),
         fontSize = runCatching { PrinterFontSize.valueOf(json.optString("fontSize", "NORMAL")) }.getOrDefault(PrinterFontSize.NORMAL),
+        columnsNormal = json.optInt("columnsNormal", 0).takeIf { it in 8..160 },
         protocol = runCatching { PrinterProtocol.valueOf(json.optString("protocol", "ESC_POS")) }.getOrDefault(PrinterProtocol.ESC_POS),
         tsplPaperMode = runCatching { TsplPaperMode.valueOf(json.optString("tsplPaperMode", "CONTINUOUS")) }.getOrDefault(TsplPaperMode.CONTINUOUS),
         labelHeightMm = json.optInt("labelHeightMm", 30).coerceIn(10, 500),
@@ -132,6 +137,7 @@ class AppConfig(context: Context) {
         .put("bluetoothAddress", value.bluetoothAddress).put("bluetoothName", value.bluetoothName)
         .put("usbDeviceName", value.usbDeviceName).put("usbVendorId", value.usbVendorId).put("usbProductId", value.usbProductId)
         .put("widthMm", value.widthMm).put("dpi", value.dpi).put("fontSize", value.fontSize.name).put("protocol", value.protocol.name)
+        .put("columnsNormal", value.columnsNormal ?: JSONObject.NULL)
         .put("tsplPaperMode", value.tsplPaperMode.name).put("labelHeightMm", value.labelHeightMm).put("gapMm", value.gapMm)
         .put("categoryIds", org.json.JSONArray(value.categoryIds))
 }

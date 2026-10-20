@@ -93,3 +93,15 @@ test('fonte pequena RAW não recebe quebra antecipada no tamanho normal', async 
   await f.print({ texto: text }, { name: 'Caixa', raw: true })
   assert.ok([...f.files.values()][0].toString('ascii').includes(text))
 })
+
+test('Diebold envia protocolo nativo e todas as cópias em Windows e Linux', async () => {
+  for (const platform of ['linux', 'win32']) {
+    const f = fixture(platform, { protocolosImpressoras: { DieboldIM453H: 'DIEBOLD' }, fontesImpressoras: { DieboldIM453H: 'large' }, colunasImpressoras: { DieboldIM453H: 32 } })
+    await f.print({ texto: '12345678901234567890', copias: 2 }, { name: 'DieboldIM453H', raw: true })
+    assert.equal(f.calls.length, 2)
+    const data = [...f.files.values()][0]
+    assert.ok(data.toString('ascii').includes('\x0e1234567890123456\n\n\x0e7890\n\n'))
+    assert.equal(data.at(-1), 0x11)
+    assert.ok(platform === 'linux' ? f.calls[0].args.includes('raw') : f.calls[0].args.some(arg => arg.endsWith('windows-raw.ps1')))
+  }
+})

@@ -143,7 +143,7 @@ class PrintSyncService : Service() {
                 printerName = printer.name
                 val copies = task.payload.optIntAny("copies", "copias", default = 1).coerceIn(1, 20)
                 val bytes = taskBytes(task, printer, copies)
-                if (printer.protocol == PrinterProtocol.ESC_POS) repeat(copies) { PrinterTransport.send(this, printer, bytes) }
+                if (printer.protocol.isReceipt) repeat(copies) { PrinterTransport.send(this, printer, bytes) }
                 else PrinterTransport.send(this, printer, bytes)
             }
             renewal.cancelAndJoin()

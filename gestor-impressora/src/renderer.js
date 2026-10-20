@@ -109,6 +109,18 @@ function dpiAtual(nome) {
   return Number(estado?.dpisImpressoras?.[nome]) || 203
 }
 
+function atualizarCamposImpressora() {
+  const cupom = ['ESC_POS', 'DIEBOLD'].includes($('protocolo').value)
+  $('colunasLabel').hidden = !cupom
+  $('colunasAjuda').hidden = !cupom
+  $('altura').disabled = cupom
+  $('dpi').disabled = cupom
+  $('alturaAjuda').textContent = cupom
+    ? 'Em cupons de texto, a altura acompanha o conteúdo e o DPI não altera as letras. Ajuste a fonte e os caracteres por linha.'
+    : 'Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.'
+}
+$('protocolo').onchange = atualizarCamposImpressora
+
 $('tamanho').onclick = () => {
   const nome = impressoraSelecionada()
   if (!nome) return toast('Selecione uma impressora primeiro')
@@ -121,6 +133,8 @@ $('tamanho').onclick = () => {
   $('protocolo').value = protocoloAtual(nome)
   $('dpi').value = dpiAtual(nome)
   $('tamanhoFonte').value = estado?.fontesImpressoras?.[nome] || 'normal'
+  $('colunasNormal').value = estado?.colunasImpressoras?.[nome] || ''
+  atualizarCamposImpressora()
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
   $('tamanhoDialog').showModal()
 }
@@ -136,7 +150,10 @@ $('salvarTamanho').onclick = async (event) => {
   try {
     const dpi = Number($('dpi').value)
     if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) return toast('Informe um DPI entre 100 e 1200')
-    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, $('tamanhoFonte').value)
+    const colunasTexto = $('colunasNormal').value.trim()
+    const colunas = colunasTexto === '' ? null : Number(colunasTexto)
+    if (colunas !== null && (!Number.isInteger(colunas) || colunas < 8 || colunas > 160)) return toast('Informe entre 8 e 160 caracteres por linha ou deixe vazio')
+    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, $('tamanhoFonte').value, colunas)
     render(status)
     $('tamanhoDialog').close()
     toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${$('tamanhoFonte').selectedOptions[0].textContent} · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
