@@ -372,7 +372,7 @@ export const pedidosApi = {
   painel: () => api.get<PainelPedidos>('/pedidos/painel'),
   cozinha: (categoriaId?: number) => api.get<PainelCozinha>(`/pedidos/cozinha${categoriaId!==undefined ? `?categoria_id=${categoriaId}` : ''}`),
   statusOnline: (id: number, status: 'confirmado' | 'cancelado' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'pix_recebido') =>
-    api.post<{ ok: boolean; id: number; status: string; etapa: string; despacho?: { id?: string; status?: string; error?: string } }>(`/pedidos/online/${id}/status`, { status }),
+    api.post<{ ok: boolean; id: number; status: string; etapa: string; impressao?: { sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] } | null; despacho?: { id?: string; status?: string; error?: string } }>(`/pedidos/online/${id}/status`, { status }),
   chamarEntregador: (id: number) => api.post<{ id: string; status: string }>(`/pedidos/online/${id}/chamar-entregador`, {}),
   etiqueta: (body: { item_id?: number; comanda_id?: number }) =>
     api.post<{ impressao: string; jobs: { impressora: string; ok?: boolean; error?: string }[] }>('/pedidos/etiqueta', body),
@@ -540,8 +540,8 @@ export const impressoraApi = {
   setores: () => api.get<any[]>('/setores-impressao'),
   criarSetor: (b: { nome: string; padrao_impressora?: string }) => api.post<any>('/setores-impressao', b),
   agentes: () => api.get<any[]>('/impressora-agentes'),
-  criarAgente: (b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null }) => api.post<any>('/impressora-agentes', b),
-  atualizarAgente: (id: number, b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null; ativo?: boolean }) => api.put<{ ok: boolean }>(`/impressora-agentes/${id}`, b),
+  criarAgente: (b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_delivery?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null }) => api.post<any>('/impressora-agentes', b),
+  atualizarAgente: (id: number, b: { nome: string; ip?: string; porta?: number; tipo?: string; protocolo?: string; categorias?: number[]; imprime_pedidos?: boolean; imprime_conta?: boolean; imprime_delivery?: boolean; imprime_venda?: boolean; imprime_validade?: boolean; largura_mm?: number; servidor_tipo?: string | null; servidor_id?: string | null; impressora_destino?: string | null; ativo?: boolean }) => api.put<{ ok: boolean }>(`/impressora-agentes/${id}`, b),
   etiquetas: () => api.get<any[]>('/impressora-etiquetas'),
   excluirAgente: (id: number) => api.del<{ ok: boolean }>(`/impressora-agentes/${id}`),
   atualizarEtiqueta: (id: number, b: { nome: string; largura_mm: number; altura_mm: number }) => api.put<{ ok: boolean }>(`/impressora-etiquetas/${id}`, b),

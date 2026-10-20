@@ -270,6 +270,34 @@ no card visto pelos clientes. O link público segue o nome, como
 continuam abrindo a mesma loja. `npm run deploy` aplica a migração
 `0043_lojas_links_anteriores.sql` e atualiza os links das lojas existentes.
 
+## Funcionamento e impressão do delivery
+
+Em **Configurações → Funcionamento do delivery e cardápio**, ative a aceitação
+automática e configure dias, abertura, fechamento e fuso horário. As mesmas
+opções ficam em **Estoque → Delivery → Dados da loja** e em **Configurar** no
+site da loja. A aceitação automática e o horário programado começam desligados.
+
+O horário é aplicado pelo servidor, mesmo com o painel fechado. Fora dele, a
+loja sai da vitrine e seu link mostra o cardápio com aviso de fechado, sem aceitar
+compras. Um período de 18h às 2h termina na madrugada seguinte ao dia selecionado.
+**Pausar loja** prevalece sobre o horário até a reativação manual.
+
+Em **Impressoras → Destinos por finalidade → Pedidos do delivery**, escolha a
+rota e a impressora do servidor desktop ou Android. Todos os itens do delivery
+seguem esse destino; sem destino específico, continuam usando as categorias.
+A confirmação manual ou automática enfileira a impressão uma única vez. Pix
+aguarda a confirmação do recebimento antes da aceitação automática. Se houver
+itens sem envio, o painel avisa e permite usar **Imprimir pedido** novamente.
+
+Em **Produtos do cardápio**, use **Pausar** ou **Disponibilizar**. O produto
+pausado permanece visível como **Indisponível** no delivery e no cardápio de
+consulta; a API também impede a compra, inclusive para sacolas já abertas.
+**Remover** continua retirando o produto do cardápio.
+
+A migração `0052_delivery_funcionamento.sql` deve ser aplicada antes da publicação.
+`npm run deploy` já aplica as migrações; localmente, elas são aplicadas na próxima
+inicialização do servidor.
+
 ## Pedidos do restaurante
 
 Cada produto do cardápio pode ter um **preço normal no delivery** e um
@@ -474,6 +502,15 @@ O APK de teste local fica em `gestor-android/app/build/outputs/apk/debug/app-deb
 A versão publicada em **Downloads** só muda após a publicação do instalador;
 compilar localmente não atualiza o aplicativo instalado no celular.
 
+### Tamanho da fonte por impressora (1.5.21)
+
+No **Servidor DoixP**, escolha a impressora e abra **Configurar → Tamanho da fonte**.
+Selecione **Pequena**, **Normal** ou **Grande** junto das dimensões do papel e salve.
+Cada impressora mantém sua escolha, aplicada a pedidos, delivery, contas,
+etiquetas e testes. Impressoras sem preferência salva continuam usando **Normal**.
+Com altura fixa, o texto pode ser reduzido para caber no papel; altura automática
+acompanha o conteúdo. A opção está disponível no Windows, Linux e Android.
+
 ### Atualizar os servidores sem desinstalar (1.5.16)
 
 Instale a versão 1.5.19 por cima da instalação anterior: execute o instalador do
@@ -496,8 +533,8 @@ com versão, tamanho e SHA-256. Os feeds públicos em `/atualizacoes/` apontam
 somente para arquivos permitidos da release publicada. O Android verifica também
 o pacote, a versão e a assinatura. Publique a tag `gestor-v1.5.19` pelo workflow
 dos servidores e aguarde os três artefatos antes de publicar o site com o novo
-`shared/gestor-releases.js`. Nas próximas versões, aumente as versões do desktop,
-Android e desse arquivo juntas.
+`shared/gestor-releases.js`. Nas próximas versões, aumente primeiro as versões do
+desktop e Android; atualize esse arquivo somente após a publicação dos instaladores.
 
 Na versão **1.5.13**, as rotas com **Usar a impressora padrão do servidor**
 respeitam a seleção feita no Gestor Windows, Linux ou Android. O nome da rota

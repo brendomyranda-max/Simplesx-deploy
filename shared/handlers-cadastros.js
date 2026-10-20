@@ -233,6 +233,7 @@ export async function listAgentesHandler(c, env) {
     categorias: parseIds(a.categorias),
     imprime_pedidos: a.imprime_pedidos !== 0,
     imprime_conta: a.imprime_conta === 1,
+    imprime_delivery: a.imprime_delivery === 1,
     imprime_venda: a.imprime_venda === 1,
     imprime_validade: a.imprime_validade === 1,
   })));
@@ -243,14 +244,14 @@ export async function createAgenteHandler(c, env) {
   if (!b.nome) return c.json({ error: 'Nome da rota de impressão obrigatório' }, 400);
   const r = await env.DB.prepare(
     `INSERT INTO impressora_agentes
-      (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, imprime_venda, imprime_validade, largura_mm,
+      (nome, ip, porta, tipo, protocolo, categorias, imprime_pedidos, imprime_conta, imprime_venda, imprime_validade, imprime_delivery, largura_mm,
        servidor_tipo, servidor_id, impressora_destino, ativo, criado_em)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
   )
     .bind(
       String(b.nome).trim(), b.ip || '', num(b.porta) || 9100, b.tipo || 'impressora', b.protocolo || 'cups',
       JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
-      b.imprime_conta ? 1 : 0, b.imprime_venda ? 1 : 0, b.imprime_validade ? 1 : 0,
+      b.imprime_conta ? 1 : 0, b.imprime_venda ? 1 : 0, b.imprime_validade ? 1 : 0, b.imprime_delivery ? 1 : 0,
       num(b.largura_mm) >= 20 && num(b.largura_mm) <= 320 ? num(b.largura_mm) : 80,
       b.servidor_tipo || null, b.servidor_id ? String(b.servidor_id) : null,
       b.impressora_destino ? String(b.impressora_destino).trim() : null, now()
@@ -267,12 +268,12 @@ export async function updateAgenteHandler(c, env) {
   if (!atual) return c.json({ error: 'Impressora não encontrada' }, 404);
   await env.DB.prepare(
     `UPDATE impressora_agentes SET nome=?, ip=?, porta=?, tipo=?, protocolo=?, categorias=?,
-      imprime_pedidos=?, imprime_conta=?, imprime_venda=?, imprime_validade=?, largura_mm=?, servidor_tipo=?, servidor_id=?,
+      imprime_pedidos=?, imprime_conta=?, imprime_venda=?, imprime_validade=?, imprime_delivery=?, largura_mm=?, servidor_tipo=?, servidor_id=?,
       impressora_destino=?, ativo=? WHERE id=?`
   ).bind(
     String(b.nome).trim(), b.ip || '', num(b.porta) || 9100, b.tipo || 'impressora', b.protocolo || 'cups',
     JSON.stringify(normalizeIds(b.categorias)), b.imprime_pedidos === false ? 0 : 1,
-    b.imprime_conta ? 1 : 0, b.imprime_venda ? 1 : 0, b.imprime_validade ? 1 : 0,
+    b.imprime_conta ? 1 : 0, b.imprime_venda ? 1 : 0, b.imprime_validade ? 1 : 0, b.imprime_delivery ? 1 : 0,
     num(b.largura_mm) >= 20 && num(b.largura_mm) <= 320 ? num(b.largura_mm) : 80,
     b.servidor_tipo || null, b.servidor_id ? String(b.servidor_id) : null,
     b.impressora_destino ? String(b.impressora_destino).trim() : null,

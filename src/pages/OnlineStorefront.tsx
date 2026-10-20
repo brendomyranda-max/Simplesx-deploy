@@ -20,6 +20,7 @@ import { Marketplace } from '@/pages/Marketplace';
 import { BrandLogo } from '@/components/BrandLogo';
 import { gravarUltimoPedido, lerUltimoPedido, SUPORTE_DOIXP_URL, whatsappDaLoja } from '@/lib/delivery-cliente';
 import { FotoGaleria } from '@/components/FotoGaleria';
+import { FuncionamentoDelivery } from '@/components/FuncionamentoDelivery';
 import { ConfiguracaoCardapioOnline } from '@/components/ModoCardapioOnline';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
@@ -132,6 +133,7 @@ function LojaOnline() {
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const somenteConsulta = loja?.aceita_pedidos_online === 0;
+  const lojaFechada = loja?.ativo === 0 || loja?.aberta_agora === 0;
 
   useEffect(() => {
     setCart([]);
@@ -206,8 +208,28 @@ function LojaOnline() {
     return () => { ativo = false; };
   }, [slugRota, navigate, configurarNaUrl]);
 
+  useEffect(() => {
+    if (!slugRota || podeConfigurar || estado !== 'pronto') return;
+    let ativo = true;
+    let buscando = false;
+    const atualizar = async () => {
+      if (buscando) return;
+      buscando = true;
+      try {
+        const ponto = lerPontoCliente();
+        const publico = await onlinePublicApi.store(slugRota, ponto ? { lat: ponto.latitude, lng: ponto.longitude } : undefined);
+        if (ativo) { setLoja(publico.loja); setCatalogo(publico.produtos); }
+      } catch (error: any) {
+        if (ativo && error?.status === 404) setLoja((atual) => atual ? { ...atual, ativo: 0, aberta_agora: 0, motivo_fechado: 'Loja pausada.' } : atual);
+      } finally { buscando = false; }
+    };
+    const timer = setInterval(atualizar, 30000);
+    window.addEventListener('focus', atualizar);
+    return () => { ativo = false; clearInterval(timer); window.removeEventListener('focus', atualizar); };
+  }, [slugRota, podeConfigurar, estado]);
+
   const visiveis = useMemo(() => catalogo
-    .filter((produto) => aba === 'configurar' || (produto.preco != null && produto.disponivel === 1 && produto.ativo !== 0))
+    .filter((produto) => aba === 'configurar' || (produto.preco != null && produto.ativo !== 0))
     .map((produto) => paraCardapio(produto, !somenteConsulta)), [catalogo, aba, somenteConsulta]);
 
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
@@ -215,7 +237,7 @@ function LojaOnline() {
   const taxaSacola = taxaDaSacola(loja);
 
   const addToCart = (item: Omit<CartItem, 'key' | 'quantity'>, quantity = 1) => {
-    if (somenteConsulta) return;
+    if (somenteConsulta || lojaFechada || !item.product.available || !catalogo.some((produto) => produto.id === item.product.id && produto.disponivel === 1 && produto.ativo !== 0)) return;
     setCart((current) => {
       const found = current.find((cartItem) =>
         cartItem.product.id === item.product.id &&
@@ -372,6 +394,8 @@ function LojaOnline() {
   const enviarPedido = async (dados: { nome: string; telefone: string; entrega: 'entrega' | 'retirada'; endereco: string; pagamento: 'pix' | 'dinheiro' | 'maquininha'; valorEmDinheiro: number | null; plataforma: boolean; cpfUltimos4: string; freteClienteCentavos?: number }) => {
     if (!loja?.slug) throw new Error('Loja indisponível');
     if (somenteConsulta) throw new Error('Este cardápio está disponível apenas para consulta.');
+    if (lojaFechada) throw new Error(loja.motivo_fechado || 'Loja fechada neste momento.');
+    if (cart.some((item) => !catalogo.some((produto) => produto.id === item.product.id && produto.disponivel === 1 && produto.ativo !== 0))) throw new Error('Um produto da sacola está indisponível. Remova-o para continuar.');
     const chave = `web${crypto.randomUUID().replace(/-/g, '')}`;
     await onlinePublicApi.order(loja.slug, {
       chave,
@@ -406,7 +430,7 @@ function LojaOnline() {
   const prazo = loja ? tempoEntrega(loja) : null;
   const configurandoAgora = podeConfigurar && aba === 'configurar';
   const resumoLoja = somenteConsulta ? 'Cardápio online · Consulte nossos produtos e preços.' : loja ? [
-    loja.ativo ? 'Aceitando pedidos' : 'Cardápio do estabelecimento',
+    lojaFechada ? (loja.motivo_fechado || 'Loja fechada') : 'Aceitando pedidos',
     prazo,
     loja.aceita_entrega ? textoEntrega(loja) : 'Retirada no balcão',
     loja.distancia_km != null ? `a ${fmtKm(loja.distancia_km)} de você` : '',
@@ -461,6 +485,8 @@ function LojaOnline() {
               <label className="online-search"><Search aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar no cardápio" /></label>
             </header>
           )}
+          {!configurandoAgora && lojaFechada && <p className="online-config-note" role="status">{loja?.motivo_fechado || 'Loja fechada.'} Você pode consultar o cardápio.{loja?.horario_automatico === 1 && ` Horário: ${loja.horario_abertura} às ${loja.horario_fechamento}.`}</p>}
+          {configurandoAgora && loja && <FuncionamentoDelivery loja={loja} onSaved={atualizarLoja} />}
           {configurandoAgora && <p className="online-config-note">O cliente vê o nome da loja, os mais vendidos e todas as categorias. Publique só item do estoque que estiver disponível.</p>}
           {configurandoAgora && loja && <section className="online-category-box"><ConfiguracaoCardapioOnline loja={loja} onSaved={atualizarLoja} /></section>}
           {configurandoAgora && !somenteConsulta && <CategoriasDaLoja onChange={(nomes) => setLoja((atual) => atual ? { ...atual, segmentos: nomes } : atual)} />}
@@ -496,7 +522,7 @@ function LojaOnline() {
               />
             </>
           ) : (
-            <CardapioRolavel produtos={visiveis} busca={search} somenteConsulta={somenteConsulta} onSelect={setCustomizing} />
+            <CardapioRolavel produtos={visiveis} busca={search} somenteConsulta={somenteConsulta || lojaFechada} onSelect={setCustomizing} />
           ))}
         </section>
 
@@ -513,11 +539,11 @@ function LojaOnline() {
       <footer className="online-footer"><span className="online-brand">{loja?.nome || 'DoixP Delivery'}</span><p>{somenteConsulta ? 'Nosso cardápio, sempre à mão.' : 'Seu pedido, do seu jeito.'}</p><small>{somenteConsulta ? 'Cardápio online com DoixP' : 'Uma experiência de pedidos com DoixP'}</small></footer>
 
       {!somenteConsulta && aba === 'cardapio' && cartCount > 0 && <button className="online-mobile-cart" type="button" onClick={() => setCartOpen(true)}><ShoppingBag /><span><b>Ver sacola</b><small>{cartCount} {cartCount === 1 ? 'item' : 'itens'}</small></span><strong>{fmtBRL(subtotal)}</strong></button>}
-      {customizing && <ProductCustomizer product={customizing} somenteConsulta={somenteConsulta} onClose={() => setCustomizing(null)} onAdd={addToCart} />}
+      {customizing && <ProductCustomizer product={{ ...customizing, available: catalogo.some((produto) => produto.id === customizing.id && produto.disponivel === 1 && produto.ativo !== 0) }} somenteConsulta={somenteConsulta || lojaFechada} onClose={() => setCustomizing(null)} onAdd={addToCart} />}
       {configurando && <ConfigurarProduto produto={configurando} categorias={categoriasCardapio} composto={estoque.some((item) => item.id === configurando.produto_id && item.tipo === 'composto')} onClose={() => setConfigurando(null)} onSave={salvarConfiguracao} onRemover={removerDoCardapio} />}
       {estoqueAberto && <EstoquePicker produtos={estoque.filter((produto) => !catalogo.some((item) => item.produto_id === produto.id))} onClose={() => setEstoqueAberto(false)} onPick={publicarDoEstoque} />}
-      {!somenteConsulta && cartOpen && <CartDrawer cart={cart} subtotal={subtotal} deliveryFee={taxaSacola} onClose={() => setCartOpen(false)} onChange={changeQuantity} onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }} />}
-      {!somenteConsulta && checkoutOpen && loja && <CheckoutModal loja={loja} totalBase={subtotal} onClose={() => setCheckoutOpen(false)} onSubmit={enviarPedido} />}
+      {!somenteConsulta && cartOpen && <CartDrawer cart={cart} subtotal={subtotal} deliveryFee={taxaSacola} onClose={() => setCartOpen(false)} onChange={changeQuantity} onCheckout={() => { if (!lojaFechada) { setCartOpen(false); setCheckoutOpen(true); } }} fechado={lojaFechada} />}
+      {!somenteConsulta && !lojaFechada && checkoutOpen && loja && <CheckoutModal loja={loja} totalBase={subtotal} onClose={() => setCheckoutOpen(false)} onSubmit={enviarPedido} />}
     </div>
   );
 }
@@ -857,11 +883,11 @@ function CardapioRolavel({ produtos, busca, somenteConsulta, onSelect }: { produ
 }
 
 function ProductCard({ product, somenteConsulta, onSelect }: { product: Product; somenteConsulta: boolean; onSelect: () => void }) {
-  return <article className="online-product-card">
+  return <article className={`online-product-card${product.available ? '' : ' online-product-unavailable'}`}>
     <FotoProduto product={product} />
     <div className="online-product-body">
-      <h3>{product.name}</h3><p>{product.description || 'Confira este item do nosso cardápio.'}</p>
-      <div className="online-product-bottom"><span>{product.originalPrice != null && <del>{fmtBRL(product.originalPrice)}</del>}<strong className={product.originalPrice != null ? 'online-promo-price' : ''}>{fmtBRL(product.price)}</strong></span><button type="button" onClick={onSelect} aria-label={somenteConsulta ? `Ver detalhes de ${product.name}` : `Adicionar ${product.name}`}>{somenteConsulta ? <Eye /> : <Plus />}</button></div>
+      <h3>{product.name}</h3>{!product.available && <span className="online-unavailable-label">Indisponível</span>}<p>{product.description || 'Confira este item do nosso cardápio.'}</p>
+      <div className="online-product-bottom"><span>{product.originalPrice != null && <del>{fmtBRL(product.originalPrice)}</del>}<strong className={product.originalPrice != null ? 'online-promo-price' : ''}>{fmtBRL(product.price)}</strong></span><button type="button" onClick={onSelect} disabled={!product.available && !somenteConsulta} aria-label={!product.available && !somenteConsulta ? `${product.name} indisponível` : somenteConsulta ? `Ver detalhes de ${product.name}` : `Adicionar ${product.name}`}>{somenteConsulta ? <Eye /> : <Plus />}</button></div>
     </div>
   </article>;
 }
@@ -891,7 +917,7 @@ function ProductCustomizer({ product, somenteConsulta, onClose, onAdd }: { produ
         <label className="online-note">Alguma observação?<textarea value={note} maxLength={140} onChange={(event) => setNote(event.target.value)} placeholder="Ex.: ponto da carne, alergias..." /><small>{note.length}/140</small></label>
         </>}
       </div>
-      {!somenteConsulta && <div className="online-customizer-footer"><div className="online-quantity"><button type="button" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)}><Minus /></button><b>{quantity}</b><button type="button" onClick={() => setQuantity((value) => value + 1)}><Plus /></button></div><button className="online-add-button" type="button" disabled={product.comboGroups.length > 0 && !comboCompleto(product.comboGroups, comboChoices)} onClick={() => onAdd({ product, removed, additions, comboChoices, note }, quantity)}>Adicionar <strong>{fmtBRL(total)}</strong></button></div>}
+      {!somenteConsulta && <div className="online-customizer-footer"><div className="online-quantity"><button type="button" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)}><Minus /></button><b>{quantity}</b><button type="button" onClick={() => setQuantity((value) => value + 1)}><Plus /></button></div><button className="online-add-button" type="button" disabled={!product.available || (product.comboGroups.length > 0 && !comboCompleto(product.comboGroups, comboChoices))} onClick={() => onAdd({ product, removed, additions, comboChoices, note }, quantity)}>{product.available ? 'Adicionar' : 'Indisponível'} <strong>{fmtBRL(total)}</strong></button></div>}
     </div>
   </div>;
 }
@@ -941,7 +967,7 @@ function ConfigurarProduto({ produto, categorias, composto = false, onClose, onS
           <AcrescimoCadastro linhas={acrescimos} onChange={setAcrescimos} insumos={insumos.filter((item) => item.id !== produto.produto_id)} />
           <label>Descrição{composto ? <small> Os ingredientes da ficha já estão escritos. Acrescente algo a mais se quiser.</small> : null}<textarea value={descricao} onChange={(event) => setDescricao(event.target.value)} rows={3} /></label>
           <label>Ingredientes que o cliente pode tirar<input value={ingredientes} onChange={(event) => setIngredientes(event.target.value)} placeholder="Separe por vírgula" /></label>
-          <button className="online-photo-btn" type="button" onClick={() => setDisponivel((valor) => !valor)}>{disponivel ? 'Visível para o cliente' : 'Pausado para o cliente'}</button>
+          <button className="online-photo-btn" type="button" onClick={() => setDisponivel((valor) => !valor)}>{disponivel ? 'Disponível para compra' : 'Pausado · aparece como indisponível'}</button>
           {erro && <p className="online-erro">{erro}</p>}
           <button className="online-photo-btn claro" type="button" disabled={salvando} onClick={async () => { setSalvando(true); setErro(''); try { await onRemover(produto); } catch (error: any) { setErro(error?.error || error?.message || 'Não foi possível remover'); setSalvando(false); } }}>Remover do cardápio</button>
         </div>
@@ -966,10 +992,10 @@ function EstoquePicker({ produtos, onClose, onPick }: { produtos: Produto[]; onC
   </div>;
 }
 
-function CartDrawer({ cart, subtotal, deliveryFee, onClose, onChange, onCheckout }: { cart: CartItem[]; subtotal: number; deliveryFee: number | null; onClose: () => void; onChange: (key: string, delta: number) => void; onCheckout: () => void }) {
+function CartDrawer({ cart, subtotal, deliveryFee, onClose, onChange, onCheckout, fechado }: { fechado: boolean; cart: CartItem[]; subtotal: number; deliveryFee: number | null; onClose: () => void; onChange: (key: string, delta: number) => void; onCheckout: () => void }) {
   const taxaTexto = deliveryFee == null ? 'No endereço' : deliveryFee === 0 ? 'Grátis' : fmtBRL(deliveryFee);
   const ultimoPedido = lerUltimoPedido();
-  return <div className="online-overlay online-cart-overlay" role="dialog" aria-modal="true" aria-labelledby="cart-title"><aside className="online-cart-drawer"><header><div><p>SEU PEDIDO</p><h2 id="cart-title">Sua sacola</h2></div><button className="online-close" type="button" onClick={onClose} aria-label="Fechar sacola"><X /></button></header>{cart.length === 0 ? <div className="online-cart-empty"><ShoppingBag />{ultimoPedido ? <><b>Acompanhe seu pedido</b><span>Veja o andamento do seu último pedido neste navegador.</span><Link className="online-cart-track-link" to={ultimoPedido}>Acompanhar meu pedido</Link></> : <><b>Sua sacola está vazia</b><span>Escolha um produto cadastrado.</span></>}<button type="button" onClick={onClose}>Ver cardápio</button></div> : <><div className="online-cart-list">{cart.map((item) => <div className="online-cart-item" key={item.key}><div className={`online-cart-thumb ${item.product.photo ? 'tem-foto' : 'burger'}`}>{item.product.photo ? <img src={item.product.photo} alt="" /> : '🍽️'}</div><div><b>{item.product.name}</b>{item.product.comboGroups.map((g, i) => <small key={i}>{g.nome}: {resumoEscolhasCombo(g, item.comboChoices[i] || [])}</small>)}{item.removed.length > 0 && <small>Sem {item.removed.join(', ')}</small>}{item.additions.length > 0 && <small>+ {item.additions.join(', ')}</small>}{item.note && <small>“{item.note}”</small>}<strong>{fmtBRL((item.product.price + addOnPrice(item)) * item.quantity)}</strong></div><div className="online-mini-quantity"><button type="button" onClick={() => onChange(item.key, -1)}><Minus /></button><b>{item.quantity}</b><button type="button" onClick={() => onChange(item.key, 1)}><Plus /></button></div></div>)}</div><div className="online-summary"><p><span>Subtotal</span><b>{fmtBRL(subtotal)}</b></p><p><span>Taxa de entrega</span><b>{taxaTexto}</b></p><p className="online-total"><span>Total</span><b>{fmtBRL(subtotal + (deliveryFee || 0))}</b></p></div><button className="online-checkout-button" type="button" onClick={onCheckout}>Continuar <ChevronRight /></button></>}</aside></div>;
+  return <div className="online-overlay online-cart-overlay" role="dialog" aria-modal="true" aria-labelledby="cart-title"><aside className="online-cart-drawer"><header><div><p>SEU PEDIDO</p><h2 id="cart-title">Sua sacola</h2></div><button className="online-close" type="button" onClick={onClose} aria-label="Fechar sacola"><X /></button></header>{cart.length === 0 ? <div className="online-cart-empty"><ShoppingBag />{ultimoPedido ? <><b>Acompanhe seu pedido</b><span>Veja o andamento do seu último pedido neste navegador.</span><Link className="online-cart-track-link" to={ultimoPedido}>Acompanhar meu pedido</Link></> : <><b>Sua sacola está vazia</b><span>Escolha um produto cadastrado.</span></>}<button type="button" onClick={onClose}>Ver cardápio</button></div> : <><div className="online-cart-list">{cart.map((item) => <div className="online-cart-item" key={item.key}><div className={`online-cart-thumb ${item.product.photo ? 'tem-foto' : 'burger'}`}>{item.product.photo ? <img src={item.product.photo} alt="" /> : '🍽️'}</div><div><b>{item.product.name}</b>{item.product.comboGroups.map((g, i) => <small key={i}>{g.nome}: {resumoEscolhasCombo(g, item.comboChoices[i] || [])}</small>)}{item.removed.length > 0 && <small>Sem {item.removed.join(', ')}</small>}{item.additions.length > 0 && <small>+ {item.additions.join(', ')}</small>}{item.note && <small>“{item.note}”</small>}<strong>{fmtBRL((item.product.price + addOnPrice(item)) * item.quantity)}</strong></div><div className="online-mini-quantity"><button type="button" onClick={() => onChange(item.key, -1)}><Minus /></button><b>{item.quantity}</b><button type="button" onClick={() => onChange(item.key, 1)}><Plus /></button></div></div>)}</div><div className="online-summary"><p><span>Subtotal</span><b>{fmtBRL(subtotal)}</b></p><p><span>Taxa de entrega</span><b>{taxaTexto}</b></p><p className="online-total"><span>Total</span><b>{fmtBRL(subtotal + (deliveryFee || 0))}</b></p></div><button className="online-checkout-button" type="button" disabled={fechado} onClick={onCheckout}>Continuar <ChevronRight /></button></>}</aside></div>;
 }
 
 function NomeDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {

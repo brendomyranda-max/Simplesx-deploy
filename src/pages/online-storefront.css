@@ -330,3 +330,7 @@
   .online-topbar { height: 70px; }
   .online-brand-mark { width: 34px; height: 34px; }
 }
+
+.online-product-unavailable .online-product-image { filter: grayscale(1); opacity: .65; }
+.online-unavailable-label { display: inline-block; margin-top: .3rem; padding: .2rem .5rem; border-radius: .4rem; background: #f1f5f9; color: #475569; font-size: .75rem; font-weight: 700; }
+.online-product-bottom button:disabled, .online-checkout-button:disabled { opacity: .45; cursor: not-allowed; }

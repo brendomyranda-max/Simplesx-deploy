@@ -142,6 +142,8 @@ export function DeliveryPage() {
       const result = await pedidosApi.statusOnline(id, status);
       if (result.despacho?.error) toast('error', `Pix registrado, mas o motoboy ainda não foi chamado: ${result.despacho.error}`);
       else toast('success', avisos[status]);
+      if (result.impressao?.falhas?.length) toast('error', `Pedido aceito. Impressão pendente: ${result.impressao.falhas[0].erro}`);
+      else if (result.impressao?.sem_rota?.length) toast('error', 'Pedido aceito. Configure a impressora do delivery em Impressoras.');
       await carregar(true);
     } catch (error: any) {
       toast('error', error?.error || 'Não foi possível atualizar o pedido');
@@ -224,6 +226,7 @@ export function DeliveryPage() {
                         {pedido.distancia_km != null ? ` ${fmtKm(pedido.distancia_km)}.` : ''}
                       </p>
                     )}
+                    {pedido.status === 'confirmado' && (pedido.impressao_pendente || 0) > 0 && <p className="mt-1 text-xs font-semibold text-amber-700">Há itens pendentes de envio à impressora. Confira o destino configurado e use Imprimir pedido.</p>}
                     {pedido.etapa === 'entregue' && <p className="mt-1 text-xs font-semibold text-emerald-700">O cliente já vê esta etapa. A baixa do estoque continua no fechamento da comanda.</p>}
                   </div>
                   <div className="flex flex-wrap gap-2">

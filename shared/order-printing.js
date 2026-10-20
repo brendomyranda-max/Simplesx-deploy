@@ -15,7 +15,7 @@ export async function dispatchOrders(c, env, body) {
   if (command.status !== 'aberta' || command.comanda_origem_id) throw httpError(409, 'Somente comandas abertas podem enviar pedidos');
   if (command.fechamento_bloqueado_ate > now()) throw httpError(409, 'A conta está sendo fechada. Aguarde a confirmação antes de enviar.');
   const onlineOrder = command.mesa_tipo === 'online'
-    ? await env.DB.prepare('SELECT id, tipo_entrega, cliente_nome, telefone, endereco FROM pedidos_online WHERE comanda_id=?').bind(comandaId).first()
+    ? await env.DB.prepare('SELECT id, tipo_entrega, cliente_nome, telefone, endereco, observacao, forma_pagamento, troco_para, total FROM pedidos_online WHERE comanda_id=?').bind(comandaId).first()
     : null;
   if (body.itens_ids !== undefined && (!Array.isArray(body.itens_ids) || !body.itens_ids.length || body.itens_ids.some((id) => !Number.isInteger(id) || id <= 0))) {
     throw httpError(400, 'Selecione os itens do pedido');
@@ -29,7 +29,12 @@ export async function dispatchOrders(c, env, body) {
     LEFT JOIN cartao_atendimentos a ON a.pessoa_id=p.id AND a.encerrado_em IS NULL
     WHERE i.comanda_id=? AND i.status='novo' ORDER BY i.id`).bind(comandaId).all();
   const items = rows.results.filter((i) => !selected || selected.has(i.id));
-  const routes = (await env.DB.prepare('SELECT * FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1').all()).results;
+  const deliveryRoutes = onlineOrder
+    ? (await env.DB.prepare('SELECT * FROM impressora_agentes WHERE imprime_delivery=1').all()).results : [];
+  const dedicatedDelivery = deliveryRoutes.length > 0;
+  const routes = dedicatedDelivery ? deliveryRoutes.filter((route) => route.ativo === 1)
+    : (await env.DB.prepare('SELECT * FROM impressora_agentes WHERE ativo=1 AND imprime_pedidos=1').all()).results;
+  if (dedicatedDelivery) for (const item of items) item.impressora_ids = deliveryRoutes.map((route) => route.id).join(',');
   const config = await getConfig(env);
   const timestamp = now();
   const missing = items.filter((i) => !ids(i.impressora_ids).length).map((i) => i.nome);
@@ -67,6 +72,9 @@ export async function dispatchOrders(c, env, body) {
           `CLIENTE: ${onlineOrder.cliente_nome || command.cliente_nome || '-'}`,
           `TELEFONE: ${onlineOrder.telefone || '-'}`,
           ...(onlineOrder.tipo_entrega === 'entrega' && onlineOrder.endereco ? [`ENDERECO: ${onlineOrder.endereco}`] : []),
+          `PAGAMENTO: ${onlineOrder.forma_pagamento}  TOTAL: R$ ${num(onlineOrder.total).toFixed(2)}`,
+          ...(onlineOrder.troco_para != null ? [`TROCO PARA: R$ ${num(onlineOrder.troco_para).toFixed(2)}`] : []),
+          ...(onlineOrder.observacao ? [`OBS: ${onlineOrder.observacao}`] : []),
         ] : [`MESA: ${command.mesa_tipo === 'cartao' && command.nfc_uid ? command.nfc_uid : command.numero}  GARÇOM: ${actorName}`]),
         `DESTINO: ${route.nome}`,
         `PEDIDO: ${batchId.slice(0, 8)}`, '-'.repeat(32), '',
@@ -86,14 +94,14 @@ export async function dispatchOrders(c, env, body) {
         JOIN comandas c ON c.id=i.comanda_id AND c.estabelecimento_id=i.estabelecimento_id
         WHERE i.estabelecimento_id=? AND i.comanda_id=? AND i.status='novo' AND i.versao=json_extract(j.value,'$.versao')
           AND c.status='aberta' AND (c.fechamento_bloqueado_ate IS NULL OR c.fechamento_bloqueado_ate<=?)
-          AND EXISTS (SELECT 1 FROM produto_categorias pc JOIN categorias cat ON cat.id=pc.categoria_id AND cat.estabelecimento_id=pc.estabelecimento_id
+          AND (?=1 OR EXISTS (SELECT 1 FROM produto_categorias pc JOIN categorias cat ON cat.id=pc.categoria_id AND cat.estabelecimento_id=pc.estabelecimento_id
             LEFT JOIN categorias pai ON pai.id=cat.categoria_pai_id AND pai.estabelecimento_id=cat.estabelecimento_id
-            WHERE pc.produto_id=i.produto_id AND pc.estabelecimento_id=i.estabelecimento_id AND COALESCE(cat.impressora_agente_id,pai.impressora_agente_id)=?)
-          AND EXISTS (SELECT 1 FROM impressora_agentes r WHERE r.id=? AND r.estabelecimento_id=? AND r.ativo=1 AND r.imprime_pedidos=1
+            WHERE pc.produto_id=i.produto_id AND pc.estabelecimento_id=i.estabelecimento_id AND COALESCE(cat.impressora_agente_id,pai.impressora_agente_id)=?))
+          AND EXISTS (SELECT 1 FROM impressora_agentes r WHERE r.id=? AND r.estabelecimento_id=? AND r.ativo=1 AND ${dedicatedDelivery ? 'r.imprime_delivery=1' : 'r.imprime_pedidos=1'}
             AND COALESCE(r.servidor_tipo,'')=? AND COALESCE(r.servidor_id,'')=? AND COALESCE(r.impressora_destino,'')=?)
           AND ${serverGuard}
         ON CONFLICT(estabelecimento_id,item_id,impressora_id) DO NOTHING`)
-        .bind(tenant, routeId, batchId, timestamp, snapshots, tenant, comandaId, timestamp, routeId,
+        .bind(tenant, routeId, batchId, timestamp, snapshots, tenant, comandaId, timestamp, dedicatedDelivery ? 1 : 0, routeId,
           routeId, tenant, route.servidor_tipo || '', String(route.servidor_id || ''), route.impressora_destino || '', ...serverParams));
       const content = `(SELECT ? || GROUP_CONCAT(conteudo_item,char(10)) || ? FROM
         (SELECT conteudo_item FROM pedido_impressoes WHERE lote_id=? ORDER BY item_id))`;
@@ -103,11 +111,11 @@ export async function dispatchOrders(c, env, body) {
           SELECT ?,?,?,'PRINT_ORDER',json_object('content',${content},'printer',?,'width_mm',?,'copies',1,'cut',json('true'),'feed',?),
             ?,'pending',?,'comanda',?,?,?,? WHERE EXISTS (SELECT 1 FROM pedido_impressoes WHERE lote_id=?)`)
           .bind(batchId, tenant, deviceId, header, footer, batchId, printer, width, width === 58 ? 3 : 0,
-            `pedido:${batchId}`, timestamp, String(comandaId), actorId || c.user.id, timestamp, timestamp, batchId));
+            `pedido:${batchId}`, timestamp, String(comandaId), actorId || c.user?.id || 0, timestamp, timestamp, batchId));
         statements.push(db.prepare(`INSERT INTO device_task_events
           (estabelecimento_id,task_id,device_id,evento,status_novo,ator_tipo,ator_id,criado_em)
-          SELECT ?,?,?,'created','pending','user',?,? WHERE EXISTS (SELECT 1 FROM pedido_impressoes WHERE lote_id=?)`)
-          .bind(tenant, batchId, deviceId, String(c.user.id), timestamp, batchId));
+          SELECT ?,?,?,'created','pending',?,?,? WHERE EXISTS (SELECT 1 FROM pedido_impressoes WHERE lote_id=?)`)
+          .bind(tenant, batchId, deviceId, c.user ? 'user' : 'system', String(c.user?.id || 'delivery'), timestamp, batchId));
       } else {
         statements.push(db.prepare(`INSERT INTO gestor_jobs
           (estabelecimento_id,gestor_token,tipo,conteudo,impressora,largura_mm,copias,cortar,alimentar,status,criado_em,pedido_lote_id)

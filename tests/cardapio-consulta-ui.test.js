@@ -40,6 +40,7 @@ test('cliente consulta detalhes sem controles de pedido e volta a usar sacola no
     '@/pages/Marketplace': 'export const Marketplace="Marketplace";',
     '@/components/BrandLogo': 'export const BrandLogo="BrandLogo";',
     '@/components/FotoGaleria': 'export const FotoGaleria="FotoGaleria";',
+    '@/components/FuncionamentoDelivery': 'export const FuncionamentoDelivery="FuncionamentoDelivery";',
     '@/components/ModoCardapioOnline': 'export const ConfiguracaoCardapioOnline="ConfiguracaoCardapioOnline";',
     '@/lib/descricao-composto': 'export const descricaoComIngredientes=()=>"";',
     '@/components/AcrescimoCadastro': 'export const AcrescimoCadastro="AcrescimoCadastro",lerAcrescimos=()=>({itens:[]});',
@@ -88,4 +89,27 @@ test('cliente consulta detalhes sem controles de pedido e volta a usar sacola no
   assert.match(text(tree), /Sua sacola/);
   assert.match(text(tree), /Prato da casa/);
   find(tree, (node) => node.props.className === 'online-checkout-button');
+  find(tree, (node) => node.props['aria-label'] === 'Fechar sacola').props.onClick();
+  // Pausar após o cliente abrir o cardápio conserva o produto e bloqueia compra.
+  states[1] = [{ ...catalogo[0], disponivel: 0 }];
+  tree = render();
+  assert.match(text(tree), /Prato da casa/);
+  assert.match(text(tree), /Indisponível/);
+  assert.equal(find(tree, (node) => node.props['aria-label'] === 'Prato da casa indisponível').props.disabled, true);
+  states[0] = { ...loja, aceita_pedidos_online: 0 };
+  tree = render();
+  assert.match(text(tree), /Indisponível/);
+  find(tree, (node) => node.props['aria-label'] === 'Ver detalhes de Prato da casa').props.onClick();
+  tree = render();
+  assert.match(text(tree), /DETALHES DO PRODUTO/);
+  assert.equal(nodes(tree).some((node) => node.props.className === 'online-add-button'), false);
+  find(tree, (node) => node.props['aria-label'] === 'Fechar').props.onClick();
+  // Fechamento por horário mantém a consulta e bloqueia a sacola existente.
+  states[0] = { ...loja, aceita_pedidos_online: 1, aberta_agora: 0, motivo_fechado: 'Loja fechada neste horário.' };
+  states[1] = catalogo;
+  tree = render();
+  assert.match(text(tree), /Loja fechada neste horário/);
+  find(tree, (node) => /online-cart-trigger/.test(node.props.className || '')).props.onClick();
+  tree = render();
+  assert.equal(find(tree, (node) => node.props.className === 'online-checkout-button').props.disabled, true);
 });

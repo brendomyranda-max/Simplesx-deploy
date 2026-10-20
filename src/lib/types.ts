@@ -141,6 +141,14 @@ export interface OnlineStore {
   aceita_entrega: number;
   aceita_retirada: number;
   aceita_pedidos_online?: number;
+  aceitacao_automatica?: number;
+  horario_automatico?: number;
+  horario_abertura?: string;
+  horario_fechamento?: string;
+  horario_dias?: number[];
+  horario_fuso?: string;
+  aberta_agora?: number;
+  motivo_fechado?: string | null;
   ativo: number;
   endereco?: string | null;
   latitude?: number | null;
@@ -274,6 +282,7 @@ export interface PedidoDelivery {
   status: 'recebido' | 'confirmado' | 'cancelado' | 'finalizado';
   etapa: 'aguardando_pix' | 'recebido' | 'preparando' | 'saiu_entrega' | 'pronto_retirada' | 'entregue' | 'cancelado';
   comanda_status: string | null;
+  impressao_pendente?: number;
   subtotal: number;
   taxa_entrega: number;
   valor_entrega?: number | null;

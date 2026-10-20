@@ -271,6 +271,7 @@ function areasDaRota(method, path) {
   }
   if (/^\/api\/nfc/.test(path)) return ['vendas', 'estoque', 'configuracoes'];
   if (/^\/api\/impressao/.test(path)) return ['vendas', 'estoque'];
+  if (path === '/api/online/loja') return ['vendas', 'estoque', 'configuracoes'];
   if (/^\/api\/online/.test(path)) return ['vendas', 'estoque'];
   if (/^\/api\/pedidos/.test(path)) return ['vendas'];
   if (/^\/api\/entregas/.test(path)) return ['vendas'];

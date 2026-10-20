@@ -119,7 +119,7 @@ export function Marketplace() {
   useEffect(() => {
     let ativo = true;
     setEstado('carregando');
-    onlinePublicApi.network({
+    const carregar = () => onlinePublicApi.network({
       categoria,
       q: consulta,
       lat: ponto?.latitude,
@@ -136,7 +136,10 @@ export function Marketplace() {
         setMensagem(error?.error || 'Não foi possível carregar os restaurantes');
         setEstado('erro');
       });
-    return () => { ativo = false; };
+    carregar();
+    const timer = setInterval(carregar, 30000);
+    window.addEventListener('focus', carregar);
+    return () => { ativo = false; clearInterval(timer); window.removeEventListener('focus', carregar); };
   }, [categoria, consulta, ponto?.latitude, ponto?.longitude, regiao, versaoLoja]);
 
   const usarGps = () => {

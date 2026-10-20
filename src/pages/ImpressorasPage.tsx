@@ -183,7 +183,7 @@ export function ImpressorasPage() {
     }
   };
 
-  const selecionarFinalidade = async (campo: 'imprime_conta' | 'imprime_venda' | 'imprime_validade', routeId: string) => {
+  const selecionarFinalidade = async (campo: 'imprime_conta' | 'imprime_venda' | 'imprime_validade' | 'imprime_delivery', routeId: string) => {
     const selecionado = Number(routeId) || 0;
     const rotasAfetadas = agentes.filter((agente) => agente[campo] || agente.id === selecionado);
     try {
@@ -195,17 +195,18 @@ export function ImpressorasPage() {
       setAgentes((atuais) => atuais.map((agente) => ({ ...agente, [campo]: agente.id === selecionado })));
       const nomes = {
         imprime_conta: 'Fechamento de conta',
+        imprime_delivery: 'Pedidos do delivery',
         imprime_venda: 'Cupom de venda',
         imprime_validade: 'Controle de validade',
       };
-      toast('success', selecionado ? `${nomes[campo]} configurado` : `${nomes[campo]} sem impressão automática`);
+      toast('success', selecionado ? `${nomes[campo]} configurado` : campo === 'imprime_delivery' ? 'Delivery usando as impressoras das categorias' : `${nomes[campo]} sem impressão automática`);
     } catch (err: any) {
       toast('error', err?.error || 'Não foi possível salvar o destino de impressão');
       loadAll();
     }
   };
 
-  const finalidadeSelecionada = (campo: 'imprime_conta' | 'imprime_venda' | 'imprime_validade') => {
+  const finalidadeSelecionada = (campo: 'imprime_conta' | 'imprime_venda' | 'imprime_validade' | 'imprime_delivery') => {
     const selecionadas = agentes.filter((agente) => agente[campo]);
     return selecionadas.length === 1 ? String(selecionadas[0].id) : '';
   };
@@ -271,6 +272,7 @@ export function ImpressorasPage() {
           categorias: categoriasSelecionadas,
           imprime_pedidos: form.imprime_pedidos !== false,
           imprime_conta: !!form.imprime_conta,
+          imprime_delivery: !!form.imprime_delivery,
           imprime_venda: !!form.imprime_venda,
           imprime_validade: !!form.imprime_validade,
           largura_mm: Number(form.largura_mm) === 58 ? 58 : 80,
@@ -301,7 +303,7 @@ export function ImpressorasPage() {
   const abrir = () => {
     setEditandoAgente(null);
     setEditandoEtiqueta(null);
-    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, imprime_venda: false, imprime_validade: false, largura_mm: '80', altura_mm: '40', servidor_tipo: '', servidor_id: '', impressora_destino: '' });
+    setForm({ nome: '', ip: '', porta: '9100', tipo: 'impressora', protocolo: 'cups', categorias: [], imprime_pedidos: true, imprime_conta: false, imprime_delivery: false, imprime_venda: false, imprime_validade: false, largura_mm: '80', altura_mm: '40', servidor_tipo: '', servidor_id: '', impressora_destino: '' });
     setModal(true);
   };
 
@@ -313,6 +315,7 @@ export function ImpressorasPage() {
       categorias: categorias.filter((cat) => cat.impressora_herdada_id === a.id).map((cat) => cat.id),
       imprime_pedidos: a.imprime_pedidos !== false,
       imprime_conta: !!a.imprime_conta,
+      imprime_delivery: !!a.imprime_delivery,
       imprime_venda: !!a.imprime_venda,
       imprime_validade: !!a.imprime_validade,
       largura_mm: String(a.largura_mm || 80),
@@ -344,8 +347,9 @@ export function ImpressorasPage() {
         <div className="flex flex-wrap items-center gap-3">
           <img src="/brand/LogoDoixPAmarelo.png" alt="Servidor DoixP" className="h-11 w-11 shrink-0 rounded-xl object-contain" />
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.20</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.21</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
+            <p className="mt-1 text-sm text-slate-500">No servidor, abra Configurar na impressora para ajustar as dimensões do papel e o tamanho da fonte.</p>
           </div>
           {INSTALADORES.map((item) => (
             <a
@@ -474,8 +478,9 @@ export function ImpressorasPage() {
           <p className="font-extrabold text-slate-800">Destinos por finalidade</p>
           <p className="mt-1 text-sm text-slate-500">Escolha diretamente qual impressora recebe cada tipo de documento.</p>
         </div>
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {([
+            ['imprime_delivery', 'Pedidos do delivery', 'Todos os itens do pedido ao aceitar, incluindo aceitação automática. Sem destino próprio, usa as categorias.'],
             ['imprime_conta', 'Fechamento de conta', 'Conta das mesas e comandas'],
             ['imprime_venda', 'Cupom de venda', 'Comprovante das vendas do PDV'],
             ['imprime_validade', 'Controle de validade', 'Etiquetas de abertura e vencimento'],
@@ -484,7 +489,7 @@ export function ImpressorasPage() {
             return (
               <Field key={campo} label={titulo}>
                 <Select value={finalidadeSelecionada(campo)} onChange={(e) => selecionarFinalidade(campo, e.target.value)}>
-                  <option value="">Não imprimir automaticamente</option>
+                  <option value="">{campo === 'imprime_delivery' ? 'Usar impressoras das categorias' : 'Não imprimir automaticamente'}</option>
                   {agentes.filter((agente) => agente.ativo !== 0).map((agente) => (
                     <option key={agente.id} value={agente.id}>
                       {agente.nome}{agente.impressora_destino ? ` → ${agente.impressora_destino}` : ''}
@@ -805,6 +810,7 @@ export function ImpressorasPage() {
                 </Field>
                 <div className="space-y-2 pt-6">
                   <Toggle checked={form.imprime_pedidos !== false} onChange={(v) => setForm({ ...form, imprime_pedidos: v })} label="Receber pedidos das categorias" />
+                  <div className="flex items-center gap-2"><Toggle checked={!!form.imprime_delivery} onChange={(v) => setForm({ ...form, imprime_delivery: v })} label="Imprimir pedidos do delivery" /><span className="text-sm text-slate-700">Imprimir pedidos do delivery</span></div>
                   <Toggle checked={!!form.imprime_conta} onChange={(v) => setForm({ ...form, imprime_conta: v })} label="Imprimir fechamento de conta" />
                   <Toggle checked={!!form.imprime_venda} onChange={(v) => setForm({ ...form, imprime_venda: v })} label="Imprimir cupom de venda (PDV)" />
                   <Toggle checked={!!form.imprime_validade} onChange={(v) => setForm({ ...form, imprime_validade: v })} label="Imprimir controle de validade" />

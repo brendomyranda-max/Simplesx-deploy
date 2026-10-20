@@ -16,6 +16,9 @@ import { escolherSlugLoja, reservarLinkLoja } from './loja-slug.js';
 import { gruposDoCombo, montarCombo } from './combo.js';
 import { chamarEntregas } from './entregas-bridge.js';
 import { cifrarCodigoEntrega, decifrarCodigoEntrega } from './entregas-code.js';
+import { configurarHorario, diasDaLoja, funcionamentoLoja } from './online-hours.js';
+import { TenantDb } from './tenant-db.js';
+import { dispatchOrders } from './order-printing.js';
 
 const MAX_ITEMS = 30;
 const MAX_CATEGORIAS_LOJA = 6;
@@ -40,6 +43,7 @@ async function confirmarCobrancaCheckoutEfi(env, row) {
       console.error('[efipay-checkout] delivery_dispatch_failed', { order_id: num(fresh.id), message: String(error?.message || error).slice(0, 200) });
     }
   }
+  if (fresh) await aceitarPedido(env, fresh);
   return true;
 }
 
@@ -242,6 +246,8 @@ async function storeResponse(env) {
   const categorias = await categoriasDaLoja(env);
   return {
     ...store,
+    ...funcionamentoLoja(store),
+    horario_dias: diasDaLoja(store),
     pix_chave: store.pix_chave || null,
     pix_cidade: store.pix_cidade || null,
     pix_disponivel: store.pix_chave ? 1 : 0,
@@ -483,6 +489,9 @@ export async function updateOnlineStoreHandler(c, env) {
   } catch (error) {
     return c.json({ error: error?.message || 'WhatsApp inválido' }, error?.status || 400);
   }
+  let horario;
+  try { horario = configurarHorario(body, current); }
+  catch (error) { return c.json({ error: error.message }, error.status || 400); }
   const ativarMotoboy = flag(body.entrega_plataforma_ativo, current.entrega_plataforma_ativo) === 1;
   if (ativarMotoboy && !num(current.entrega_plataforma_ativo)) {
     if (!integracaoEntregasConfigurada({ pix_chave: pix.chave, latitude: local.latitude, longitude: local.longitude }, env)) {
@@ -494,13 +503,15 @@ export async function updateOnlineStoreHandler(c, env) {
   }
   const atualizar = env.DB.prepare(
     `UPDATE lojas_online SET slug=?,nome=?,descricao=?,logo_url=?,capa_url=?,cor_capa=?,taxa_entrega=?,tempo_min_entrega=?,tempo_max_entrega=?,
-     aceita_entrega=?,aceita_retirada=?,aceita_pedidos_online=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,whatsapp_suporte=?,entrega_plataforma_ativo=?,atualizado_em=? WHERE estabelecimento_id=?`
+     aceita_entrega=?,aceita_retirada=?,aceita_pedidos_online=?,ativo=?,endereco=?,latitude=?,longitude=?,raio_entrega_km=?,valor_por_km=?,modo_entrega=?,modo_publicacao=?,pix_chave=?,pix_cidade=?,whatsapp_suporte=?,entrega_plataforma_ativo=?,aceitacao_automatica=?,horario_automatico=?,horario_abertura=?,horario_fechamento=?,horario_dias=?,horario_fuso=?,atualizado_em=? WHERE estabelecimento_id=?`
   ).bind(
     slug, nome, nulo(descricao), logo, capa, cor,
     taxa, min, max, flag(body.aceita_entrega, current.aceita_entrega), flag(body.aceita_retirada, current.aceita_retirada),
     flag(body.aceita_pedidos_online, current.aceita_pedidos_online),
     flag(body.ativo, current.ativo), nulo(local.endereco), nulo(local.latitude), nulo(local.longitude), nulo(local.raio),
-    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), nulo(whatsappSuporte), flag(body.entrega_plataforma_ativo, current.entrega_plataforma_ativo), now(), estabelecimentoId(env)
+    nulo(valorPorKm), modo, modoPublicacao, nulo(pix.chave), nulo(pix.cidade), nulo(whatsappSuporte), flag(body.entrega_plataforma_ativo, current.entrega_plataforma_ativo),
+    flag(body.aceitacao_automatica, current.aceitacao_automatica), flag(body.horario_automatico, current.horario_automatico),
+    horario.abertura, horario.fechamento, horario.dias, horario.fuso, now(), estabelecimentoId(env)
   );
   await env.DB.batch([
     reservarLinkLoja(env.rawDB, current.slug, estabelecimentoId(env)),
@@ -799,7 +810,8 @@ export async function painelPedidosHandler(c, env) {
   const deliverySelect =
     `SELECT po.id, po.comanda_id, po.mesa_id, po.cliente_nome, po.telefone, po.tipo_entrega,
        po.endereco, po.forma_pagamento, po.troco_para, po.observacao, po.status, po.etapa,
-       po.subtotal, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.total, po.criado_em, c.status AS comanda_status
+       po.subtotal, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.total, po.criado_em, c.status AS comanda_status,
+       (SELECT COUNT(*) FROM comanda_itens ci WHERE ci.comanda_id=po.comanda_id AND ci.status='novo') AS impressao_pendente
      FROM pedidos_online po
      LEFT JOIN comandas c ON c.id=po.comanda_id`;
   const deliveryRows = await env.DB.prepare(
@@ -886,6 +898,7 @@ export async function painelPedidosHandler(c, env) {
       status: row.status,
       etapa: etapaCliente(row),
       comanda_status: row.comanda_status || null,
+      impressao_pendente: num(row.impressao_pendente),
       subtotal: num(row.subtotal),
       taxa_entrega: num(row.taxa_entrega),
       valor_entrega: row.valor_entrega == null || row.valor_entrega === '' ? null : num(row.valor_entrega),
@@ -1046,6 +1059,30 @@ export async function painelCozinhaHandler(c, env) {
   return c.json({ estacoes:[...porEstacao.values()], categorias:categorias.map(cat=>({...cat,caminho:caminhos.get(num(cat.id)).map(pai=>pai.nome).join(' › ')})) });
 }
 
+// A loja vem de uma consulta por slug ou da sessão autenticada. Nunca do corpo
+// público. Reservas da impressão evitam duplicatas em retries e confirmações.
+async function aceitarPedido(env, row, automatico = true, user) {
+  const tenant = Number(row.estabelecimento_id);
+  const rawDB = env.rawDB || env.DB;
+  const scoped = { ...env, rawDB, DB: new TenantDb(rawDB, tenant), estabelecimentoId: tenant };
+  await scoped.DB.prepare(`UPDATE pedidos_online SET status='confirmado',etapa='preparando',atualizado_em=?
+    WHERE id=? AND status='recebido' AND etapa='recebido' AND comanda_id IS NOT NULL
+    ${automatico ? 'AND EXISTS (SELECT 1 FROM lojas_online WHERE aceitacao_automatica=1)' : ''}`)
+    .bind(now(), row.id).run();
+  const fresh = await scoped.DB.prepare('SELECT * FROM pedidos_online WHERE id=?').bind(row.id).first();
+  let impressao = null;
+  if (fresh?.status === 'confirmado' && fresh.etapa === 'preparando' && fresh.comanda_id) {
+    try { impressao = await dispatchOrders({ user }, scoped, { comanda_id: fresh.comanda_id }); }
+    catch (error) {
+      // O pedido permanece aceito e os itens sem reserva podem ser reenviados
+      // pelo painel. Uma falha da fila não transforma a compra em erro.
+      console.error('[delivery] print_failed', { order_id: row.id, message: String(error?.message || error).slice(0, 200) });
+      impressao = { falhas: [{ impressora: 'Delivery', erro: 'Não foi possível enfileirar. Use Imprimir pedido no painel.' }] };
+    }
+  }
+  return { row: fresh, impressao };
+}
+
 async function liberarPedidoPagamento(env, row) {
   const timestamp = now();
   const virtualNumber = 900000000;
@@ -1109,15 +1146,17 @@ export async function atualizarPedidoOnlineHandler(c, env) {
         despacho = { error: error?.message || 'O serviço de motoboys está indisponível. Tente chamar novamente.' };
       }
     }
-    return c.json({ ok: true, id: num(row.id), status: 'recebido', etapa: 'recebido', comanda_id: num(released.comanda_id), despacho });
+    const accepted = await aceitarPedido(env, row, true, c.user);
+    return c.json({ ok: true, id: num(row.id), status: accepted.row.status, etapa: accepted.row.etapa,
+      comanda_id: num(released.comanda_id), despacho, impressao: accepted.impressao });
   }
   if (['aguardando_pix', 'aguardando_pagamento'].includes(etapa) && acao !== 'cancelado') {
     return c.json({ error: 'Confirme o Pix antes de liberar o pedido' }, 409);
   }
   if (acao === 'confirmado') {
     if (etapa !== 'recebido') return c.json({ error: 'Este pedido já foi confirmado' }, 409);
-    await env.DB.prepare("UPDATE pedidos_online SET status='confirmado', etapa='preparando', atualizado_em=? WHERE id=?").bind(timestamp, row.id).run();
-    return c.json({ ok: true, id: num(row.id), status: 'confirmado', etapa: 'preparando' });
+    const accepted = await aceitarPedido(env, row, false, c.user);
+    return c.json({ ok: true, id: num(row.id), status: accepted.row.status, etapa: accepted.row.etapa, impressao: accepted.impressao });
   }
   if (acao === 'cancelado') {
     if (num(row.entrega_plataforma) === 1 && row.entrega_externa_id) {
@@ -1285,12 +1324,14 @@ export async function listPublicStoresHandler(c, env) {
   const lojas = await env.DB.prepare(
     `SELECT l.estabelecimento_id, l.slug, l.nome, l.descricao, l.logo_url, l.capa_url, l.cor_capa,
        l.taxa_entrega, l.tempo_min_entrega, l.tempo_max_entrega, l.aceita_entrega, l.aceita_retirada,
-       l.latitude, l.longitude, l.raio_entrega_km, l.valor_por_km, l.modo_entrega, l.whatsapp_suporte
+       l.latitude, l.longitude, l.raio_entrega_km, l.valor_por_km, l.modo_entrega, l.whatsapp_suporte,
+       l.ativo,l.horario_automatico,l.horario_abertura,l.horario_fechamento,l.horario_dias,l.horario_fuso
      FROM lojas_online l JOIN estabelecimentos e ON e.id=l.estabelecimento_id
      WHERE l.ativo=1 AND e.ativo=1 AND l.aceita_pedidos_online=1 AND COALESCE(l.modo_publicacao, 'marketplace')='marketplace'
      ORDER BY l.nome COLLATE NOCASE, l.estabelecimento_id
      LIMIT 200`
   ).all();
+  lojas.results = lojas.results.filter((row) => funcionamentoLoja(row).aberta_agora === 1);
   const ids = lojas.results.map((row) => num(row.estabelecimento_id));
   const categorias = ids.length
     ? (await env.DB.prepare(
@@ -1452,7 +1493,7 @@ export async function getPublicStoreHandler(c, env) {
      FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id
      LEFT JOIN cardapio_online_categorias cc ON cc.id=cp.cardapio_categoria_id AND cc.estabelecimento_id=cp.estabelecimento_id AND cc.ativo=1
      LEFT JOIN categorias cat ON cat.id=cp.categoria_id AND cat.estabelecimento_id=cp.estabelecimento_id
-     WHERE cp.estabelecimento_id=? AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1
+     WHERE cp.estabelecimento_id=? AND cp.ativo=1 AND p.ativo=1
        AND p.tipo IN ('produto','composto','combo')
      ORDER BY CASE WHEN cc.id IS NULL THEN 1 ELSE 0 END, cc.ordem, cc.id, cp.ordem, cp.id`
   ).bind(store.estabelecimento_id).all();
@@ -1490,6 +1531,9 @@ export async function getPublicStoreHandler(c, env) {
       taxa_entrega: num(store.taxa_entrega), tempo_min_entrega: store.tempo_min_entrega, tempo_max_entrega: store.tempo_max_entrega,
       aceita_entrega: num(store.aceita_entrega), aceita_retirada: num(store.aceita_retirada),
       aceita_pedidos_online: num(store.aceita_pedidos_online), ativo: num(store.ativo), modo_publicacao: store.modo_publicacao,
+      ...funcionamentoLoja(store),
+      horario_automatico: store.horario_automatico, horario_abertura: store.horario_abertura,
+      horario_fechamento: store.horario_fechamento, horario_dias: diasDaLoja(store), horario_fuso: store.horario_fuso,
       pix_disponivel: store.pix_chave ? 1 : 0,
       checkout_efi_disponivel: 0,
       entrega_plataforma_disponivel: plataformaDisponivel(store, env) ? 1 : 0,
@@ -1530,8 +1574,9 @@ export async function createPublicOrderHandler(c, env) {
 
   const key = String(body?.chave || '').trim();
   if (!ORDER_KEY.test(key)) return c.json({ error: 'Identificador do pedido inválido' }, 400);
-  const existing = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?').bind(store.estabelecimento_id, key).first();
+  let existing = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?').bind(store.estabelecimento_id, key).first();
   if (existing) {
+    existing = (await aceitarPedido(env, existing)).row;
     return c.json({
       id: existing.id, comanda_id: existing.comanda_id, status: existing.status, total: num(existing.total),
       forma_pagamento: existing.forma_pagamento,
@@ -1540,6 +1585,9 @@ export async function createPublicOrderHandler(c, env) {
       repetido: true,
     });
   }
+
+  const funcionamento = funcionamentoLoja(store);
+  if (!funcionamento.aberta_agora) return c.json({ error: funcionamento.motivo_fechado }, 409);
 
   const customer = cleanText(body?.cliente_nome, 120, 'Nome', true);
   const phone = String(body?.telefone || '').replace(/\D/g, '');
@@ -1649,6 +1697,11 @@ export async function createPublicOrderHandler(c, env) {
       return c.json({ error: error?.message || 'Esta loja não recebe Pix.' }, error?.status || 400);
     }
   }
+  // Reconfere depois de localização, frete e montagem dos itens. A loja pode
+  // ter fechado enquanto o cliente concluía o checkout.
+  const latestStore = await env.DB.prepare('SELECT * FROM lojas_online WHERE estabelecimento_id=?').bind(store.estabelecimento_id).first();
+  const latestHours = funcionamentoLoja(latestStore);
+  if (!latestHours.aberta_agora || !latestStore.aceita_pedidos_online) return c.json({ error: latestHours.motivo_fechado || 'Esta loja não recebe pedidos neste momento.' }, 409);
   const timestamp = now();
   const data = JSON.stringify(items);
   const virtualNumber = 900000000;
@@ -1657,8 +1710,12 @@ export async function createPublicOrderHandler(c, env) {
   const statements = [
     env.DB.prepare(
       `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em)
-       VALUES (?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp),
+       SELECT ?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?
+       WHERE EXISTS (SELECT 1 FROM lojas_online WHERE estabelecimento_id=? AND ativo=1 AND aceita_pedidos_online=1)
+         AND ?=(SELECT COUNT(*) FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id AND p.estabelecimento_id=cp.estabelecimento_id
+           WHERE cp.estabelecimento_id=? AND cp.id IN (SELECT value FROM json_each(?)) AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1)`
+    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp,
+      store.estabelecimento_id, catalogIds.length, store.estabelecimento_id, JSON.stringify(catalogIds)),
   ];
   if (platformDelivery) {
     statements.push(env.DB.prepare(
@@ -1706,8 +1763,9 @@ export async function createPublicOrderHandler(c, env) {
     ).bind(timestamp, data, store.estabelecimento_id, key));
   }
   await env.DB.batch(statements);
-  const created = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?').bind(store.estabelecimento_id, key).first();
-  if (!created || (!segurarPix && !created.comanda_id)) throw httpError(409, 'Não foi possível registrar o pedido. Tente novamente.');
+  let created = await env.DB.prepare('SELECT * FROM pedidos_online WHERE estabelecimento_id=? AND chave=?').bind(store.estabelecimento_id, key).first();
+  if (!created) throw httpError(409, 'Loja ou produto indisponível. Atualize o cardápio e tente novamente.');
+  if (!segurarPix && !created.comanda_id) throw httpError(409, 'Não foi possível registrar o pedido. Tente novamente.');
   let pixCopiaCola = null;
   if (payment === 'pix') {
     pixCopiaCola = copiaColaPix({
@@ -1720,6 +1778,7 @@ export async function createPublicOrderHandler(c, env) {
     await env.DB.prepare('UPDATE pedidos_online SET pix_copia_cola=? WHERE id=? AND estabelecimento_id=?')
       .bind(pixCopiaCola, created.id, store.estabelecimento_id).run();
   }
+  created = (await aceitarPedido(env, created)).row;
   await kvPut(env, rateKey, String(attempts + 1), { expirationTtl: 900 });
   return c.json({
     id: created.id, comanda_id: created.comanda_id, status: created.status, total: num(created.total),

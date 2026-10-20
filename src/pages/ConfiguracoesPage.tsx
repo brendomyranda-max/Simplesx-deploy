@@ -6,6 +6,8 @@
 import { useEffect, useState } from 'react';
 import { Settings, Save } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
+import { ConfiguracaoFuncionamentoDelivery } from '@/components/FuncionamentoDelivery';
+import { useAuth } from '@/store/auth';
 import { AppVersion } from '@/components/AppVersion';
 import { PdaInstalacaoCard } from '@/components/PdaInstalacaoCard';
 import { Button, Card, Field, Input, Select, Spinner, useToast } from '@/components/ui';
@@ -14,6 +16,7 @@ import type { ConfigEmpresa } from '@/lib/types';
 
 export function ConfiguracoesPage() {
   const toast = useToast();
+  const modulos = useAuth((state) => state.modulos);
   const [cfg, setCfg] = useState<ConfigEmpresa | null>(null);
   const [form, setForm] = useState<any>({});
   const [load, setLoad] = useState(true);
@@ -95,6 +98,8 @@ export function ConfiguracoesPage() {
       <div className="mb-4 space-y-4">
         <PdaInstalacaoCard />
       </div>
+
+      {(modulos.includes('restaurante') || modulos.includes('gestor')) && <div className="mb-4"><ConfiguracaoFuncionamentoDelivery /></div>}
 
       {load && <Spinner />}
 
