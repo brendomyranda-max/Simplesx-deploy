@@ -2,15 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import SqliteDb from '../server/sqlite-db.js';
 import { TenantDb } from '../shared/tenant-db.js';
-import { createCategoriaHandler, deleteCategoriaHandler, listCategoriasHandler, createProdutoHandler, updateProdutoHandler, entradaMercadoriaHandler } from '../shared/handlers-catalog.js';
+import { createCategoriaHandler, deleteCategoriaHandler, listCategoriasHandler, createProdutoHandler, updateProdutoHandler, entradaMercadoriaHandler, listProdutosHandler, buscarProdutoHandler } from '../shared/handlers-catalog.js';
 import { updateOnlineStoreHandler, upsertOnlineCatalogProductHandler, getPublicStoreHandler, createPublicOrderHandler } from '../shared/handlers-online.js';
 import { saveOrderItems } from '../shared/restaurant-orders.js';
+import { fecharComandaHandler } from '../shared/handlers-vendas.js';
 import { handle } from '../shared/router.js';
 
-function context(body = {}, id, params = {}) {
+function context(body = {}, id, params = {}, query = {}) {
   return {
     user: { id: 1, nome: 'Dono' }, params: { id: String(id ?? ''), ...params },
-    req: { json: async () => body, header: () => '', query: () => '' },
+    req: { json: async () => body, header: () => '', query: (key) => query[key] || '' },
     json: (data, status = 200) => ({ data, status }),
   };
 }
@@ -98,7 +99,7 @@ test('produto simples sem preço nem validade permite cadastro e reposição sem
   assert.equal(created.data.preco, null);
   assert.equal(created.data.custo, 0);
   assert.equal(created.data.data_vencimento, null);
-  assert.equal(created.data.exibir_restaurante, 0);
+  assert.equal(created.data.exibir_restaurante, 1);
   assert.equal(created.data.exibir_mercado, 0);
   const entered = await entradaMercadoriaHandler(context({ produto_id: created.data.id, quantidade: 3 }), f.a);
   assert.equal(entered.status, 200);
@@ -121,13 +122,18 @@ test('editar produto permite retirar e recolocar o preço; atualização parcial
     const result = await updateProdutoHandler(context({ nome: 'Embalagem grande', preco }, id), f.a);
     assert.equal(result.status, 200);
     assert.equal(result.data.preco, null);
-    assert.equal(result.data.exibir_restaurante, 0);
+    assert.equal(result.data.exibir_restaurante, 1);
     assert.equal(result.data.exibir_mercado, 0);
   }
   const restored = await updateProdutoHandler(context({ nome: 'Embalagem grande', preco: 15, exibir_restaurante: true, exibir_mercado: true }, id), f.a);
   assert.equal(restored.data.preco, 15);
   assert.equal(restored.data.exibir_restaurante, 1);
   assert.equal(restored.data.exibir_mercado, 1);
+  const desativado = await updateProdutoHandler(context({ nome: 'Embalagem grande', preco: null, exibir_restaurante: false }, id), f.a);
+  assert.equal(desativado.data.exibir_restaurante, 0);
+  const ativado = await updateProdutoHandler(context({ nome: 'Embalagem grande', exibir_restaurante: true }, id), f.a);
+  assert.equal(ativado.data.preco, null);
+  assert.equal(ativado.data.exibir_restaurante, 1);
 });
 
 test('preço opcional não aceita valores inválidos nem desobriga validade quando habilitada ou preço de balança', async (t) => {
@@ -141,13 +147,69 @@ test('preço opcional não aceita valores inválidos nem desobriga validade quan
   assert.equal((await entradaMercadoriaHandler(context({ produto_id: dated.data.id, quantidade: 1 }), f.a)).status, 400);
 });
 
-test('produto somente para estoque não é lançado como venda gratuita no restaurante', async (t) => {
+test('produto sem preço precisa estar habilitado no restaurante para ser lançado', async (t) => {
   const f = fixture(t);
   const created = await createProdutoHandler(context(stockProduct), f.a);
   f.raw.prepare("INSERT INTO mesas(id,estabelecimento_id,numero,nome) VALUES(1,1,1,'Mesa 1')").run();
   f.raw.prepare("INSERT INTO comandas(id,estabelecimento_id,mesa_id,status) VALUES(1,1,1,'aberta')").run();
-  await assert.rejects(() => saveOrderItems(context({}, 1), f.a, { chave: 'pedido-sem-preco-01', itens: [{ produto_id: created.data.id, quantidade: 1 }] }), (error) => error.status === 400 && /preço de venda/.test(error.message));
+  await assert.rejects(() => saveOrderItems(context({}, 1), f.a, { chave: 'pedido-sem-preco-01', itens: [{ produto_id: created.data.id, quantidade: 1 }] }), (error) => error.status === 400 && /Ative o produto sem preço no restaurante/.test(error.message));
   assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM comanda_itens').first().n, 0);
+});
+
+for (const comAcrescimo of [false, true]) {
+  test(`produto sem preço ativado no restaurante aparece, é lançado e fechado ${comAcrescimo ? 'cobrando apenas o acréscimo' : 'com valor zero'}`, async (t) => {
+    const f = fixture(t);
+    const extra = await createProdutoHandler(context({ ...stockProduct, nome: 'Bife extra', codigo_interno: 'BIFE', preco: 4 }), f.a);
+    const created = await createProdutoHandler(context({
+      ...stockProduct, nome: 'Item informativo', codigo_interno: 'SEM-PRECO', custo: 2, estoque_atual: 5, exibir_restaurante: true,
+      acrescimos: [{ insumo_id: extra.data.id }],
+    }), f.a);
+    assert.equal(created.status, 201);
+    const listContext = context({}, undefined, {}, { local: 'restaurante' });
+    const listed = await listProdutosHandler(listContext, f.a);
+    assert.deepEqual(listed.data.map((p) => p.id), [created.data.id]);
+    assert.equal(listed.data[0].preco, null);
+    assert.deepEqual((await listProdutosHandler(listContext, f.b)).data, []);
+    const searched = await buscarProdutoHandler(context({ codigo: 'SEM-PRECO', local: 'restaurante' }), f.a);
+    assert.equal(searched.status, 200);
+    assert.equal(searched.data.id, created.data.id);
+    f.raw.prepare("INSERT INTO mesas(id,estabelecimento_id,numero,nome,status) VALUES(1,1,1,'Mesa 1','ocupada')").run();
+    f.raw.prepare("INSERT INTO comandas(id,estabelecimento_id,mesa_id,status) VALUES(1,1,1,'aberta')").run();
+    const order = {
+      chave: 'restaurante-sem-preco-01',
+      itens: [{ ...(comAcrescimo ? { codigo: 'SEM-PRECO' } : { produto_id: created.data.id }), quantidade: 2, acrescimos: comAcrescimo ? [extra.data.id] : [] }],
+    };
+    const saved = await saveOrderItems(context({}, 1), f.a, order);
+    assert.equal(saved.itens[0].preco_unitario, comAcrescimo ? 4 : 0);
+    if (comAcrescimo) assert.equal(saved.itens[0].observacao, 'Adicionar: Bife extra');
+    assert.equal((await saveOrderItems(context({}, 1), f.a, order)).repetido, true);
+    assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM comanda_itens').first().n, 1);
+    const closed = await fecharComandaHandler(context({ taxa_garcom_pct: 0 }, 1), f.a);
+    assert.equal(closed.status, 200);
+    assert.equal(closed.data.total, comAcrescimo ? 8 : 0);
+    const stored = f.raw.prepare('SELECT preco,estoque_atual,exibir_restaurante FROM produtos WHERE id=?').bind(created.data.id).first();
+    assert.deepEqual(stored, { preco: null, estoque_atual: 3, exibir_restaurante: 1 });
+    assert.equal(f.raw.prepare('SELECT quantidade FROM estoque_movimentacoes WHERE origem=? AND produto_id=?').bind('venda', created.data.id).first().quantidade, 2);
+  });
+}
+
+test('desativar produto sem preço durante o lançamento impede sua gravação na comanda', async (t) => {
+  const f = fixture(t);
+  const created = await createProdutoHandler(context({ ...stockProduct, exibir_restaurante: true }), f.a);
+  f.raw.prepare("INSERT INTO mesas(id,estabelecimento_id,numero) VALUES(1,1,1)").run();
+  f.raw.prepare("INSERT INTO comandas(id,estabelecimento_id,mesa_id,status) VALUES(1,1,1,'aberta')").run();
+  const env = { ...f.a, rawDB: {
+    prepare: (sql) => f.raw.prepare(sql),
+    batch: (statements) => {
+      f.raw.prepare('UPDATE produtos SET exibir_restaurante=0 WHERE id=?').bind(created.data.id).run();
+      return f.raw.batch(statements);
+    },
+  } };
+  await assert.rejects(() => saveOrderItems(context({}, 1), env, {
+    chave: 'restaurante-sem-preco-02', itens: [{ produto_id: created.data.id, quantidade: 1 }],
+  }), (error) => error.status === 409);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM comanda_itens').first().n, 0);
+  assert.equal(f.raw.prepare('SELECT COUNT(*) AS n FROM comanda_lancamentos').first().n, 0);
 });
 
 test('delivery recusa produto sem preço, mas permite preço próprio configurado no cardápio', async (t) => {

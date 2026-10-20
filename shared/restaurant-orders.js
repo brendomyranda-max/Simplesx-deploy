@@ -55,7 +55,9 @@ export async function saveOrderItems(c, env, body) {
   for (const b of input) {
     const product = b.produto_id ? byId.get(b.produto_id) : b.codigo ? byCode.get(b.codigo.trim()) : null;
     if ((b.produto_id || b.codigo) && (!product || !product.ativo)) throw httpError(400, 'Produto não encontrado ou inativo');
-    if (product?.tipo === 'produto' && product.preco == null) throw httpError(400, `Defina o preço de venda antes de lançar: ${product.nome}`);
+    if (product?.tipo === 'produto' && product.preco == null && !product.exibir_restaurante) {
+      throw httpError(400, `Ative o produto sem preço no restaurante antes de lançar: ${product.nome}`);
+    }
     const escolhidos = selecionarAcrescimos(b.acrescimos, extras.filter((extra) => extra.produto_id === product?.id));
     const combo = product?.tipo === 'combo' ? await montarCombo(env, product, b.combo_escolhas) : null;
     if (!combo && b.combo_escolhas != null) throw httpError(400, 'Este produto não é um combo');
@@ -86,7 +88,8 @@ export async function saveOrderItems(c, env, body) {
         (json_extract(j.value,'$.pessoa_id') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM comanda_pessoas p
           WHERE p.id=json_extract(j.value,'$.pessoa_id') AND p.comanda_id=? AND p.estabelecimento_id=? AND p.status='pendente'))
         OR (json_extract(j.value,'$.produto_id') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM produtos p
-          WHERE p.id=json_extract(j.value,'$.produto_id') AND p.estabelecimento_id=? AND p.ativo=1)))
+          WHERE p.id=json_extract(j.value,'$.produto_id') AND p.estabelecimento_id=? AND p.ativo=1
+            AND (p.tipo!='produto' OR p.preco IS NOT NULL OR p.exibir_restaurante=1))))
       ON CONFLICT(estabelecimento_id,chave) DO NOTHING`)
       .bind(id, tenant, key, hash, command.id, c.user.id, timestamp, command.id, tenant, timestamp, data, command.id, tenant, tenant),
     db.prepare(`INSERT INTO comanda_itens

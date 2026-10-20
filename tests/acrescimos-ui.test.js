@@ -77,4 +77,27 @@ test('cadastro de produto simples permite selecionar bebida e salva seu acrésci
   assert.equal(saved.tipo, 'produto');
   assert.deepEqual(saved.acrescimos, [{ insumo_id: 3, valor: 6 }]);
   assert.match(lerAcrescimos([{ insumo_id: 4, nome: 'Somente estoque', preco: 10 }], lista).erro, /preço de venda/);
+
+  // O preço e a disponibilidade no restaurante são configurações independentes.
+  find(tree, (node) => node.type === 'Toggle' && node.props.label === 'Aparece no Restaurante').props.onChange(true);
+  tree = render();
+  find(tree, (node) => node.type === 'Toggle' && node.props.label === 'Sem preço de venda').props.onChange(true);
+  tree = render();
+  assert.equal(find(tree, (node) => node.type === 'Toggle' && node.props.label === 'Aparece no Restaurante').props.checked, true);
+  await find(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(errors, []);
+  assert.equal(saved.preco, null);
+  assert.equal(saved.exibir_restaurante, true);
+  assert.equal(saved.exibir_mercado, false);
+  assert.deepEqual(saved.acrescimos, [{ insumo_id: 3, valor: 6 }]);
+  find(tree, (node) => node.type === 'Toggle' && node.props.label === 'Aparece no Restaurante').props.onChange(false);
+  tree = render();
+  await find(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.equal(saved.preco, null);
+  assert.equal(saved.exibir_restaurante, false);
+  find(tree, (node) => node.type === 'Toggle' && node.props.label === 'Aparece no Restaurante').props.onChange(true);
+  tree = render();
+  await find(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.equal(saved.preco, null);
+  assert.equal(saved.exibir_restaurante, true);
 });

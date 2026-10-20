@@ -200,17 +200,19 @@ Credenciais e certificados não devem ser gravados no D1. O banco armazena apena
 o identificador da empresa no provedor; segredos globais pertencem aos secrets do
 Worker/Cloudflare.
 
-## Categorias e produtos somente para estoque
+## Categorias e produtos sem preço de venda
 
 Em **Categorias**, a lixeira exclui a categoria após confirmação. Os produtos e
 seus históricos são preservados, e as subcategorias passam a categorias principais
 mantendo suas impressoras. O botão de ativar/desativar continua disponível.
 
-No cadastro de produtos simples, marque **Somente estoque (sem preço de venda)**
-ou deixe o preço em branco para cadastrar itens apenas para reposição e controle.
-O preço fica ausente, sem ser convertido em zero. O custo de compra também é
-opcional. Para vender depois, informe um preço e habilite a exibição no
-restaurante/PDV. O delivery permite configurar seu próprio preço no cardápio.
+No cadastro de produtos simples, marque **Sem preço de venda** ou deixe o preço
+em branco. O preço fica ausente no cadastro, sem ser convertido em zero, e o
+custo de compra também é opcional. É possível repor o estoque e ativar
+**Aparece no Restaurante** mesmo sem preço. Nesse caso, o lançamento na comanda
+tem valor base zero e soma apenas os acréscimos pagos escolhidos; o fechamento
+registra a saída do produto normalmente. Para exibir no PDV (Mercado), informe
+um preço. O delivery permite configurar seu próprio preço no cardápio.
 
 ## Acréscimos em produtos simples e compostos
 

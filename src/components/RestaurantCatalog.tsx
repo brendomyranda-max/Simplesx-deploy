@@ -48,7 +48,7 @@ export function RestaurantCatalog({ products, categories, onSelect }: {
           {visible.map((product) => <button key={product.id} type="button" onClick={() => onSelect(product)}
             className="rounded-xl border border-slate-200 p-3 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 focus-visible:outline-brand-500">
             <p className="text-sm font-bold leading-tight text-slate-800">{product.nome}</p>
-            <p className="mt-1 text-xs font-bold text-brand-600">{product.preco != null ? fmtBRL(product.preco) : '—'}</p>
+            <p className="mt-1 text-xs font-bold text-brand-600">{product.preco != null ? fmtBRL(product.preco) : 'Sem preço de venda'}</p>
           </button>)}
         </div>
       )}

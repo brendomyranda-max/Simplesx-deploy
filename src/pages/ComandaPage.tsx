@@ -1337,7 +1337,7 @@ export function ComandaPage() {
           <fieldset disabled={adicionando} className="space-y-4">
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-sm font-bold text-slate-800">{addProduto.nome}</p>
-              <p className="text-xs text-slate-500">{addProduto.preco != null ? fmtBRL(addProduto.preco) : '—'}</p>
+              <p className="text-xs text-slate-500">{addProduto.preco != null ? fmtBRL(addProduto.preco) : 'Sem preço de venda · valor base R$ 0,00'}</p>
             </div>
             {addProduto.tipo === 'combo' && !editandoItem && <ComboEscolha grupos={(JSON.parse(addProduto.combo_grupos_json || '[]') as NonNullable<Produto['combo_grupos']>).map((g) => ({ ...g, opcoes: g.opcoes.map((o) => ({ ...o, nome: opcoesCombo.find((p) => p.id === o.produto_id)?.nome })) }))} escolhas={comboChoices} onChange={setComboChoices} />}
 

@@ -105,7 +105,7 @@ export function ProdutoForm({
   const [saving, setSaving] = useState(false);
   const [novoComentario, setNovoComentario] = useState('');
   const [form, setForm] = useState<any>(() => initialState(produto, codigoInicial));
-  const somenteEstoque = form.tipo === 'produto' && (form.sem_preco || form.preco === '');
+  const semPrecoVenda = form.tipo === 'produto' && (form.sem_preco || form.preco === '');
   const [canal, setCanal] = useState<'cadastro' | 'delivery'>(canalInicial);
   const [opcoesEstoque, setOpcoesEstoque] = useState<Produto[]>([]);
   const [catalogoDelivery, setCatalogoDelivery] = useState<OnlineCatalogProduct[]>([]);
@@ -326,7 +326,7 @@ export function ProdutoForm({
         nome: form.nome.trim(),
         codigo_interno: form.codigo_interno.trim(),
         unidade: form.unidade,
-        preco: somenteEstoque || form.preco === '' ? null : Number(form.preco),
+        preco: semPrecoVenda || form.preco === '' ? null : Number(form.preco),
         produto_balanca: form.produto_balanca,
         balanca_plu: form.produto_balanca ? String(form.balanca_plu).padStart(6, '0') : null,
         custo: form.tipo === 'composto' ? undefined : form.tipo === 'combo' ? 0 : Number(form.custo || 0),
@@ -346,8 +346,8 @@ export function ProdutoForm({
         observacoes: form.observacoes.trim() || null,
         fornecedor_id: form.fornecedor_id ? Number(form.fornecedor_id) : null,
         ativo: form.ativo,
-        exibir_restaurante: !somenteEstoque && form.exibir_restaurante,
-        exibir_mercado: !somenteEstoque && form.exibir_mercado,
+        exibir_restaurante: form.exibir_restaurante,
+        exibir_mercado: !semPrecoVenda && form.exibir_mercado,
         codigos_barras: form.codigos_barras.filter((c: any) => c.codigo.trim()),
         categoria_ids: form.categoria_ids,
         comentarios: form.comentarios.map((c: string) => c.trim()).filter(Boolean),
@@ -627,8 +627,11 @@ export function ProdutoForm({
         {form.tipo === 'combo' && <ComboCadastro grupos={form.combo_grupos} produtos={produtosCombo} onChange={(grupos) => set('combo_grupos', grupos)} />}
 
         {form.tipo === 'produto' && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <Toggle checked={form.sem_preco} onChange={(value) => setForm((current: any) => ({ ...current, sem_preco: value, ...(value ? { preco: '', produto_balanca: false, exibir_restaurante: false, exibir_mercado: false } : {}) }))} label="Somente estoque (sem preço de venda)" />
-          <p className="mt-2 text-xs text-slate-600">Permite cadastrar e repor o estoque sem informar preço. O custo de compra também pode ficar em branco. Para vender depois, informe o preço e escolha onde exibir.</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-700">Sem preço de venda</p>
+            <Toggle checked={form.sem_preco} onChange={(value) => setForm((current: any) => ({ ...current, sem_preco: value, ...(value ? { preco: '', produto_balanca: false, exibir_mercado: false } : {}) }))} label="Sem preço de venda" />
+          </div>
+          <p className="mt-2 text-xs text-slate-600">Permite cadastrar e repor o estoque sem informar preço. Você também pode ativar no restaurante: o item entra na comanda sem valor base e os acréscimos pagos são somados. O custo de compra pode ficar em branco.</p>
         </div>}
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -639,8 +642,8 @@ export function ProdutoForm({
               ))}
             </Select>
           </Field>
-          <Field label={form.tipo === 'produto' && !form.produto_balanca ? 'Preço venda (R$) — opcional' : 'Preço venda (R$)'} hint={form.tipo === 'insumo' ? 'Se o cliente acrescentar este item em um lanche, este valor entra como observação e soma no preço.' : form.tipo === 'produto' ? 'Em branco: produto somente para estoque, sem preço cadastrado.' : undefined}>
-            <Input type="number" min="0" step="0.01" value={form.preco} disabled={form.tipo === 'produto' && form.sem_preco} onChange={(e) => set('preco', e.target.value)} placeholder={somenteEstoque ? 'Sem preço' : '0,00'} />
+          <Field label={form.tipo === 'produto' && !form.produto_balanca ? 'Preço venda (R$) — opcional' : 'Preço venda (R$)'} hint={form.tipo === 'insumo' ? 'Se o cliente acrescentar este item em um lanche, este valor entra como observação e soma no preço.' : form.tipo === 'produto' ? 'Em branco: sem preço cadastrado. Pode ser ativado no restaurante sem valor base.' : undefined}>
+            <Input type="number" min="0" step="0.01" value={form.preco} disabled={form.tipo === 'produto' && form.sem_preco} onChange={(e) => set('preco', e.target.value)} placeholder={semPrecoVenda ? 'Sem preço' : '0,00'} />
             {form.produto_balanca && <p className="mt-1 text-[11px] text-slate-500">Valor por {form.unidade === 'L' ? 'litro' : 'quilo'}</p>}
           </Field>
           {form.tipo === 'composto' || form.tipo === 'combo' ? (
@@ -850,17 +853,17 @@ export function ProdutoForm({
           </div>
         </Field>
 
-        {somenteEstoque ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Sem preço de venda: disponível para entrada e controle de estoque. Informe um preço para habilitar a exibição no restaurante ou PDV.</p> : <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-700">Aparece no Restaurante</p>
-                <p className="text-[11px] text-slate-400">Disponível para lançar em comandas de mesa</p>
+                <p className="text-[11px] text-slate-400">{semPrecoVenda ? 'Sem valor base na comanda; acréscimos pagos são cobrados' : 'Disponível para lançar em comandas de mesa'}</p>
               </div>
-              <Toggle checked={form.exibir_restaurante} onChange={(v) => set('exibir_restaurante', v)} />
+              <Toggle checked={form.exibir_restaurante} onChange={(v) => set('exibir_restaurante', v)} label="Aparece no Restaurante" />
             </div>
           </div>
-          <div className="rounded-xl bg-slate-50 px-4 py-3">
+          {semPrecoVenda ? <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">Para disponibilizar no PDV (Mercado), informe um preço de venda.</p> : <div className="rounded-xl bg-slate-50 px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-700">Aparece no PDV (Mercado)</p>
@@ -868,8 +871,8 @@ export function ProdutoForm({
               </div>
               <Toggle checked={form.exibir_mercado} onChange={(v) => set('exibir_mercado', v)} />
             </div>
-          </div>
-        </div>}
+          </div>}
+        </div>
 
         <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
           <div>
