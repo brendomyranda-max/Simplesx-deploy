@@ -511,6 +511,21 @@ etiquetas e testes. Impressoras sem preferência salva continuam usando **Normal
 Com altura fixa, o texto pode ser reduzido para caber no papel; altura automática
 acompanha o conteúdo. A opção está disponível no Windows, Linux e Android.
 
+### Compatibilidade Diebold e largura dos cupons (1.5.22)
+
+O servidor inclui **Protocolo → Diebold IM453H (Padrão / Padrão II)** para
+equipamentos cujo autoteste indique essa tabela de comandos. Se a impressora
+estiver em emulação ESC/POS, continue usando **ESC/POS**. A seleção é explícita;
+o servidor preserva os protocolos salvos e não reconfigura o firmware.
+
+Em cupons ESC/POS e Diebold, **Caracteres por linha na fonte Normal** permite
+calibrar a quebra ao limite do autoteste. Deixe vazio para automático. Grande
+usa metade das colunas; a fonte pequena da Diebold mantém quebra conservadora
+porque a densidade condensada depende da configuração interna. A altura desses
+cupons acompanha o texto; DPI e altura de etiqueta não alteram o tamanho da letra.
+Após configurar o protocolo e a largura real da bobina, use o teste de impressão
+para conferir a saída física.
+
 ### Atualizar os servidores sem desinstalar (1.5.16)
 
 Instale a versão 1.5.19 por cima da instalação anterior: execute o instalador do
