@@ -12,16 +12,46 @@ instalações, os dados e os endereços existentes.
 
 ## Versão da aplicação
 
-**DoixP 0.1.0-beta.2 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
+**DoixP 0.1.0-beta.3 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
 A versão exibida na aplicação vem do `package.json`, sincronizado com o
 `package-lock.json`. As próximas versões de pré-lançamento seguem
-`0.1.0-beta.3`, `0.1.0-beta.4` e assim por diante. Cada publicação recebe uma tag
+`0.1.0-beta.4`, `0.1.0-beta.5` e assim por diante. Cada publicação recebe uma tag
 `doixp-v<VERSÃO>` e uma release marcada como pré-lançamento no GitHub.
 Ao liberar a versão estável, retire o sufixo beta e a identificação de
 pré-lançamento da interface.
 
 Os instaladores do **Servidor DoixP** mantêm seu próprio versionamento e as tags
 `gestor-v<VERSÃO>`.
+
+## Desempenho do atendimento
+
+Na versão **0.1.0-beta.3**, a abertura com 1, 20 ou 100 pessoas usa **12
+comandos SQL em 4 acessos ao banco** no fluxo do atendimento, além da autenticação.
+Antes, abrir com 20 pessoas exigia 32 comandos e 13 acessos. As pessoas
+continuam cadastradas e disponíveis para lançamento, transferência, cartão e
+pagamento individual; um único `INSERT ... SELECT` substitui o comando por pessoa.
+A transação reverte a abertura inteira se qualquer gravação falhar.
+
+As comandas continuam conferindo alterações a cada três segundos. Sem mudanças,
+a API lê somente a revisão da comanda em vez das sete consultas completas. A
+autenticação continua sendo validada em cada chamada. Quando há mudanças, a
+resposta completa vem de um lote consistente. A migração `0053` mantém a revisão
+nas alterações de itens, pessoas, cartões, mesa, pagamentos e filas de impressão.
+
+O cardápio é consultado uma vez por entrada na comanda, com a mesma lista usada
+nas escolhas de combos. Leituras HTTP simultâneas da mesma URL compartilham a
+requisição em andamento, sem cache de dados de negócio. As telas carregam seus
+arquivos conforme o acesso; somente arquivos estáticos com hash usam cache longo.
+
+A suíte inclui seis sessões autenticadas abrindo a mesa 2 ao mesmo tempo e depois
+lançando seis produtos por sessão, com 20 pessoas, reenvios e impressão. O teste
+verifica os 36 itens, o responsável e a pessoa de cada lançamento e a ausência de
+duplicação. Também cobre rollback de falhas e atualização de revisões.
+
+O custo do D1 depende das linhas lidas e escritas, não apenas do número de chamadas.
+Os índices e a consulta de revisão reduzem as leituras repetidas; atualizar a
+revisão acrescenta gravações nas alterações. A economia real depende do movimento
+da loja e deve ser acompanhada nas [métricas do D1](https://developers.cloudflare.com/d1/observability/billing/).
 
 ## Transferência e exclusão de mesas
 

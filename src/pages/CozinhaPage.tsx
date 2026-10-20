@@ -35,6 +35,7 @@ export function CozinhaPage() {
   const [atualizado, setAtualizado] = useState('');
 
   const carregar = async (silencioso = false) => {
+    if (silencioso && document.hidden) return;
     if (categoriaId!==filtroAtual.current) return;
     const versao = ++requisicao.current;
     if (!silencioso) setLoad(true);

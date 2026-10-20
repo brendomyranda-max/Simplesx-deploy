@@ -74,7 +74,7 @@ export async function retryOrder<T>(send: () => Promise<T>): Promise<T> {
 
 const BASE = '/api';
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function sendRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   const controller = new AbortController();
@@ -111,6 +111,23 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+// Compartilha apenas leituras ainda em andamento. Não mantém preços, estoque
+// ou permissões em cache; uma gravação inicia uma nova geração de leituras.
+const pendingGets = new Map<string, Promise<unknown>>();
+function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method !== 'GET') {
+    pendingGets.clear();
+    return sendRequest<T>(method, path, body).finally(() => pendingGets.clear());
+  }
+  const pending = pendingGets.get(path);
+  if (pending) return pending as Promise<T>;
+  const next = sendRequest<T>(method, path).finally(() => {
+    if (pendingGets.get(path) === next) pendingGets.delete(path);
+  });
+  pendingGets.set(path, next);
+  return next;
 }
 
 export const api = {
@@ -322,6 +339,7 @@ export const mesaApi = {
 export const comandaApi = {
   addItems: (id: number, body: OrderSubmission) => retryOrder(() => api.post<{ itens: Comanda['itens']; repetido: boolean }>(`/comandas/${id}/itens/lote`, body)),
   get: (id: number) => api.get<Comanda>(`/comandas/${id}`),
+  atualizar: (id: number, revisao: number) => api.get<Comanda | { sem_alteracoes: true; revisao: number }>(`/comandas/${id}?revisao=${revisao}`),
   addPessoa: (id: number, b: { nome?: string; cor?: string }) => api.post<{ id: number }>(`/comandas/${id}/pessoas`, b),
   removePessoa: (id: number, pid: number) => api.del<{ ok: boolean }>(`/comandas/${id}/pessoas/${pid}`),
   renamePessoa: (id: number, pid: number, nome: string) =>

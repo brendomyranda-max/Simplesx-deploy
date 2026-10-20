@@ -11,11 +11,14 @@ test('ponte web recebe evento Android sem foco HTML e retira espera antes de uma
   const cleanups = [];
   const identified = [];
   const received = [];
+  let focused = false, clock = 100000, polls = 0;
+  t.mock.method(Date, 'now', () => clock);
   t.after(() => cleanups.reverse().forEach((fn) => fn()));
   const globals = {
-    window: new EventTarget(), document: Object.assign(new EventTarget(), { visibilityState: 'visible', hasFocus: () => false }),
+    window: new EventTarget(), document: Object.assign(new EventTarget(), { visibilityState: 'visible', hasFocus: () => focused }),
     __nfcEffects: (fn) => { const cleanup = fn(); if (cleanup) cleanups.push(cleanup); },
     __nfcIdentify: async (uid) => { identified.push(uid); return { id: identified.length, uid, origem: 'android-local', payload: '' }; },
+    __nfcPoll: async () => { polls++; return []; },
   };
   for (const [key, value] of Object.entries(globals)) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
@@ -25,7 +28,7 @@ test('ponte web recebe evento Android sem foco HTML e retira espera antes de uma
   t.mock.method(globalThis, 'fetch', async () => ({ ok: false }));
   t.mock.timers.enable({ apis: ['setInterval'] });
   const react = asModule('export const useRef = (v) => ({current:v}); export const useEffect = (fn) => globalThis.__nfcEffects(fn);');
-  const api = asModule('export const nfcApi = { identificar: (uid) => globalThis.__nfcIdentify(uid), pendentes: async () => [], consumir: async () => { throw new Error("fila indevida"); } };');
+  const api = asModule('export const nfcApi = { identificar: (uid) => globalThis.__nfcIdentify(uid), pendentes: globalThis.__nfcPoll, consumir: async () => { throw new Error("fila indevida"); } };');
   const cups = asModule('export const CUPS_SERVER = "http://127.0.0.1:3002";');
   const delivery = asModule(readFileSync('src/lib/nfcDelivery.ts', 'utf8'));
   const bridge = readFileSync('src/lib/useNfcBridge.ts', 'utf8')
@@ -58,4 +61,17 @@ test('ponte web recebe evento Android sem foco HTML e retira espera antes de uma
   emit('8899AABB');
   await new Promise(setImmediate);
   assert.equal(identified.length, 4);
+
+  // Sem espera de cartão, o terminal reduz consultas à nuvem. Ao começar
+  // um atendimento, volta a consultar imediatamente e a cada dois segundos.
+  focused = true;
+  const advance = async ms => { clock += ms; t.mock.timers.tick(ms); await new Promise(setImmediate); };
+  await advance(2000); assert.equal(polls, 1);
+  await advance(12000); assert.equal(polls, 1);
+  await advance(4000); assert.equal(polls, 2);
+  useNfcLeitura(true, () => {}, true);
+  await new Promise(setImmediate); assert.equal(polls, 3);
+  await advance(2000); assert.equal(polls, 4);
+  document.visibilityState = 'hidden';
+  await advance(16000); assert.equal(polls, 4);
 });

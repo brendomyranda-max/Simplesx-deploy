@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   UserPlus,
@@ -40,14 +40,17 @@ export function ComandaPage() {
   const { id } = useParams();
   const comandaId = Number(id);
   const navigate = useNavigate();
+  const location = useLocation();
+  const inicial: Comanda | null = location.state?.comandaInicial?.id === comandaId ? location.state.comandaInicial : null;
   const [searchParams] = useSearchParams();
   const fecharAutomatico = useRef(searchParams.get('fechar') === '1');
   const toast = useToast();
   const confirm = useConfirm();
   const podeGerenciar = useAuth((s) => s.can('gestor'));
 
-  const [comanda, setComanda] = useState<Comanda | null>(null);
-  const [load, setLoad] = useState(true);
+  const [comanda, setComanda] = useState<Comanda | null>(inicial);
+  const comandaRef = useRef<Comanda | null>(inicial);
+  const [load, setLoad] = useState(!inicial);
   const [pessoaSel, setPessoaSel] = useState<number | 'geral'>('geral');
   const [setor, setSetor] = useState('Cozinha');
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -108,9 +111,12 @@ export function ComandaPage() {
     loadingRequests.current++;
     const sequence = ++loadSequence.current;
     try {
-      const c = await comandaApi.get(comandaId);
+      const atual = comandaRef.current;
+      const c = background && atual?.id === comandaId && Number.isSafeInteger(atual.revisao)
+        ? await comandaApi.atualizar(comandaId, atual.revisao)
+        : await comandaApi.get(comandaId);
       if (sequence !== loadSequence.current) return;
-      setComanda(c);
+      if (!('sem_alteracoes' in c)) { comandaRef.current = c; setComanda(c); }
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar comanda');
     } finally {
@@ -123,14 +129,25 @@ export function ComandaPage() {
     setTaxaEditada(null);
     setPessoaSel(Number(searchParams.get('pessoa')) > 0 ? Number(searchParams.get('pessoa')) : 'geral'); setAcoesItem(null); setTransferencia(null); setTransferenciaMesa(null); setArrastando(null);
     setFechar(false); setBaixar(false); setLiberarVazia(false); setCancelamento(null);
-    loadComanda();
-    Promise.all([produtoApi.list(undefined, 'restaurante'), categoriaApi.list()]).then(([ps, cs]) => {
-      setProdutos(ps); setCategorias(cs);
+    let alive = true;
+    comandaRef.current = inicial;
+    setComanda(inicial); setLoad(!inicial);
+    void loadComanda(!!inicial);
+    if (inicial) {
+      // A resposta da abertura serve só para esta entrada, sem deixar dados da
+      // comanda no histórico do navegador para uma próxima sessão.
+      const { comandaInicial: _, ...restante } = location.state;
+      navigate(location.pathname + location.search, { replace: true, state: restante });
+    }
+    Promise.all([produtoApi.list(), categoriaApi.list()]).then(([ps, cs]) => {
+      if (!alive) return;
+      setProdutos(ps.filter((p) => p.exibir_restaurante)); setOpcoesCombo(ps); setCategorias(cs);
     }).catch(() => toast('error', 'Não foi possível carregar o cardápio'));
-    produtoApi.list().then(setOpcoesCombo).catch(() => {});
-    impressoraApi.setores().then((s) => setSetores(s.map((x) => x.nome))).catch(() => {});
-    const iv = setInterval(() => { if (!document.hidden) void loadComanda(true); }, 3000);
-    return () => clearInterval(iv);
+    impressoraApi.setores().then((s) => { if (alive) setSetores(s.map((x) => x.nome)); }).catch(() => {});
+    const atualizar = () => { if (!document.hidden) void loadComanda(true); };
+    const iv = setInterval(atualizar, 3000);
+    document.addEventListener('visibilitychange', atualizar);
+    return () => { alive = false; loadSequence.current++; clearInterval(iv); document.removeEventListener('visibilitychange', atualizar); };
   }, [comandaId]);
 
   useEffect(() => { authApi.me().then((user) => setActorId(user.id)).catch(() => {}); }, []);

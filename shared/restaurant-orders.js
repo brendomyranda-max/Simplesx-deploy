@@ -43,11 +43,11 @@ export async function saveOrderItems(c, env, body) {
   const productIds = [...new Set([...input.map((b) => b.produto_id).filter(Boolean), ...barcodes.map((b) => b.produto_id)])];
   const products = (await env.DB.prepare(`SELECT * FROM produtos WHERE id IN (SELECT value FROM json_each(?))
     OR codigo_interno IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(productIds), JSON.stringify(codes)).all()).results;
-  const extras = (await env.DB.prepare(`SELECT a.produto_id,a.insumo_id,p.preco AS valor,p.nome AS insumo_nome
+  const extras = input.some((b) => b.acrescimos.length) ? (await env.DB.prepare(`SELECT a.produto_id,a.insumo_id,p.preco AS valor,p.nome AS insumo_nome
     FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco>0 AND p.preco<=10000
       AND p.tipo IN ('produto','insumo','composto')
     WHERE a.produto_id IN (SELECT value FROM json_each(?)) ORDER BY a.ordem,a.id`)
-    .bind(JSON.stringify(products.map((p) => p.id))).all()).results;
+    .bind(JSON.stringify(products.map((p) => p.id))).all()).results : [];
   const byId = new Map(products.map((p) => [p.id, p]));
   const byCode = new Map(products.filter((p) => p.codigo_interno).map((p) => [p.codigo_interno, p]));
   for (const barcode of barcodes) byCode.set(barcode.codigo, byId.get(barcode.produto_id));

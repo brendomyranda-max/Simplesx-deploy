@@ -74,7 +74,7 @@ class SqliteDb {
     this.db.exec('BEGIN');
     try {
       for (const s of statements) {
-        const r = s.run();
+        const r = s.stmt.columns().length ? s.all() : s.run();
         out.push(r);
       }
       this.db.exec('COMMIT');

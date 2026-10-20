@@ -10,35 +10,35 @@ import type { AreaApp } from '@/lib/areas';
 import { AppShell } from '@/components/AppShell';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { NfcBridge } from '@/components/NfcBridge';
-import { Login } from '@/pages/Login';
 import { PublicBrandIntro } from '@/components/PublicBrandIntro';
-import { InicioPage } from '@/pages/InicioPage';
-import { Dashboard } from '@/pages/Dashboard';
-import { PdvPage } from '@/pages/PdvPage';
-import { VendasPage } from '@/pages/VendasPage';
-import { RestaurantePage } from '@/pages/RestaurantePage';
-import { RecepcaoPage } from '@/pages/RecepcaoPage';
-import { DeliveryPage } from '@/pages/DeliveryPage';
-import { CozinhaPage } from '@/pages/CozinhaPage';
-import { LancarCartaoPage } from '@/pages/LancarCartaoPage';
-import { ComandaPage } from '@/pages/ComandaPage';
-import { PagamentosComanda } from '@/pages/PagamentosComanda';
-import { EstoquePage } from '@/pages/EstoquePage';
-import { EntradaPage } from '@/pages/EntradaPage';
-import { ValidadePage } from '@/pages/ValidadePage';
-import { CategoriasPage } from '@/pages/CategoriasPage';
-import { FinanceiroPage } from '@/pages/FinanceiroPage';
-import { FechamentoCaixaPage } from '@/pages/FechamentoCaixaPage';
-import { RelatoriosPage } from '@/pages/RelatoriosPage';
-import { PerdasPage } from '@/pages/PerdasPage';
-import { FuncionariosPage } from '@/pages/FuncionariosPage';
-import { ImpressorasPage } from '@/pages/ImpressorasPage';
-import { ConfiguracoesPage } from '@/pages/ConfiguracoesPage';
-import { FiscalPage } from '@/pages/FiscalPage';
 import { PortalPage } from '@/pages/PortalPage';
 import { authApi, configApi, estadoApi } from '@/lib/api';
 import type { ConfigEmpresa } from '@/lib/types';
 
+const Login = lazy(() => import('@/pages/Login').then((module) => ({ default: module.Login })));
+const InicioPage = lazy(() => import('@/pages/InicioPage').then((module) => ({ default: module.InicioPage })));
+const Dashboard = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.Dashboard })));
+const PdvPage = lazy(() => import('@/pages/PdvPage').then((module) => ({ default: module.PdvPage })));
+const VendasPage = lazy(() => import('@/pages/VendasPage').then((module) => ({ default: module.VendasPage })));
+const RestaurantePage = lazy(() => import('@/pages/RestaurantePage').then((module) => ({ default: module.RestaurantePage })));
+const RecepcaoPage = lazy(() => import('@/pages/RecepcaoPage').then((module) => ({ default: module.RecepcaoPage })));
+const DeliveryPage = lazy(() => import('@/pages/DeliveryPage').then((module) => ({ default: module.DeliveryPage })));
+const CozinhaPage = lazy(() => import('@/pages/CozinhaPage').then((module) => ({ default: module.CozinhaPage })));
+const LancarCartaoPage = lazy(() => import('@/pages/LancarCartaoPage').then((module) => ({ default: module.LancarCartaoPage })));
+const ComandaPage = lazy(() => import('@/pages/ComandaPage').then((module) => ({ default: module.ComandaPage })));
+const PagamentosComanda = lazy(() => import('@/pages/PagamentosComanda').then((module) => ({ default: module.PagamentosComanda })));
+const EstoquePage = lazy(() => import('@/pages/EstoquePage').then((module) => ({ default: module.EstoquePage })));
+const EntradaPage = lazy(() => import('@/pages/EntradaPage').then((module) => ({ default: module.EntradaPage })));
+const ValidadePage = lazy(() => import('@/pages/ValidadePage').then((module) => ({ default: module.ValidadePage })));
+const CategoriasPage = lazy(() => import('@/pages/CategoriasPage').then((module) => ({ default: module.CategoriasPage })));
+const FinanceiroPage = lazy(() => import('@/pages/FinanceiroPage').then((module) => ({ default: module.FinanceiroPage })));
+const FechamentoCaixaPage = lazy(() => import('@/pages/FechamentoCaixaPage').then((module) => ({ default: module.FechamentoCaixaPage })));
+const RelatoriosPage = lazy(() => import('@/pages/RelatoriosPage').then((module) => ({ default: module.RelatoriosPage })));
+const PerdasPage = lazy(() => import('@/pages/PerdasPage').then((module) => ({ default: module.PerdasPage })));
+const FuncionariosPage = lazy(() => import('@/pages/FuncionariosPage').then((module) => ({ default: module.FuncionariosPage })));
+const ImpressorasPage = lazy(() => import('@/pages/ImpressorasPage').then((module) => ({ default: module.ImpressorasPage })));
+const ConfiguracoesPage = lazy(() => import('@/pages/ConfiguracoesPage').then((module) => ({ default: module.ConfiguracoesPage })));
+const FiscalPage = lazy(() => import('@/pages/FiscalPage').then((module) => ({ default: module.FiscalPage })));
 const InvestidoresPage = lazy(() => import('@/pages/InvestidoresPage'));
 const OnlineStorefront = lazy(() => import('@/pages/OnlineStorefront').then((module) => ({ default: module.OnlineStorefront })));
 const OnlineFallback = () => <div className="flex min-h-screen items-center justify-center bg-[#fcfbf7] text-sm text-slate-500">Carregando cardápio…</div>;
@@ -256,6 +256,7 @@ function SessionApp() {
     if (!token) { setEmpresa(null); setBadges({}); return; }
     let alive = true;
     const load = async () => {
+      if (document.hidden) return;
       try {
         const cfg = await configApi.get();
         if (alive) {
@@ -309,6 +310,7 @@ function SessionApp() {
 export default function App() {
   return <>
     <InstallPrompt />
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-slate-500" role="status">Carregando…</div>}>
     <Routes>
     <Route path="/investidores" element={<Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">Carregando apresentação…</div>}><InvestidoresPage /></Suspense>} />
     <Route path="/" element={<PortalPage />} />
@@ -319,5 +321,6 @@ export default function App() {
     <Route path="/pedido/:slug" element={<Suspense fallback={<OnlineFallback />}><OnlineStorefront /></Suspense>} />
     <Route path="*" element={<SessionApp />} />
   </Routes>
+    </Suspense>
   </>;
 }

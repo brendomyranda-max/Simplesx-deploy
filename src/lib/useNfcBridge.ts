@@ -93,6 +93,7 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
   useEffect(() => {
     let ativo = true;
     let consultando = false;
+    let ultimaConsultaSemEspera = -Infinity;
     const delivery = createNfcDelivery({
       ready: () => receptores > 0,
       request: () => esperaAtual,
@@ -120,6 +121,10 @@ export function useNfcBridge(onLeitura: (evento: NfcEvento) => void) {
     };
     const consultarNuvem = async () => {
       if (!ativo || consultando || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      if (receptores === 0) {
+        if (Date.now() - ultimaConsultaSemEspera < 15000) return;
+        ultimaConsultaSemEspera = Date.now();
+      }
       consultando = true;
       try {
         const pendentes = await nfcApi.pendentes();

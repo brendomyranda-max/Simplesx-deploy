@@ -21,27 +21,41 @@ export function PagamentosComanda() {
   const confirm = useConfirm();
 
   const [comanda, setComanda] = useState<Comanda | null>(null);
+  const comandaRef = useRef<Comanda | null>(null);
+  const sequenciaRef = useRef(0);
+  const carregandoRef = useRef(0);
   const [load, setLoad] = useState(true);
   const [baixando, setBaixando] = useState<number | null>(null);
   const [imprimir, setImprimir] = useState<{ impressao: string } | null>(null);
   const [imprimindoTodas, setImprimindoTodas] = useState(false);
   const impressaoRef = useRef<HTMLDivElement>(null);
 
-  const loadComanda = async () => {
+  const loadComanda = async (background = false) => {
+    if (background && (document.hidden || carregandoRef.current)) return;
+    const sequencia = ++sequenciaRef.current;
+    carregandoRef.current++;
     try {
-      const c = await comandaApi.get(comandaId);
-      setComanda(c);
+      const atual = comandaRef.current;
+      const c = background && atual?.id === comandaId && Number.isSafeInteger(atual.revisao)
+        ? await comandaApi.atualizar(comandaId, atual.revisao)
+        : await comandaApi.get(comandaId);
+      if (sequencia !== sequenciaRef.current) return;
+      if (!('sem_alteracoes' in c)) { comandaRef.current = c; setComanda(c); }
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar');
     } finally {
-      setLoad(false);
+      carregandoRef.current--;
+      if (sequencia === sequenciaRef.current) setLoad(false);
     }
   };
 
   useEffect(() => {
+    comandaRef.current = null; setComanda(null); setLoad(true);
     loadComanda();
-    const iv = setInterval(loadComanda, 15000);
-    return () => clearInterval(iv);
+    const atualizar = () => { void loadComanda(true); };
+    const iv = setInterval(atualizar, 15000);
+    document.addEventListener('visibilitychange', atualizar);
+    return () => { sequenciaRef.current++; clearInterval(iv); document.removeEventListener('visibilitychange', atualizar); };
   }, [comandaId]);
 
   const individuais = useMemo(() => {

@@ -44,6 +44,10 @@ export function RestaurantePage() {
   const [excluir, setExcluir] = useState<Mesa | null>(null);
   const [excluindo, setExcluindo] = useState(false);
   const excluindoRef = useRef(false);
+  const [abrindo, setAbrindo] = useState(false);
+  const abrindoRef = useRef(false);
+  const carregandoRef = useRef(0);
+  const carregamentoSeq = useRef(0);
 
   useEffect(() => {
     const fixo = localStorage.getItem('simplesx_garcom_fixo') || '';
@@ -59,21 +63,28 @@ export function RestaurantePage() {
     else localStorage.removeItem('simplesx_garcom_fixo');
   };
 
-  const loadData = async () => {
-    setLoad(true);
+  const loadData = async (background = false) => {
+    if (background && carregandoRef.current) return;
+    carregandoRef.current++;
+    const seq = ++carregamentoSeq.current;
+    if (!background) setLoad(true);
     try {
-      setData(await mesaApi.list());
+      const lista = await mesaApi.list();
+      if (seq === carregamentoSeq.current) setData(lista);
     } catch (e: any) {
       toast('error', e?.error || 'Erro ao carregar mesas');
     } finally {
-      setLoad(false);
+      carregandoRef.current--;
+      if (seq === carregamentoSeq.current) setLoad(false);
     }
   };
 
   useEffect(() => {
     loadData();
-    const iv = setInterval(loadData, 30000);
-    return () => clearInterval(iv);
+    const atualizar = () => { if (!document.hidden) void loadData(true); };
+    const iv = setInterval(atualizar, 30000);
+    document.addEventListener('visibilitychange', atualizar);
+    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', atualizar); };
   }, []);
 
   const mesasSalao = data.mesas.filter((m) => m.ativo && m.tipo !== 'online' && (m.tipo !== 'cartao' || data.comandas.some(c=>c.mesa_id===m.id)));
@@ -82,7 +93,8 @@ export function RestaurantePage() {
 
   const abrirMesa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!abrir) return;
+    if (!abrir || abrindoRef.current) return;
+    abrindoRef.current = true; setAbrindo(true);
     try {
       const comanda = await mesaApi.abrir(abrir.id, {
         garcom_nome: garcom,
@@ -91,10 +103,10 @@ export function RestaurantePage() {
       });
       toast('success', `Mesa ${abrir.numero} aberta`);
       setAbrir(null);
-      navigate(`/restaurante/comanda/${comanda.id}`);
+      navigate(`/restaurante/comanda/${comanda.id}`, { state: { comandaInicial: comanda } });
     } catch (err: any) {
       toast('error', err?.error || 'Erro ao abrir mesa');
-    }
+    } finally { abrindoRef.current = false; setAbrindo(false); }
   };
 
   const usarCartao = async (acao: 'abrir' | 'fechar', leitura: Pick<NfcEvento, 'uid' | 'payload'>) => {
@@ -294,11 +306,11 @@ export function RestaurantePage() {
             <Input value={cliente} onChange={(e) => setCliente(e.target.value)} />
           </Field>
           <Field label="Quantidade de pessoas">
-            <Input type="number" min={1} value={pessoas} onChange={(e) => setPessoas(e.target.value)} />
+            <Input type="number" min={1} max={1000} step={1} value={pessoas} onChange={(e) => setPessoas(e.target.value)} />
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setAbrir(null)}>Cancelar</Button>
-            <Button type="submit" icon={<ArrowRight className="h-4 w-4" />}>Abrir mesa</Button>
+            <Button type="submit" loading={abrindo} icon={<ArrowRight className="h-4 w-4" />}>Abrir mesa</Button>
           </div>
         </form>
       </Modal>

@@ -55,6 +55,7 @@ export function DeliveryPage() {
   const [denunciaAberta, setDenunciaAberta] = useState('');
 
   const carregar = async (silencioso = false) => {
+    if (silencioso && document.hidden) return;
     if (!silencioso) setLoad(true);
     try {
       const [pedidos, entregas] = await Promise.allSettled([

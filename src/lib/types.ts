@@ -436,6 +436,7 @@ export interface Mesa {
 
 export interface Comanda {
   id: number;
+  revisao: number;
   mesa_id: number;
   mesa: Mesa | null;
   cliente_nome: string | null;

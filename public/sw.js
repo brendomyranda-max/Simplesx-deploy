@@ -25,6 +25,12 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/downloads') || url.pathname.startsWith('/atualizacoes')) return;
 
   event.respondWith((async () => {
+    // Os nomes incluem o hash do conteúdo. Reabrir uma tela pode reutilizar
+    // esses arquivos sem acessar a rede; HTML e APIs continuam atualizados.
+    if (url.pathname.startsWith('/assets/')) {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+    }
     try {
       const fresh = await fetch(request);
       if (fresh.ok && (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/') || url.pathname.endsWith('.webmanifest'))) {

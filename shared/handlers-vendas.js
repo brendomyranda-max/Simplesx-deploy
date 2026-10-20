@@ -589,13 +589,15 @@ export async function cancelarVendaHandler(c, env) {
 // ============================ MESAS ============================
 
 export async function listMesasHandler(c, env) {
-  const rows = await env.DB.prepare('SELECT * FROM mesas ORDER BY numero').all();
-  const comandas = await env.DB.prepare(
+  const [rows, comandas] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM mesas ORDER BY numero'),
+    env.DB.prepare(
     `SELECT c.*, m.numero AS mesa_numero,
      (SELECT COALESCE(SUM(i.quantidade * i.preco_unitario),0) FROM comanda_itens i WHERE i.comanda_id=c.id AND i.status!='cancelado') AS total,
      (SELECT COUNT(*) FROM comanda_itens i WHERE i.comanda_id=c.id AND i.status!='cancelado') AS itens_count
      FROM comandas c JOIN mesas m ON m.id=c.mesa_id WHERE c.status IN ('aberta','pre_fechamento')`
-  ).all();
+    ),
+  ]);
   return c.json({ mesas: rows.results, comandas: comandas.results });
 }
 
@@ -643,90 +645,92 @@ export async function deleteMesaHandler(c, env) {
 
 export async function abrirComandaHandler(c, env) {
   const b = await c.req.json();
+  const qtd = Number(b.pessoas_count ?? 1);
+  if (!Number.isSafeInteger(qtd) || qtd < 1 || qtd > 1000) {
+    return c.json({ error: 'Informe de 1 a 1000 pessoas' }, 400);
+  }
   const mesa = await env.DB.prepare('SELECT * FROM mesas WHERE id=?').bind(c.params.id).first();
   if (!mesa || !mesa.ativo) return c.json({ error: 'Mesa não encontrada ou excluída' }, 404);
-  const ocupada = await env.DB.prepare("SELECT COUNT(*) c FROM comandas WHERE mesa_id=? AND status='aberta'")
-    .bind(c.params.id)
-    .first();
-  if (num(ocupada.c) > 0) return c.json({ error: 'Mesa já está ocupada' }, 400);
-
+  // As mesas do salão usam a restrição transacional existente; preserve também
+  // a proteção das mesas especiais mantidas por instalações anteriores.
+  if (mesa.tipo !== 'normal' && await env.DB.prepare("SELECT id FROM comandas WHERE mesa_id=? AND status='aberta' LIMIT 1").bind(mesa.id).first()) {
+    return c.json({ error: 'Mesa já está ocupada' }, 409);
+  }
   const taxa = b.taxa_garcom_pct ?? (await getConfigValue(env, 'taxa_garcom_pct', '0'));
+  const timestamp = now();
+  const tenant = estabelecimentoId(env);
+  const db = env.rawDB;
+  const cores = ['#6366f1', '#16a34a', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444'];
+  const pessoas = JSON.stringify(Array.from({ length: qtd }, (_, index) => ({
+    nome: `Pessoa ${index + 1}`, cor: cores[index % cores.length],
+  })));
+  // Os três comandos fazem parte da mesma transação. Nenhuma tela encontra
+  // uma comanda sem suas pessoas, mesmo com aberturas simultâneas.
+  const novaComanda = '(SELECT id FROM comandas WHERE mesa_id=? AND estabelecimento_id=? AND status=\'aberta\' AND comanda_origem_id IS NULL ORDER BY id DESC LIMIT 1)';
   let r;
   try {
-    r = await env.DB.prepare(
-    `INSERT INTO comandas (mesa_id, cliente_nome, garcom_nome, status, taxa_garcom_pct, fechamento_tipo, pessoas_count, criado_em)
-     VALUES (?,?,?,?,?,?,?,?)`
-  )
-    .bind(
-      c.params.id,
-      b.cliente_nome || null,
-      b.garcom_nome || null,
-      'aberta',
-      num(taxa),
-      null,
-      num(b.pessoas_count) || 1,
-      now()
-    )
-    .run();
+    [r] = await db.batch([
+      db.prepare(`INSERT INTO comandas (estabelecimento_id,mesa_id,cliente_nome,garcom_nome,status,taxa_garcom_pct,pessoas_count,criado_em)
+        VALUES (?,?,?,?,'aberta',?,?,?)`)
+        .bind(tenant, mesa.id, b.cliente_nome || null, b.garcom_nome || null, num(taxa), qtd, timestamp),
+      db.prepare(`INSERT INTO comanda_pessoas (estabelecimento_id,comanda_id,nome,cor,criado_em)
+        SELECT ?,${novaComanda},json_extract(value,'$.nome'),json_extract(value,'$.cor'),? FROM json_each(?)`)
+        .bind(tenant, mesa.id, tenant, timestamp, pessoas),
+      db.prepare("UPDATE mesas SET status='ocupada',aberta_em=? WHERE id=? AND estabelecimento_id=?")
+        .bind(timestamp, mesa.id, tenant),
+    ]);
   } catch (error) {
     if (String(error?.message).includes('mesa_inativa')) return c.json({ error: 'A mesa foi excluída em outra tela. Atualize a lista de mesas.' }, 409);
     if (String(error?.message).includes('mesa_ja_ocupada')) return c.json({ error: 'A mesa já possui uma conta ativa. Abra a comanda existente.' }, 409);
     throw error;
   }
   const comandaId = r.meta.last_row_id;
-  const CORES = ['#6366f1', '#16a34a', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444'];
-  const qtd = num(b.pessoas_count) || 1;
-  const pStmts = [];
-  for (let i = 1; i <= qtd; i++) {
-    pStmts.push(
-      env.DB.prepare('INSERT INTO comanda_pessoas (comanda_id, nome, cor, criado_em) VALUES (?,?,?,?)').bind(
-        comandaId,
-        `Pessoa ${i}`,
-        CORES[(i - 1) % CORES.length],
-        now()
-      )
-    );
-  }
-  if (pStmts.length) await env.DB.batch(pStmts);
-  await env.DB.prepare("UPDATE mesas SET status='ocupada', aberta_em=? WHERE id=?").bind(now(), c.params.id).run();
   return c.json(await getComandaFull(env, comandaId), 201);
 }
 
-async function getComandaFull(env, id) {
-  const c = await env.DB.prepare('SELECT * FROM comandas WHERE id=?').bind(id).first();
-  if (!c) return null;
-  const pessoas = await env.DB.prepare(`SELECT p.*,a.id AS cartao_atendimento_id,a.cartao AS nfc_cartao
+async function getComandaFull(env, id, revisao) {
+  if (/^\d+$/.test(revisao ?? '')) {
+    const atual = await env.DB.prepare('SELECT revisao FROM comandas WHERE id=?').bind(id).first();
+    if (!atual) return null;
+    if (String(atual.revisao) === revisao) return { sem_alteracoes: true, revisao: atual.revisao };
+  }
+  // Todos os dados pertencem ao mesmo retrato transacional, incluindo revisão,
+  // mesa e status. Um lançamento concorrente aparece inteiro na próxima leitura.
+  const [comandas, pessoas, itens, mesas, printing, transfers, vendas] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM comandas WHERE id=?').bind(id),
+    env.DB.prepare(`SELECT p.*,a.id AS cartao_atendimento_id,a.cartao AS nfc_cartao
     FROM comanda_pessoas p LEFT JOIN cartao_atendimentos a ON a.pessoa_id=p.id AND a.encerrado_em IS NULL
-    WHERE p.comanda_id=? ORDER BY p.id`).bind(id).all();
-  const itens = await env.DB.prepare(
-    `SELECT i.*, p.nome AS produto_nome, p.unidade FROM comanda_itens i
-     LEFT JOIN produtos p ON p.id=i.produto_id WHERE i.comanda_id=? ORDER BY i.id`
-  )
-    .bind(id)
-    .all();
-  const mesa = await env.DB.prepare('SELECT * FROM mesas WHERE id=?').bind(c.mesa_id).first();
-  const printing = await env.DB.prepare(`SELECT p.item_id,p.impressora_id,
+    WHERE p.comanda_id=? ORDER BY p.id`).bind(id),
+    env.DB.prepare(`SELECT i.*,p.nome AS produto_nome,p.unidade FROM comanda_itens i
+      LEFT JOIN produtos p ON p.id=i.produto_id WHERE i.comanda_id=? ORDER BY i.id`).bind(id),
+    env.DB.prepare('SELECT m.* FROM mesas m JOIN comandas c ON c.mesa_id=m.id WHERE c.id=?').bind(id),
+    env.DB.prepare(`SELECT p.item_id,p.impressora_id,
     COALESCE(j.status,t.status,'ausente') AS status,COALESCE(j.erro,t.erro_mensagem) AS erro
     FROM pedido_impressoes p JOIN comanda_itens i ON i.id=p.item_id
     LEFT JOIN gestor_jobs j ON j.pedido_lote_id=p.lote_id LEFT JOIN device_tasks t ON t.id=p.lote_id
-    WHERE i.comanda_id=?`).bind(id).all();
+    WHERE i.comanda_id=?`).bind(id),
+    env.DB.prepare("SELECT id,status FROM comandas WHERE comanda_origem_id=? AND fechamento_tipo='individual' ORDER BY id DESC LIMIT 1").bind(id),
+    env.DB.prepare(`SELECT v.id,v.numero,v.total,v.criado_em FROM vendas v JOIN comandas c ON c.id=v.comanda_id
+      WHERE v.comanda_id=? AND v.status='concluida' AND c.comanda_origem_id IS NULL ORDER BY v.id`).bind(id),
+  ]);
+  const c = comandas.results[0];
+  if (!c) return null;
   const ativos = itens.results.filter((i) => i.status !== 'cancelado');
   const subtotal = ativos.reduce((s, i) => s + num(i.quantidade) * num(i.preco_unitario), 0);
-  const transfer = await env.DB.prepare(
-    "SELECT id, status FROM comandas WHERE comanda_origem_id=? AND fechamento_tipo='individual' ORDER BY id DESC LIMIT 1"
-  )
-    .bind(id)
-    .first();
-  const vendasRegistradas = !c.comanda_origem_id
-    ? (await env.DB.prepare("SELECT id,numero,total,criado_em FROM vendas WHERE comanda_id=? AND status='concluida' ORDER BY id").bind(id).all()).results
-    : [];
+  const transfer = transfers.results[0];
+  const vendasRegistradas = vendas.results;
+  const impressoesPorItem = new Map();
+  for (const impressao of printing.results) {
+    if (!impressoesPorItem.has(impressao.item_id)) impressoesPorItem.set(impressao.item_id, []);
+    impressoesPorItem.get(impressao.item_id).push(impressao);
+  }
   const ativa = ['aberta', 'pre_fechamento'].includes(c.status);
   const vendasAnteriores = ativa || ['sem_consumo','cancelada','individual'].includes(c.fechamento_tipo) ? vendasRegistradas : vendasRegistradas.slice(0, -1);
   return {
     ...c,
-    mesa: mesa || null,
+    mesa: mesas.results[0] || null,
     pessoas: pessoas.results,
-    itens: itens.results.map((item) => ({ ...item, impressoes: printing.results.filter((p) => p.item_id === item.id) })),
+    itens: itens.results.map((item) => ({ ...item, impressoes: impressoesPorItem.get(item.id) || [] })),
     subtotal,
     transfer_comanda_id: transfer?.id ?? null,
     transfer_comanda_status: transfer?.status ?? null,
@@ -736,20 +740,25 @@ async function getComandaFull(env, id) {
 }
 
 export async function getComandaHandler(c, env) {
-  const data = await getComandaFull(env, c.params.id);
+  const data = await getComandaFull(env, c.params.id, c.req.query?.('revisao'));
   if (!data) return c.json({ error: 'Comanda não encontrada' }, 404);
   return c.json(data);
 }
 
 export async function addPessoaHandler(c, env) {
   const b = await c.req.json();
-  const com = await env.DB.prepare("SELECT * FROM comandas WHERE id=? AND status='aberta'").bind(c.params.id).first();
-  if (!com) return c.json({ error: 'Comanda não encontrada' }, 404);
-  const r = await env.DB.prepare('INSERT INTO comanda_pessoas (comanda_id, nome, cor, criado_em) VALUES (?,?,?,?)')
-    .bind(c.params.id, b.nome || null, b.cor || '#6366f1', now())
-    .run();
-  const pCount = await env.DB.prepare('SELECT COUNT(*) c FROM comanda_pessoas WHERE comanda_id=?').bind(c.params.id).first();
-  await env.DB.prepare('UPDATE comandas SET pessoas_count=? WHERE id=?').bind(num(pCount.c), c.params.id).run();
+  const tenant = estabelecimentoId(env), db = env.rawDB;
+  // A contagem é calculada dentro da mesma transação da inserção, evitando
+  // sobrescrever o total quando dispositivos acrescentam pessoas juntos.
+  const [r] = await db.batch([
+    db.prepare(`INSERT INTO comanda_pessoas (estabelecimento_id,comanda_id,nome,cor,criado_em)
+      SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM comandas WHERE id=? AND estabelecimento_id=? AND status='aberta')`)
+      .bind(tenant, c.params.id, b.nome || null, b.cor || '#6366f1', now(), c.params.id, tenant),
+    db.prepare(`UPDATE comandas SET pessoas_count=(SELECT COUNT(*) FROM comanda_pessoas
+      WHERE comanda_id=? AND estabelecimento_id=?) WHERE id=? AND estabelecimento_id=? AND status='aberta'`)
+      .bind(c.params.id, tenant, c.params.id, tenant),
+  ]);
+  if (!r.meta.changes) return c.json({ error: 'Comanda não encontrada' }, 404);
   return c.json({ id: r.meta.last_row_id, comanda_id: num(c.params.id), nome: b.nome || null, cor: b.cor || '#6366f1' }, 201);
 }
 
