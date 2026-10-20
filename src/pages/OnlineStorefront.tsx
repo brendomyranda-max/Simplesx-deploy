@@ -932,7 +932,7 @@ function ConfigurarProduto({ produto, categorias, composto = false, onClose, onS
   const [insumos, setInsumos] = useState<Produto[]>([]);
   const [foto, setFoto] = useState(produto.foto_url || '');
   const [disponivel, setDisponivel] = useState(produto.disponivel === 1);
-  useEffect(() => { produtoApi.insumos().then(setInsumos).catch(() => {}); }, []);
+  useEffect(() => { produtoApi.list().then((lista) => setInsumos(lista.filter((item) => item.ativo && ['produto', 'insumo', 'composto'].includes(item.tipo || '')))).catch(() => {}); }, []);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const visual = paraCardapio({ ...produto, preco: Number(preco.replace(',', '.')) || 0, preco_promocional: precoPromocional.trim() ? Number(precoPromocional.replace(',', '.')) : null, descricao, foto_url: foto, disponivel: disponivel ? 1 : 0 });

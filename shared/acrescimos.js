@@ -1,5 +1,5 @@
 /**
- * Acréscimo de produto: um insumo entra como observação e cobra o próprio preço de venda.
+ * Acréscimo de produto: um item cadastrado entra como observação e cobra o próprio preço de venda.
  */
 
 import { httpError, num } from './util.js';
@@ -9,7 +9,7 @@ export function precoDeVenda(valor) {
   const texto = typeof valor === 'string' ? valor.replace(',', '.') : valor;
   const numero = arredondar(texto);
   if (!Number.isFinite(numero) || numero <= 0 || numero > 10000) {
-    throw httpError(400, 'Cadastre o preço de venda do insumo. Ele é o valor do acréscimo.');
+    throw httpError(400, 'Cadastre o preço de venda do item. Ele é o valor do acréscimo.');
   }
   return numero;
 }
@@ -21,7 +21,7 @@ export async function normalizarAcrescimos(env, produtoId, lista) {
   const itens = [];
   for (const item of lista) {
     const insumoId = Number(item?.insumo_id);
-    if (!Number.isInteger(insumoId) || insumoId <= 0) throw httpError(400, 'Escolha o insumo do acréscimo');
+    if (!Number.isInteger(insumoId) || insumoId <= 0) throw httpError(400, 'Escolha o produto ou insumo do acréscimo');
     if (produtoId && insumoId === Number(produtoId)) throw httpError(400, 'O acréscimo não pode ser o próprio produto');
     if (vistos.has(insumoId)) continue;
     vistos.add(insumoId);
@@ -33,8 +33,8 @@ export async function normalizarAcrescimos(env, produtoId, lista) {
   const mapa = new Map(rows.results.map((row) => [Number(row.id), row]));
   return itens.map((item) => {
     const insumo = mapa.get(item.insumo_id);
-    if (!insumo || !num(insumo.ativo) || (insumo.tipo !== 'insumo' && insumo.tipo !== 'composto')) {
-      throw httpError(400, 'Escolha um insumo cadastrado para o acréscimo');
+    if (!insumo || !num(insumo.ativo) || !['produto', 'insumo', 'composto'].includes(insumo.tipo)) {
+      throw httpError(400, 'Escolha um produto simples, composto ou insumo ativo para o acréscimo');
     }
     return { insumo_id: item.insumo_id, valor: precoDeVenda(insumo.preco), nome: String(insumo.nome || '').trim() };
   });
@@ -90,7 +90,7 @@ export function precoComAcrescimos(base, escolhidos) {
   return arredondar(num(base) + escolhidos.reduce((soma, item) => soma + num(item.valor), 0));
 }
 
-export async function vincularInsumosOpcoes(env, options) {
+export async function vincularInsumosOpcoes(env, options, produtoId) {
   const ids = [...new Set(options.map((option) => option.insumo_id).filter(Boolean))];
   if (!ids.length) return options;
   const ph = ids.map(() => '?').join(',');
@@ -99,12 +99,13 @@ export async function vincularInsumosOpcoes(env, options) {
   const vistos = new Set();
   for (const option of options) {
     if (!option.insumo_id) continue;
-    if (option.tipo !== 'adicional') throw httpError(400, 'Somente acréscimo pode vincular um insumo');
-    if (vistos.has(option.insumo_id)) throw httpError(400, 'Este insumo já está no acréscimo');
+    if (Number(option.insumo_id) === Number(produtoId)) throw httpError(400, 'O acréscimo não pode ser o próprio produto');
+    if (option.tipo !== 'adicional') throw httpError(400, 'Somente acréscimo pode vincular um produto ou insumo');
+    if (vistos.has(option.insumo_id)) throw httpError(400, 'Este item já está no acréscimo');
     vistos.add(option.insumo_id);
     const insumo = mapa.get(option.insumo_id);
-    if (!insumo || !num(insumo.ativo) || (insumo.tipo !== 'insumo' && insumo.tipo !== 'composto')) {
-      throw httpError(400, 'Escolha um insumo cadastrado para o acréscimo');
+    if (!insumo || !num(insumo.ativo) || !['produto', 'insumo', 'composto'].includes(insumo.tipo)) {
+      throw httpError(400, 'Escolha um produto simples, composto ou insumo ativo para o acréscimo');
     }
     option.nome = String(insumo.nome || '').trim().slice(0, 100);
     option.preco_adicional = precoDeVenda(insumo.preco);

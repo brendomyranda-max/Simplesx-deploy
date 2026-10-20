@@ -101,6 +101,7 @@ export function ProdutoForm({
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [insumos, setInsumos] = useState<Produto[]>([]);
   const [produtosCombo, setProdutosCombo] = useState<Produto[]>([]);
+  const [opcoesAcrescimo, setOpcoesAcrescimo] = useState<Produto[]>([]);
   const [saving, setSaving] = useState(false);
   const [novoComentario, setNovoComentario] = useState('');
   const [form, setForm] = useState<any>(() => initialState(produto, codigoInicial));
@@ -124,8 +125,12 @@ export function ProdutoForm({
     if (!open) return;
     categoriaApi.list().then(setCategorias).catch(() => {});
     fornecedorApi.list().then(setFornecedores).catch(() => {});
-    produtoApi.insumos().then(setInsumos).catch(() => {});
-    produtoApi.list().then((lista) => setProdutosCombo(lista.filter((item) => item.ativo && item.id !== produto?.id && (item.tipo === 'produto' || item.tipo === 'composto')))).catch(() => {});
+    produtoApi.list().then((lista) => {
+      const ativos = lista.filter((item) => item.ativo);
+      setInsumos(ativos.filter((item) => item.tipo === 'insumo' || item.tipo === 'composto'));
+      setProdutosCombo(ativos.filter((item) => item.id !== produto?.id && (item.tipo === 'produto' || item.tipo === 'composto')));
+      setOpcoesAcrescimo(ativos.filter((item) => ['produto', 'insumo', 'composto'].includes(item.tipo || '')));
+    }).catch(() => {});
     setForm(initialState(produto, codigoInicial));
     setNovoComentario('');
     setCanal(canalInicial);
@@ -251,7 +256,7 @@ export function ProdutoForm({
     const preco = Number(String(entregaPreco).replace(',', '.'));
     if (!entregaId) return toast('error', 'Escolha um produto que já está no estoque');
     if (!Number.isFinite(preco) || preco < 0) return toast('error', 'Informe o preço no delivery');
-    const lidos = lerAcrescimos(entregaAcrescimos, insumos);
+    const lidos = lerAcrescimos(entregaAcrescimos, opcoesAcrescimo);
     if (lidos.erro) return toast('error', lidos.erro);
     const removiveis = [...new Set(entregaIngredientes.split(',').map((item) => item.trim()).filter(Boolean))]
       .map((nome, ordem) => ({ nome, tipo: 'removivel' as const, preco_adicional: 0, ordem, ativo: 1 }));
@@ -312,7 +317,7 @@ export function ProdutoForm({
       return toast('error', 'A validade após abertura deve ser maior que zero');
     if (form.tipo === 'insumo' && Number(form.conteudo_quantidade) <= 0)
       return toast('error', 'Informe a gramatura ou o volume por unidade do insumo');
-    const acrescimosLidos = form.tipo === 'composto' ? lerAcrescimos(form.acrescimos, insumos) : { erro: '', itens: [] };
+    const acrescimosLidos = form.tipo === 'produto' || form.tipo === 'composto' ? lerAcrescimos(form.acrescimos, opcoesAcrescimo) : { erro: '', itens: [] };
     if (acrescimosLidos.erro) return toast('error', acrescimosLidos.erro);
     setSaving(true);
     try {
@@ -347,7 +352,7 @@ export function ProdutoForm({
         categoria_ids: form.categoria_ids,
         comentarios: form.comentarios.map((c: string) => c.trim()).filter(Boolean),
         combo_grupos: form.tipo === 'combo' ? form.combo_grupos : undefined,
-        acrescimos: form.tipo === 'composto'
+        acrescimos: form.tipo === 'produto' || form.tipo === 'composto'
           ? acrescimosLidos.itens.map((item) => ({ insumo_id: item.insumo_id, valor: item.valor }))
           : undefined,
         ficha:
@@ -423,7 +428,7 @@ export function ProdutoForm({
                 <AcrescimoCadastro
                   linhas={entregaAcrescimos}
                   onChange={setEntregaAcrescimos}
-                  insumos={insumos.filter((item) => item.id !== Number(entregaId))}
+                  insumos={opcoesAcrescimo.filter((item) => item.id !== Number(entregaId))}
                 />
                 <Field label="Descrição para o cliente" hint={opcoesEstoque.find((item) => item.id === Number(entregaId))?.tipo === 'composto' ? 'Os ingredientes da ficha já estão escritos. Acrescente algo a mais se quiser.' : undefined}>
                   <Textarea value={entregaDescricao} onChange={(event) => setEntregaDescricao(event.target.value)} rows={3} placeholder="O que vem neste item" />
@@ -794,11 +799,11 @@ export function ProdutoForm({
           </Field>
         </div>
 
-        {form.tipo === 'composto' && (
+        {(form.tipo === 'produto' || form.tipo === 'composto') && (
           <AcrescimoCadastro
             linhas={form.acrescimos}
             onChange={(linhas) => set('acrescimos', linhas)}
-            insumos={insumos.filter((item) => item.id !== produto?.id)}
+            insumos={opcoesAcrescimo.filter((item) => item.id !== produto?.id)}
           />
         )}
 

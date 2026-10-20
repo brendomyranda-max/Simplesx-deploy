@@ -212,6 +212,19 @@ O preço fica ausente, sem ser convertido em zero. O custo de compra também é
 opcional. Para vender depois, informe um preço e habilite a exibição no
 restaurante/PDV. O delivery permite configurar seu próprio preço no cardápio.
 
+## Acréscimos em produtos simples e compostos
+
+Em **Acréscimo de produto**, escolha itens ativos com preço de venda, como bife
+extra, bebida, insumo ou produto composto. Produtos simples e compostos podem
+oferecer esses adicionais. O valor vem do cadastro do item escolhido; ao atualizar
+o preço desse item, os adicionais vinculados também são atualizados.
+
+Os adicionais ficam disponíveis no lançamento da comanda e podem ser publicados
+no delivery. Cada escolha soma o valor ao preço unitário e aparece como
+**Adicionar: nome do item** na observação do pedido. O fluxo atual de acréscimos
+não faz baixa de estoque separada do adicional. Produtos sem preço, inativos ou
+de outra loja não podem ser escolhidos como adicionais pagos.
+
 ## Produtos sem vencimento
 
 No cadastro de produtos simples e insumos, marque **Não exigir validade** para não

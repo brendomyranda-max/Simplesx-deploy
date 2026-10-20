@@ -52,7 +52,7 @@ export function OnlineCatalogPage({ embutido = false }: { embutido?: boolean }) 
   const [editing, setEditing] = useState<OnlineCatalogProduct | null>(null);
   const [chooseProduct, setChooseProduct] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [insumos, setInsumos] = useState<Produto[]>([]);
+  const insumos = products.filter((item) => item.ativo && ['produto', 'insumo', 'composto'].includes(item.tipo || ''));
   const [menuCategories, setMenuCategories] = useState<CategoriaCardapio[]>([]);
   const [categoriaNome, setCategoriaNome] = useState('');
 
@@ -74,7 +74,6 @@ export function OnlineCatalogPage({ embutido = false }: { embutido?: boolean }) 
   };
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { produtoApi.insumos().then(setInsumos).catch(() => setInsumos([])); }, []);
 
   const availableProducts = useMemo(() => products.filter((product) =>
     product.ativo && product.tipo !== 'insumo' && !catalog.some((onlineProduct) => onlineProduct.ativo !== 0 && onlineProduct.produto_id === product.id)), [products, catalog]);

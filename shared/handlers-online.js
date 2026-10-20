@@ -311,10 +311,10 @@ function parseOptions(value) {
   });
 }
 
-async function opcoesInformadas(env, value) {
+async function opcoesInformadas(env, value, produtoId) {
   try {
     const options = parseOptions(value);
-    if (options) await vincularInsumosOpcoes(env, options);
+    if (options) await vincularInsumosOpcoes(env, options, produtoId);
     return options;
   } catch (error) {
     return { erro: error?.message || 'Acréscimo inválido', status: error?.status || 400 };
@@ -722,7 +722,7 @@ export async function upsertOnlineCatalogProductHandler(c, env) {
   }
   const categoriaCardapio = await exigirCategoriaCardapio(env, data.cardapio_categoria_id);
   if (categoriaCardapio) return c.json(categoriaCardapio, 400);
-  const options = await opcoesInformadas(env, body.opcoes);
+  const options = await opcoesInformadas(env, body.opcoes, productId);
   if (options?.erro) return c.json({ error: options.erro }, options.status || 400);
   const timestamp = now();
   if (existing) {
@@ -752,7 +752,7 @@ export async function updateOnlineCatalogProductHandler(c, env) {
   }
   const categoriaCardapio = await exigirCategoriaCardapio(env, data.cardapio_categoria_id);
   if (categoriaCardapio) return c.json(categoriaCardapio, 400);
-  const options = await opcoesInformadas(env, body.opcoes);
+  const options = await opcoesInformadas(env, body.opcoes, existing.produto_id);
   if (options?.erro) return c.json({ error: options.erro }, options.status || 400);
   await env.DB.prepare(
     `UPDATE cardapio_online_produtos SET categoria_id=?,cardapio_categoria_id=?,nome_exibicao=?,descricao=?,foto_url=?,preco=?,preco_promocional=?,ordem=?,disponivel=?,ativo=?,atualizado_em=? WHERE id=?`
@@ -1502,7 +1502,10 @@ export async function getPublicStoreHandler(c, env) {
   if (ids.length) {
     const placeholders = ids.map(() => '?').join(',');
     const result = await env.DB.prepare(
-      `SELECT * FROM cardapio_online_opcoes WHERE estabelecimento_id=? AND cardapio_produto_id IN (${placeholders}) AND ativo=1 ORDER BY ordem,id`
+      `SELECT * FROM cardapio_online_opcoes WHERE estabelecimento_id=? AND cardapio_produto_id IN (${placeholders}) AND ativo=1
+       AND (insumo_id IS NULL OR EXISTS (SELECT 1 FROM produtos p WHERE p.id=cardapio_online_opcoes.insumo_id
+         AND p.estabelecimento_id=cardapio_online_opcoes.estabelecimento_id AND p.ativo=1 AND p.preco>0 AND p.preco<=10000
+         AND p.tipo IN ('produto','insumo','composto'))) ORDER BY ordem,id`
     ).bind(store.estabelecimento_id, ...ids).all();
     for (const option of result.results) {
       const id = num(option.cardapio_produto_id);
@@ -1657,7 +1660,10 @@ export async function createPublicOrderHandler(c, env) {
   if (optionIds.length) {
     const optPlaceholders = optionIds.map(() => '?').join(',');
     const options = await env.DB.prepare(
-      `SELECT * FROM cardapio_online_opcoes WHERE estabelecimento_id=? AND id IN (${optPlaceholders}) AND ativo=1`
+      `SELECT * FROM cardapio_online_opcoes WHERE estabelecimento_id=? AND id IN (${optPlaceholders}) AND ativo=1
+       AND (insumo_id IS NULL OR EXISTS (SELECT 1 FROM produtos p WHERE p.id=cardapio_online_opcoes.insumo_id
+         AND p.estabelecimento_id=cardapio_online_opcoes.estabelecimento_id AND p.ativo=1 AND p.preco>0 AND p.preco<=10000
+         AND p.tipo IN ('produto','insumo','composto')))`
     ).bind(store.estabelecimento_id, ...optionIds).all();
     if (options.results.length !== optionIds.length) return c.json({ error: 'Uma opção escolhida não está mais disponível' }, 409);
     for (const option of options.results) optionsById.set(num(option.id), option);

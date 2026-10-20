@@ -260,7 +260,8 @@ export async function listProdutosHandler(c, env) {
     ).all(),
     env.DB.prepare(
       `SELECT a.produto_id, a.insumo_id, p.preco AS valor, p.nome AS insumo_nome
-       FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco > 0
+       FROM produto_acrescimos a JOIN produtos p ON p.id=a.insumo_id AND p.ativo=1 AND p.preco > 0 AND p.preco<=10000
+         AND p.tipo IN ('produto','insumo','composto')
        ORDER BY a.ordem, a.id`
     ).all(),
     env.DB.prepare(
@@ -513,7 +514,7 @@ export async function createProdutoHandler(c, env) {
     custo = await calcularCmvFicha(env, ingredientes);
   }
   let acrescimos = [];
-  if (tipo === 'composto' && b.acrescimos !== undefined) {
+  if ((tipo === 'produto' || tipo === 'composto') && b.acrescimos !== undefined) {
     try {
       acrescimos = await normalizarAcrescimos(env, null, b.acrescimos);
     } catch (error) {
@@ -687,7 +688,7 @@ export async function updateProdutoHandler(c, env) {
     await validarFichaSemCiclo(env, c.params.id, fichaFonte);
   }
   let acrescimosNorm = null;
-  if (tipo === 'composto' && Object.prototype.hasOwnProperty.call(b, 'acrescimos')) {
+  if ((tipo === 'produto' || tipo === 'composto') && Object.prototype.hasOwnProperty.call(b, 'acrescimos')) {
     try {
       acrescimosNorm = await normalizarAcrescimos(env, Number(c.params.id), b.acrescimos);
     } catch (error) {
@@ -767,7 +768,7 @@ export async function updateProdutoHandler(c, env) {
       );
     }
   }
-  if (tipo !== 'composto') {
+  if (tipo !== 'composto' && tipo !== 'produto') {
     stmts.push(env.DB.prepare('DELETE FROM produto_acrescimos WHERE produto_id=?').bind(c.params.id));
   } else if (acrescimosNorm) {
     stmts.push(env.DB.prepare('DELETE FROM produto_acrescimos WHERE produto_id=?').bind(c.params.id));
@@ -799,7 +800,7 @@ export async function updateProdutoHandler(c, env) {
       }
     }
   }
-  if ((tipo === 'insumo' || tipo === 'composto') && preco != null && preco > 0 && preco <= 10000) {
+  if (['produto', 'insumo', 'composto'].includes(tipo) && preco != null && preco > 0 && preco <= 10000) {
     const valorVenda = arredondar(preco);
     stmts.push(env.DB.prepare('UPDATE produto_acrescimos SET valor=? WHERE insumo_id=?').bind(valorVenda, c.params.id));
     stmts.push(env.DB.prepare('UPDATE cardapio_online_opcoes SET preco_adicional=? WHERE insumo_id=?').bind(valorVenda, c.params.id));
