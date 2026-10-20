@@ -1,5 +1,14 @@
 # Histórico de versões do DoixP
 
+## 0.1.0-beta.5 — Localização de clientes e lojas
+
+- GPS permitido no deploy, com leitura de alta precisão, indicação da precisão disponível e descarte de pontos antigos.
+- Seleção de localização por endereço ou CEP com confirmação de opções, mapa ajustável por toque, arraste e teclado, compartilhada por clientes e lojas.
+- Busca brasileira com Photon e ViaCEP, consultas explícitas, timeout, cache e proteção contra respostas antigas. Provedor Photon configurável por ambiente.
+- Checkout calcula o frete e envia o pedido pelo mesmo ponto confirmado. Número e complemento não alteram as coordenadas; falhas de cotação permitem tentar novamente.
+- Destino preservado também na entrega própria e botão Abrir rota no painel autenticado da loja, sem expor coordenadas no acompanhamento público.
+- Mapa carregado sob demanda, mantendo o download inicial leve e as regras existentes de raio, cobrança e retirada.
+
 ## 0.1.0-beta.4 — Correções de navegação e cadastro
 
 - Menu lateral fecha ao escolher uma tela, inclusive no primeiro acesso a telas carregadas sob demanda. O carregamento fica na área de conteúdo, preservando o menu e o cabeçalho.

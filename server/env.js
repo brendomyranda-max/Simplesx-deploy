@@ -25,7 +25,7 @@ export function loadLocalEnv(file = fileURLToPath(new URL('../.env', import.meta
 
 export function serverEnv(source = process.env) {
   const env = Object.fromEntries([
-    'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY',
+    'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'PHOTON_URL',
   ].map((key) => [key, String(source[key] || '').trim()]));
 
   if (source.NODE_ENV === 'production') {

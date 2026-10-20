@@ -11,7 +11,7 @@ import { Badge, Button, Card, EmptyState, useToast } from '@/components/ui';
 import { entregasApi, impressoraApi, pedidosApi, retryOrder } from '@/lib/api';
 import type { CorridaPlataforma, PainelPedidos, PedidoDelivery } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
-import { fmtKm } from '@/lib/localizacao-cliente';
+import { coordenadaClienteValida, fmtKm } from '@/lib/localizacao-cliente';
 import { MOTOBOY_DOIXP_VISIVEL } from '@/lib/recursos-em-desenvolvimento';
 
 function espera(minutos: number) {
@@ -206,6 +206,8 @@ export function DeliveryPage() {
         <div className="space-y-3">
           {pedidosVisiveis.map((pedido) => {
             const etapa = etapaDelivery(pedido);
+            const destino = coordenadaClienteValida(pedido.destino_latitude, pedido.destino_longitude)
+              ? `${pedido.destino_latitude},${pedido.destino_longitude}` : pedido.endereco;
             const corrida = corridas.find((item) => item.reference === `PEDIDO-ONLINE-${pedido.id}`);
             return (
               <Card key={pedido.id} className="p-4">
@@ -235,6 +237,7 @@ export function DeliveryPage() {
                     {pedido.etapa === 'entregue' && <p className="mt-1 text-xs font-semibold text-emerald-700">O cliente já vê esta etapa. A baixa do estoque continua no fechamento da comanda.</p>}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {pedido.tipo_entrega === 'entrega' && destino && <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destino)}&travelmode=driving`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"><ExternalLink className="h-3.5 w-3.5" />Abrir rota</a>}
                     {pedido.etapa === 'aguardando_pix' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pix_recebido')} loading={ocupado === `status-${pedido.id}`}>Pix recebido</Button>}
                     {MOTOBOY_DOIXP_VISIVEL && pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && !corrida && pedido.entrega_despacho_status !== 'anunciada' && pedido.etapa !== 'cancelado' && <Button size="sm" onClick={() => tentarChamarMotoboy(pedido.id)} loading={ocupado === `despacho-${pedido.id}`}>Tentar chamar motoboy</Button>}
                     {pedido.etapa === 'recebido' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'confirmado')} loading={ocupado === `status-${pedido.id}`}>Confirmar</Button>}

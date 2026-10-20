@@ -42,6 +42,14 @@ export interface ApiError {
   status: number;
 }
 
+export interface EnderecoLocalizado {
+  latitude: number;
+  longitude: number;
+  endereco: string;
+  fonte?: string;
+  precisao?: string;
+}
+
 export interface OrderSubmission {
   chave: string;
   itens: { produto_id: number; quantidade: number; pessoa_id?: number; observacao?: string; acrescimos?: number[]; combo_escolhas?: number[][] }[];
@@ -421,7 +429,14 @@ export const onlinePublicApi = {
     if (consulta.q) params.set('q', consulta.q);
     if (consulta.lat != null) params.set('lat', String(consulta.lat));
     if (consulta.lng != null) params.set('lng', String(consulta.lng));
-    return api.get<{ latitude: number; longitude: number; endereco: string }>(`/public/localizar?${params.toString()}`);
+    return api.get<EnderecoLocalizado>(`/public/localizar?${params.toString()}`);
+  },
+  locateOptions: (consulta: { q?: string; lat?: number; lng?: number }) => {
+    const params = new URLSearchParams({ opcoes: '1' });
+    if (consulta.q) params.set('q', consulta.q);
+    if (consulta.lat != null) params.set('lat', String(consulta.lat));
+    if (consulta.lng != null) params.set('lng', String(consulta.lng));
+    return api.get<EnderecoLocalizado & { opcoes: EnderecoLocalizado[] }>(`/public/localizar?${params.toString()}`);
   },
   distance: (slug: string, consulta: { q?: string; lat?: number; lng?: number; plataforma?: boolean }) => {
     const params = new URLSearchParams();
@@ -445,6 +460,7 @@ export const onlinePublicApi = {
     forma_pagamento: 'pix' | 'dinheiro' | 'maquininha'; troco_para?: number | null; observacao?: string;
     entrega_plataforma?: boolean; cpf_ultimos4?: string;
     frete_cliente_esperado_centavos?: number;
+    destino_latitude?: number; destino_longitude?: number;
     itens: { cardapio_produto_id: number; quantidade: number; opcoes_ids?: number[]; combo_escolhas?: number[][]; preco_unitario_esperado?: number; observacao?: string }[];
   }) => api.post<{ id: number; comanda_id: number | null; status: string; total: number; forma_pagamento: string; pix_copia_cola: string | null; repetido: boolean }>(`/public/lojas/${encodeURIComponent(slug)}/pedidos`, body),
   track: (slug: string, chave: string) => api.get<{

@@ -8,7 +8,7 @@
 
 import { estabelecimentoId, getConfigValue, getFichaCompleta, httpError, kvGet, kvPut, now, num, setConfig } from './util.js';
 import { confirmarCobrancaEfi, consultarNotificacaoEfi } from './efipay.js';
-import { areaDaLoja, cobrancaEntrega, coordenadaValida, distanciaKm, dentroDoRaio, kmExibido, localizar } from './localizacao.js';
+import { areaDaLoja, cobrancaEntrega, coordenadaValida, distanciaKm, dentroDoRaio, kmExibido, localizar, localizarOpcoes } from './localizacao.js';
 import { vincularInsumosOpcoes } from './acrescimos.js';
 import { copiaColaPix, normalizarChavePix, textoPix } from './pix.js';
 import { categoriaPrincipalDelivery } from './categorias-delivery.js';
@@ -374,8 +374,10 @@ async function localDaLoja(env, body, current) {
     let endereco = body.endereco === undefined ? current.endereco : (cleanText(body.endereco, 180, 'Endereço da loja') || null);
     let latitude = coordenadaInformada(body.latitude, 'Latitude');
     let longitude = coordenadaInformada(body.longitude, 'Longitude');
-    if (latitude === undefined) latitude = current.latitude ?? null;
-    if (longitude === undefined) longitude = current.longitude ?? null;
+    if ((latitude === undefined) !== (longitude === undefined)) return { erro: 'Informe a latitude e a longitude juntas' };
+    const mudouEndereco = body.endereco !== undefined && (endereco || '') !== (current.endereco || '');
+    if (latitude === undefined) latitude = mudouEndereco ? null : (current.latitude ?? null);
+    if (longitude === undefined) longitude = mudouEndereco ? null : (current.longitude ?? null);
     const raio = body.raio_entrega_km === undefined
       ? (current.raio_entrega_km ?? null)
       : optionalNumber(body.raio_entrega_km, 'Limite de entrega', { min: 0.1, max: 100 });
@@ -384,7 +386,6 @@ async function localDaLoja(env, body, current) {
       if (!ponto) return { erro: 'Não foi possível localizar o endereço da loja. Use a localização do aparelho ou informe rua, número e cidade.' };
       latitude = ponto.latitude;
       longitude = ponto.longitude;
-      endereco = ponto.endereco || endereco;
     }
     if ((latitude == null) !== (longitude == null)) return { erro: 'Informe a latitude e a longitude juntas' };
     return { endereco: endereco || null, latitude, longitude, raio };
@@ -810,6 +811,7 @@ export async function painelPedidosHandler(c, env) {
   const deliverySelect =
     `SELECT po.id, po.comanda_id, po.mesa_id, po.cliente_nome, po.telefone, po.tipo_entrega,
        po.endereco, po.forma_pagamento, po.troco_para, po.observacao, po.status, po.etapa,
+       po.entrega_destino_lat AS destino_latitude, po.entrega_destino_lng AS destino_longitude,
        po.subtotal, po.taxa_entrega, po.valor_entrega, po.distancia_km, po.modo_entrega, po.total, po.criado_em, c.status AS comanda_status,
        (SELECT COUNT(*) FROM comanda_itens ci WHERE ci.comanda_id=po.comanda_id AND ci.status='novo') AS impressao_pendente
      FROM pedidos_online po
@@ -892,6 +894,8 @@ export async function painelPedidosHandler(c, env) {
       telefone: row.telefone,
       tipo_entrega: row.tipo_entrega,
       endereco: row.endereco || null,
+      destino_latitude: row.destino_latitude == null ? null : Number(row.destino_latitude),
+      destino_longitude: row.destino_longitude == null ? null : Number(row.destino_longitude),
       forma_pagamento: row.forma_pagamento,
       troco_para: row.troco_para == null || row.troco_para === '' ? null : num(row.troco_para),
       observacao: row.observacao || '',
@@ -1295,15 +1299,17 @@ export async function localizarHandler(c, env) {
   if (usos >= 30) return c.json({ error: 'Muitas consultas de endereço. Aguarde alguns minutos.' }, 429);
   await kvPut(env, chave, String(usos + 1), { expirationTtl: 600 });
   const q = String(c.req.query('q') || '').trim();
-  const ponto = await localizar(env, { q, lat: c.req.query('lat'), lng: c.req.query('lng') });
+  const opcoes = await localizarOpcoes(env, { q, lat: c.req.query('lat'), lng: c.req.query('lng') });
+  const ponto = opcoes[0];
   if (!ponto) return c.json({ error: 'Não foi possível localizar este lugar. Inclua rua, número e cidade.' }, 404);
-  return c.json(ponto);
+  return c.json(c.req.query('opcoes') === '1' ? { ...ponto, opcoes } : ponto);
 }
 
 export async function distanciaLojaHandler(c, env) {
   const store = await publicStore(env, c.params.slug);
   const q = String(c.req.query('q') || '').trim();
-  const ponto = q ? await localizar(env, { q }) : pontoDaConsulta(c);
+  const temCoordenada = [c.req.query('lat'), c.req.query('lng')].some((valor) => valor != null && valor !== '');
+  const ponto = temCoordenada ? pontoDaConsulta(c) : q ? await localizar(env, { q }) : null;
   if (!ponto) return c.json({ error: 'Não foi possível localizar este endereço. Inclua rua, número e cidade.' }, 400);
   const area = areaDaLoja(store, ponto);
   if (c.req.query('plataforma') === '1') {
@@ -1605,9 +1611,20 @@ export async function createPublicOrderHandler(c, env) {
   }
   let distanciaBruta = null;
   let destinationPoint = null;
+  const temDestino = body?.destino_latitude != null || body?.destino_longitude != null;
+  if (temDestino) {
+    const lat = body.destino_latitude;
+    const lng = body.destino_longitude;
+    if (lat == null || lng == null || String(lat).trim() === '' || String(lng).trim() === ''
+      || (typeof lat !== 'number' && typeof lat !== 'string') || (typeof lng !== 'number' && typeof lng !== 'string')
+      || !coordenadaValida(Number(lat), Number(lng))) {
+      return c.json({ error: 'Informe a latitude e a longitude válidas do destino juntas.' }, 400);
+    }
+    if (delivery === 'entrega') destinationPoint = { latitude: Number(lat), longitude: Number(lng), endereco: address };
+  }
   const calculaDistancia = delivery === 'entrega' && store.latitude != null && store.longitude != null && (platformDelivery || store.raio_entrega_km != null || store.valor_por_km != null);
   if (calculaDistancia) {
-    const ponto = await localizar(env, { q: address });
+    const ponto = destinationPoint || await localizar(env, { q: address });
     if (!ponto) return c.json({ error: 'Não foi possível localizar este endereço. Inclua rua, número e cidade.' }, 400);
     destinationPoint = ponto;
     distanciaBruta = distanciaKm({ latitude: Number(store.latitude), longitude: Number(store.longitude) }, ponto);
@@ -1717,12 +1734,12 @@ export async function createPublicOrderHandler(c, env) {
   const etapaPendente = 'aguardando_pix';
   const statements = [
     env.DB.prepare(
-      `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em)
-       SELECT ?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?
+      `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em,entrega_destino_lat,entrega_destino_lng)
+       SELECT ?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?,?,?
        WHERE EXISTS (SELECT 1 FROM lojas_online WHERE estabelecimento_id=? AND ativo=1 AND aceita_pedidos_online=1)
          AND ?=(SELECT COUNT(*) FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id AND p.estabelecimento_id=cp.estabelecimento_id
            WHERE cp.estabelecimento_id=? AND cp.id IN (SELECT value FROM json_each(?)) AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1)`
-    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp,
+    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp, destinationPoint?.latitude ?? null, destinationPoint?.longitude ?? null,
       store.estabelecimento_id, catalogIds.length, store.estabelecimento_id, JSON.stringify(catalogIds)),
   ];
   if (platformDelivery) {

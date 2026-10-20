@@ -12,10 +12,10 @@ instalações, os dados e os endereços existentes.
 
 ## Versão da aplicação
 
-**DoixP 0.1.0-beta.4 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
+**DoixP 0.1.0-beta.5 — Pré-lançamento.** Consulte o [histórico de versões](CHANGELOG.md).
 A versão exibida na aplicação vem do `package.json`, sincronizado com o
 `package-lock.json`. As próximas versões de pré-lançamento seguem
-`0.1.0-beta.5`, `0.1.0-beta.6` e assim por diante. Cada publicação recebe uma tag
+`0.1.0-beta.6`, `0.1.0-beta.7` e assim por diante. Cada publicação recebe uma tag
 `doixp-v<VERSÃO>` e uma release marcada como pré-lançamento no GitHub.
 Ao liberar a versão estável, retire o sufixo beta e a identificação de
 pré-lançamento da interface.
@@ -328,6 +328,37 @@ no card visto pelos clientes. O link público segue o nome, como
 `https://doixp.com/pedido/acai-da-praca`; ao renomear, os links anteriores
 continuam abrindo a mesma loja. `npm run deploy` aplica a migração
 `0043_lojas_links_anteriores.sql` e atualiza os links das lojas existentes.
+
+## Localização de clientes e lojas
+
+Na vitrine **/pedido**, no site da loja e no checkout, o cliente escolhe
+**Usar minha localização** ou busca rua, número e cidade/CEP. A busca ocorre
+somente ao clicar em **Buscar** ou pressionar Enter e oferece até cinco opções
+para escolha. O lojista usa o mesmo seletor em **Configurar → Área de entrega**
+para confirmar o ponto do estabelecimento antes de salvar.
+
+Após a seleção, o mapa permite ajustar a entrada por toque, arraste do marcador
+ou teclado. O GPS exibe a precisão informada pelo aparelho, avisa quando ela
+supera 200 m ou está ausente e depende da permissão do navegador. Confira sempre
+o ponto, o número e o complemento. Se a descrição do GPS falhar, o endereço pode
+ser preenchido mantendo as coordenadas ao marcar **Informar endereço mantendo
+este ponto**; a opção também permite completar resultados de busca e pontos
+ajustados no mapa. Editar um endereço sem essa opção exige nova seleção.
+
+O pedido guarda as coordenadas confirmadas pelo cliente, preservadas quando o
+serviço apenas identifica o endereço do GPS. No painel **Delivery → Pedidos**,
+**Abrir rota** envia essas coordenadas ao Google Maps; pedidos antigos sem ponto
+usam o endereço textual. O raio de atendimento e o frete por quilômetro continuam
+usando a distância geográfica entre loja e destino, com as regras de cobrança
+existentes; a rota aberta serve à navegação.
+
+A busca brasileira usa Photon, complementado pelo ViaCEP quando há CEP, com
+cache no servidor. `PHOTON_URL` é opcional em `.env`/Cloudflare e permite usar uma
+instância própria ou contratada para maior volume. O serviço público depende de
+disponibilidade e capacidade. O mapa carrega somente após selecionar um ponto,
+usa tiles do OpenStreetMap e mantém a atribuição visível e o link de copyright.
+Para maior tráfego de mapas, configure um provedor adequado em
+`src/components/MapaLocalizacao.tsx` e ajuste a política CSP em `public/_headers`.
 
 ## Funcionamento e impressão do delivery
 

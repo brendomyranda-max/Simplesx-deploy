@@ -276,6 +276,8 @@ export interface PedidoDelivery {
   telefone: string;
   tipo_entrega: 'entrega' | 'retirada';
   endereco: string | null;
+  destino_latitude?: number | null;
+  destino_longitude?: number | null;
   forma_pagamento: string;
   troco_para?: number | null;
   observacao: string;

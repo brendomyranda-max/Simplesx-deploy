@@ -2,17 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, CheckCircle2, ChevronRight, ExternalLink, Link2, MapPin, PackagePlus, Pencil, Plus, Settings2, Store, UtensilsCrossed } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, ChevronRight, ExternalLink, Link2, PackagePlus, Pencil, Plus, Settings2, Store, UtensilsCrossed } from 'lucide-react';
 import { AnimatedPage } from '@/components/AnimatedPage';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Tabs, Textarea, Toggle, useToast } from '@/components/ui';
 import { onlineApi, produtoApi } from '@/lib/api';
 import { FotoGaleria } from '@/components/FotoGaleria';
+import { SeletorLocalizacao } from '@/components/SeletorLocalizacao';
 import { FuncionamentoDelivery } from '@/components/FuncionamentoDelivery';
 import { ConfiguracaoCardapioOnline } from '@/components/ModoCardapioOnline';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
 import type { CategoriaCardapio, CategoriaLoja, ModoEntrega, OnlineCatalogProduct, OnlineStore, Produto } from '@/lib/types';
 import { fmtBRL } from '@/lib/format';
-import { previaEntrega } from '@/lib/localizacao-cliente';
+import { previaEntrega, type PontoCliente } from '@/lib/localizacao-cliente';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
 import { CATEGORIAS_DELIVERY } from '../../shared/categorias-delivery.js';
 import { slugDoNome } from '../../shared/loja-slug.js';
@@ -312,9 +313,10 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
   const somenteConsulta = store?.aceita_pedidos_online === 0;
   const [form, setForm] = useState({ slug: '', nome: '', foto: '', descricao: '', whatsapp: '', taxa: '0', valorKm: '', modo: 'cliente' as ModoEntrega, publicacao: 'marketplace' as 'marketplace' | 'cardapio', min: '', max: '', entrega: true, retirada: true, published: false, endereco: '', raio: '', latitude: null as number | null, longitude: null as number | null });
   const [saving, setSaving] = useState(false);
-  const [lendoLocal, setLendoLocal] = useState(false);
+  const [pontoLoja, setPontoLoja] = useState<PontoCliente | null>(null);
   useEffect(() => {
     if (!store) return;
+    setPontoLoja(store.latitude != null && store.longitude != null ? { latitude: store.latitude, longitude: store.longitude, endereco: store.endereco || '', origem: 'endereco' } : null);
     setForm({
       slug: store.slug,
       nome: store.nome,
@@ -336,18 +338,6 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
       longitude: store.longitude ?? null,
     });
   }, [store]);
-  const usarLocal = () => {
-    if (!navigator.geolocation) return toast('error', 'Este aparelho não informa a localização.');
-    setLendoLocal(true);
-    navigator.geolocation.getCurrentPosition((posicao) => {
-      setForm((atual) => ({ ...atual, latitude: posicao.coords.latitude, longitude: posicao.coords.longitude }));
-      setLendoLocal(false);
-      toast('success', 'Localização da loja pronta para salvar');
-    }, () => {
-      setLendoLocal(false);
-      toast('error', 'Não foi possível ler a localização. Informe rua, número e cidade.');
-    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
-  };
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     const valorTexto = form.valorKm.trim();
@@ -360,6 +350,7 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
     if (!form.nome.trim() || (!valorTexto && (!Number.isFinite(taxa) || taxa < 0)) || (min !== null && !Number.isFinite(min)) || (max !== null && !Number.isFinite(max))) return toast('error', 'Revise os dados da loja');
     if (valorTexto && (valorKm == null || !Number.isFinite(valorKm) || valorKm < 0 || valorKm > 1000)) return toast('error', 'O valor por km fica entre 0 e 1000');
     if (raioTexto && (raio == null || !Number.isFinite(raio) || raio < 0.1 || raio > 100)) return toast('error', 'O limite de entrega fica entre 0,1 e 100 km');
+    if (!somenteConsulta && form.endereco.trim() && !pontoLoja) return toast('error', 'Busque o endereço e escolha o ponto da loja no mapa antes de salvar');
     setSaving(true);
     try {
       const next = await onlineApi.updateStore({
@@ -411,15 +402,21 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
         <Card className="space-y-5 p-5">
           {!somenteConsulta && <>
           <div><h2 className="font-bold text-slate-800">Entrega e retirada</h2><p className="mt-1 text-sm text-slate-500">O limite é o máximo que esta loja entrega, como 3,5 km ou 10 km.</p></div>
-          <Field label="Endereço da loja" hint="Rua, número e cidade. Ao alterar o texto, o ponto é localizado de novo ao salvar.">
-            <Input value={form.endereco} onChange={(event) => setForm({ ...form, endereco: event.target.value, latitude: null, longitude: null })} placeholder="Rua, número e cidade" />
-          </Field>
+          <SeletorLocalizacao
+            label="Localização da loja"
+            endereco={form.endereco}
+            value={pontoLoja}
+            onEnderecoChange={(endereco) => setForm((atual) => ({ ...atual, endereco }))}
+            onChange={(ponto) => {
+              setPontoLoja(ponto);
+              setForm((atual) => ({ ...atual, latitude: ponto?.latitude ?? null, longitude: ponto?.longitude ?? null }));
+            }}
+            disabled={saving}
+          />
           <div className="flex flex-wrap gap-2">
             {[3.5, 5, 10].map((km) => <button key={km} type="button" onClick={() => setForm({ ...form, raio: String(km).replace('.', ',') })} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700">{km.toLocaleString('pt-BR')} km</button>)}
           </div>
           <Field label="Limite máximo de entrega (km)"><Input value={form.raio} onChange={(event) => setForm({ ...form, raio: event.target.value })} inputMode="decimal" placeholder="10" /></Field>
-          <Button type="button" variant="secondary" loading={lendoLocal} icon={<MapPin className="h-4 w-4" />} onClick={usarLocal}>Usar minha localização</Button>
-          {form.latitude != null && form.longitude != null && <p className="text-xs text-slate-500">Ponto do aparelho definido. Ele vale até você alterar o endereço.</p>}
           <div className="flex flex-wrap gap-2" role="group" aria-label="Quem paga a entrega">
             {([['cliente', 'Cliente paga 100%'], ['dividido', 'Dividir'], ['gratis', 'Entrega grátis']] as const).map(([id, rotulo]) => (
               <button key={id} type="button" onClick={() => setForm({ ...form, modo: id })} className={`rounded-full border px-3 py-1 text-xs font-bold ${form.modo === id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-white text-slate-700'}`}>{rotulo}</button>

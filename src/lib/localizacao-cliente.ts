@@ -8,15 +8,24 @@
 import { fmtBRL } from '@/lib/format';
 import type { ModoEntrega } from '@/lib/types';
 
-export type PontoCliente = {
+export type PontoLocalizacao = {
   latitude: number;
   longitude: number;
+  precisao_metros?: number;
+  /** Instante informado pelo aparelho, em milissegundos desde Unix epoch. */
+  atualizado_em?: number;
+};
+
+export type PontoCliente = PontoLocalizacao & {
   endereco: string;
-  origem: 'gps' | 'endereco';
+  origem: 'gps' | 'endereco' | 'mapa';
 };
 
 const CHAVE = 'simplesx_ponto_cliente';
-const PASSO_GRAUS = 0.0008;
+const PASSO_METROS = 40;
+const PRAZO_GPS_MS = 18000;
+const PRECISAO_DESEJADA_METROS = 50;
+const VALIDADE_GPS_MS = 30 * 60 * 1000;
 
 function sessao() {
   try {
@@ -92,11 +101,12 @@ export function previaEntrega(valorPorKm: number, modo: ModoEntrega) {
 }
 
 export function lerPontoCliente(): PontoCliente | null {
-  const bruto = sessao()?.getItem(CHAVE);
-  if (!bruto) return null;
   try {
-    const ponto = JSON.parse(bruto) as PontoCliente;
-    if (!Number.isFinite(ponto.latitude) || !Number.isFinite(ponto.longitude)) return null;
+    const bruto = sessao()?.getItem(CHAVE);
+    const ponto = bruto ? normalizarPontoCliente(JSON.parse(bruto)) : null;
+    if (ponto?.origem === 'gps' && (!ponto.atualizado_em
+      || Date.now() - ponto.atualizado_em > VALIDADE_GPS_MS
+      || ponto.atualizado_em > Date.now() + 60000)) return null;
     return ponto;
   } catch {
     return null;
@@ -104,32 +114,175 @@ export function lerPontoCliente(): PontoCliente | null {
 }
 
 export function gravarPontoCliente(ponto: PontoCliente) {
-  sessao()?.setItem(CHAVE, JSON.stringify(ponto));
+  const validado = normalizarPontoCliente(ponto);
+  if (!validado) return;
+  try {
+    sessao()?.setItem(CHAVE, JSON.stringify(validado));
+  } catch {
+    // Bloqueio de armazenamento ou quota não deve impedir a escolha do endereço.
+  }
+}
+
+export function limparPontoCliente() {
+  try {
+    sessao()?.removeItem(CHAVE);
+  } catch {
+    // Navegação privada pode bloquear também a remoção da sessão.
+  }
+}
+
+export function coordenadaClienteValida(latitude: unknown, longitude: unknown): boolean {
+  return typeof latitude === 'number' && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && typeof longitude === 'number' && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}
+
+function normalizarPontoCliente(valor: unknown): PontoCliente | null {
+  if (!valor || typeof valor !== 'object') return null;
+  const ponto = valor as Partial<PontoCliente>;
+  if (!coordenadaClienteValida(ponto.latitude, ponto.longitude)
+    || typeof ponto.endereco !== 'string'
+    || !['gps', 'endereco', 'mapa'].includes(ponto.origem ?? '')) return null;
+  if (ponto.precisao_metros !== undefined && !numeroPositivo(ponto.precisao_metros)) return null;
+  if (ponto.atualizado_em !== undefined && !numeroPositivo(ponto.atualizado_em)) return null;
+  return {
+    latitude: ponto.latitude!, longitude: ponto.longitude!, endereco: ponto.endereco.trim(), origem: ponto.origem!,
+    ...(ponto.precisao_metros !== undefined ? { precisao_metros: ponto.precisao_metros } : {}),
+    ...(ponto.atualizado_em !== undefined ? { atualizado_em: ponto.atualizado_em } : {}),
+  };
+}
+
+function numeroPositivo(valor: unknown): valor is number {
+  return typeof valor === 'number' && Number.isFinite(valor) && valor > 0;
+}
+
+function pontoDoGPS(posicao: GeolocationPosition): PontoLocalizacao | null {
+  const { latitude, longitude, accuracy } = posicao.coords;
+  if (!coordenadaClienteValida(latitude, longitude)) return null;
+  return {
+    latitude, longitude,
+    ...(numeroPositivo(accuracy) ? { precisao_metros: accuracy } : {}),
+    atualizado_em: numeroPositivo(posicao.timestamp) ? posicao.timestamp : Date.now(),
+  };
+}
+
+function distanciaMetros(a: PontoLocalizacao, b: PontoLocalizacao): number {
+  const rad = Math.PI / 180;
+  const h = Math.sin((b.latitude - a.latitude) * rad / 2) ** 2
+    + Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin((b.longitude - a.longitude) * rad / 2) ** 2;
+  return 12742000 * Math.asin(Math.sqrt(Math.min(1, h)));
+}
+
+function mensagemErroGPS(codigo?: number): string {
+  if (codigo === 1) return 'Localização não autorizada. Permita o acesso à localização nas configurações do navegador ou digite o endereço.';
+  if (codigo === 3) return 'A localização demorou para responder. Tente novamente em um local aberto ou digite o endereço.';
+  return 'Não foi possível ler a localização agora. Confira se a localização do aparelho está ligada ou digite o endereço.';
+}
+
+/** Busca um ponto recente e encerra o GPS assim que obtém boa precisão ou esgota o prazo. */
+export function obterLocalizacaoAtual(): Promise<PontoLocalizacao> {
+  const gps = typeof navigator !== 'undefined' ? navigator.geolocation : undefined;
+  if (!gps) return Promise.reject(new Error('Este aparelho não informa a localização. Digite o endereço.'));
+  return new Promise((resolve, reject) => {
+    let encerrado = false;
+    let id: number | null = null;
+    let melhor: PontoLocalizacao | null = null;
+    const pagina = typeof document !== 'undefined' ? document : null;
+    const finalizar = (erro?: string) => {
+      if (encerrado) return;
+      encerrado = true;
+      clearTimeout(prazo);
+      if (id !== null) gps.clearWatch(id);
+      pagina?.removeEventListener('visibilitychange', visibilidade);
+      if (erro || !melhor) reject(new Error(erro || mensagemErroGPS(3)));
+      else resolve(melhor);
+    };
+    const visibilidade = () => {
+      if (pagina?.hidden) finalizar('A busca de localização foi pausada. Volte à página e tente novamente.');
+    };
+    const prazo = setTimeout(() => finalizar(), PRAZO_GPS_MS);
+    if (pagina?.hidden) {
+      finalizar('Volte à página para usar a localização do aparelho.');
+      return;
+    }
+    pagina?.addEventListener('visibilitychange', visibilidade);
+    try {
+      const observado = gps.watchPosition((posicao) => {
+        if (encerrado) return;
+        const ponto = pontoDoGPS(posicao);
+        if (!ponto) return;
+        if (!melhor || (ponto.precisao_metros ?? Infinity) <= (melhor.precisao_metros ?? Infinity)) melhor = ponto;
+        if (melhor.precisao_metros !== undefined && melhor.precisao_metros <= PRECISAO_DESEJADA_METROS) finalizar();
+      }, (erro) => {
+        if (encerrado) return;
+        // Uma primeira posição aproximada continua útil se o aparelho não conseguir refiná-la.
+        finalizar(erro.code === 1 || !melhor ? mensagemErroGPS(erro.code) : undefined);
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 });
+      if (encerrado) gps.clearWatch(observado);
+      else id = observado;
+    } catch {
+      finalizar(mensagemErroGPS());
+    }
+  });
 }
 
 export function observarLocalizacao(avisos: {
-  onPonto: (ponto: { latitude: number; longitude: number }) => void;
+  onPonto: (ponto: PontoLocalizacao) => void;
   onErro: (mensagem: string) => void;
 }) {
-  if (!navigator.geolocation) {
+  const gps = typeof navigator !== 'undefined' ? navigator.geolocation : undefined;
+  if (!gps) {
     avisos.onErro('Este aparelho não informa a localização. Digite o endereço para ver as distâncias.');
     return () => undefined;
   }
-  let ultimo: { latitude: number; longitude: number } | null = null;
-  const id = navigator.geolocation.watchPosition(
-    (posicao) => {
-      const latitude = posicao.coords.latitude;
-      const longitude = posicao.coords.longitude;
-      if (ultimo && Math.abs(latitude - ultimo.latitude) < PASSO_GRAUS && Math.abs(longitude - ultimo.longitude) < PASSO_GRAUS) return;
-      ultimo = { latitude, longitude };
-      avisos.onPonto({ latitude, longitude });
-    },
-    (erro) => {
-      avisos.onErro(erro.code === 1
-        ? 'Localização não autorizada. Digite o endereço para ver quem entrega até você.'
-        : 'Não foi possível ler a localização agora. Digite o endereço.');
-    },
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 },
-  );
-  return () => navigator.geolocation.clearWatch(id);
+  const pagina = typeof document !== 'undefined' ? document : null;
+  let ativo = true;
+  let geracao = 0;
+  let id: number | null = null;
+  let ultimo: PontoLocalizacao | null = null;
+  const pausar = () => {
+    geracao++;
+    if (id !== null) gps.clearWatch(id);
+    id = null;
+  };
+  const limpar = () => {
+    ativo = false;
+    pausar();
+    pagina?.removeEventListener('visibilitychange', visibilidade);
+  };
+  const iniciar = () => {
+    if (!ativo || pagina?.hidden || id !== null) return;
+    const atual = ++geracao;
+    try {
+      const observado = gps.watchPosition((posicao) => {
+        if (!ativo || atual !== geracao || pagina?.hidden) return;
+        const ponto = pontoDoGPS(posicao);
+        if (!ponto) return;
+        if (ultimo) {
+          const distancia = distanciaMetros(ultimo, ponto);
+          const anterior = ultimo.precisao_metros ?? Infinity;
+          const precisao = ponto.precisao_metros ?? Infinity;
+          const melhorou = Number.isFinite(precisao) && (anterior === Infinity || anterior - precisao >= Math.max(5, anterior * 0.2));
+          if (!melhorou && (distancia < PASSO_METROS || (precisao > anterior && distancia <= precisao))) return;
+        }
+        ultimo = ponto;
+        avisos.onPonto(ponto);
+      }, (erro) => {
+        if (!ativo || atual !== geracao || pagina?.hidden) return;
+        if (erro.code === 1) limpar();
+        avisos.onErro(mensagemErroGPS(erro.code));
+      }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 });
+      if (!ativo || atual !== geracao || pagina?.hidden) gps.clearWatch(observado);
+      else id = observado;
+    } catch {
+      limpar();
+      avisos.onErro(mensagemErroGPS());
+    }
+  };
+  const visibilidade = () => {
+    if (pagina?.hidden) pausar();
+    else iniciar();
+  };
+  pagina?.addEventListener('visibilitychange', visibilidade);
+  iniciar();
+  return limpar;
 }

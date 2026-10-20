@@ -2,15 +2,16 @@
  * Vitrine DoixP Delivery. Ao entrar, pede a localização e mostra quem entrega na região.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BadgePercent, Bike, Clock3, CookingPot, IceCreamBowl, MapPin, Pizza, Search, Sandwich, ShoppingBag, Store, UtensilsCrossed, X } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import { lerUltimoPedido, SUPORTE_DOIXP_URL } from '@/lib/delivery-cliente';
 import { FotoGaleria } from '@/components/FotoGaleria';
+import { SeletorLocalizacao } from '@/components/SeletorLocalizacao';
 import { authApi, onlineApi, onlinePublicApi } from '@/lib/api';
 import type { OnlineStore, RedePedidos } from '@/lib/types';
-import { fmtKm, gravarPontoCliente, lerPontoCliente, observarLocalizacao, textoEntrega, type PontoCliente } from '@/lib/localizacao-cliente';
+import { fmtKm, gravarPontoCliente, limparPontoCliente, lerPontoCliente, textoEntrega, type PontoCliente } from '@/lib/localizacao-cliente';
 import './online-storefront.css';
 import { CATEGORIAS_DELIVERY, categoriaPrincipalDelivery } from '../../shared/categorias-delivery.js';
 
@@ -40,19 +41,10 @@ export function Marketplace() {
   const [versaoLoja, setVersaoLoja] = useState(0);
   const [sacolaAberta, setSacolaAberta] = useState(false);
   const ultimoPedido = lerUltimoPedido();
-  const pontoInicial = lerPontoCliente();
+  const [pontoInicial] = useState(lerPontoCliente);
   const [ponto, setPonto] = useState<PontoCliente | null>(pontoInicial);
   const [regiao, setRegiao] = useState(true);
-  const [endereco, setEndereco] = useState(pontoInicial?.origem === 'endereco' ? pontoInicial.endereco : '');
-  const [consultaEndereco, setConsultaEndereco] = useState(pontoInicial?.origem === 'endereco' ? pontoInicial.endereco : '');
-  const [gpsAtivo, setGpsAtivo] = useState(pontoInicial?.origem !== 'endereco');
-  const [avisoLocal, setAvisoLocal] = useState('');
-  const [buscandoEndereco, setBuscandoEndereco] = useState(false);
-  const gpsAtivoRef = useRef(true);
-
-  useEffect(() => {
-    gpsAtivoRef.current = gpsAtivo;
-  }, [gpsAtivo]);
+  const [endereco, setEndereco] = useState(pontoInicial?.endereco || '');
 
   useEffect(() => {
     let ativo = true;
@@ -68,53 +60,6 @@ export function Marketplace() {
     const timer = window.setTimeout(() => setConsulta(busca.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [busca]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setConsultaEndereco(endereco.trim()), 700);
-    return () => window.clearTimeout(timer);
-  }, [endereco]);
-
-  useEffect(() => {
-    if (!gpsAtivo) return undefined;
-    return observarLocalizacao({
-      onPonto: (coords) => {
-        if (!gpsAtivoRef.current) return;
-        const proximo: PontoCliente = { ...coords, endereco: '', origem: 'gps' };
-        setPonto(proximo);
-        gravarPontoCliente(proximo);
-        setAvisoLocal('');
-      },
-      onErro: (texto) => setAvisoLocal(texto),
-    });
-  }, [gpsAtivo]);
-
-  useEffect(() => {
-    if (consultaEndereco.length < 5) return undefined;
-    if (ponto?.origem === 'endereco' && consultaEndereco === ponto.endereco) return undefined;
-    let ativo = true;
-    setGpsAtivo(false);
-    setBuscandoEndereco(true);
-    onlinePublicApi.locate({ q: consultaEndereco })
-      .then((local) => {
-        if (!ativo) return;
-        const proximo: PontoCliente = {
-          latitude: local.latitude,
-          longitude: local.longitude,
-          endereco: local.endereco || consultaEndereco,
-          origem: 'endereco',
-        };
-        setPonto(proximo);
-        gravarPontoCliente(proximo);
-        setRegiao(true);
-        setAvisoLocal('');
-      })
-      .catch((error: any) => {
-        if (!ativo) return;
-        setAvisoLocal(error?.error || 'Não foi possível localizar este endereço. Inclua rua, número e cidade.');
-      })
-      .finally(() => { if (ativo) setBuscandoEndereco(false); });
-    return () => { ativo = false; };
-  }, [consultaEndereco, ponto?.endereco, ponto?.origem]);
 
   useEffect(() => {
     let ativo = true;
@@ -141,14 +86,6 @@ export function Marketplace() {
     window.addEventListener('focus', carregar);
     return () => { ativo = false; clearInterval(timer); window.removeEventListener('focus', carregar); };
   }, [categoria, consulta, ponto?.latitude, ponto?.longitude, regiao, versaoLoja]);
-
-  const usarGps = () => {
-    setEndereco('');
-    setConsultaEndereco('');
-    setAvisoLocal('');
-    setRegiao(true);
-    setGpsAtivo(true);
-  };
 
   const abrirPerfil = () => {
     if (!minhaLoja) return;
@@ -214,17 +151,21 @@ export function Marketplace() {
               </span>
             </div>
           </div>
-          <label className="online-market-search">
-            <Search aria-hidden="true" />
-            <input value={endereco} onChange={(event) => setEndereco(event.target.value)} placeholder="Rua, número e cidade" aria-label="Endereço para encontrar restaurantes" />
-          </label>
+          <SeletorLocalizacao
+            label="Onde você quer receber?"
+            endereco={endereco}
+            onEnderecoChange={setEndereco}
+            value={ponto}
+            onChange={(proximo) => {
+              setPonto(proximo);
+              if (proximo) { gravarPontoCliente(proximo); setRegiao(true); }
+              else limparPontoCliente();
+            }}
+          />
           <div className="online-region-toggle">
             <button type="button" className={ponto && regiao ? 'active' : ''} disabled={!ponto} onClick={() => setRegiao(true)}>Na minha região</button>
             <button type="button" className={ponto && !regiao ? 'active' : ''} onClick={() => setRegiao(false)}>Ver todas</button>
-            <button type="button" onClick={usarGps}>Usar minha localização</button>
           </div>
-          {buscandoEndereco && <p className="online-config-note">Localizando o endereço…</p>}
-          {avisoLocal && <p className="online-erro">{avisoLocal}</p>}
           {ponto && !regiao && <p className="online-where-note">Lojas sem área definida continuam nesta lista.</p>}
         </section>
         {minhaLoja && (
