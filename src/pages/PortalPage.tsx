@@ -1,5 +1,6 @@
 import { ArrowUpRight } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
+import { MOTOBOY_DOIXP_VISIVEL } from '@/lib/recursos-em-desenvolvimento';
 import './portal.css';
 
 const ACESSOS = [
@@ -33,7 +34,7 @@ export function PortalPage() {
           <p>Mais praticidade para quem compra, mais controle para quem vende e mais valor para quem entrega.</p>
         </section>
 
-        <nav className="portal-destinos" aria-label="Acessos DoixP">
+        <nav className={`portal-destinos${MOTOBOY_DOIXP_VISIVEL ? '' : ' portal-duas-colunas'}`} aria-label="Acessos DoixP">
           {ACESSOS.map(({ titulo, descricao, href }) => (
             <div className="portal-destino" key={href}>
               <a className="portal-button" href={href}>
@@ -44,13 +45,13 @@ export function PortalPage() {
             </div>
           ))}
 
-          <div className="portal-destino">
+          {MOTOBOY_DOIXP_VISIVEL && <div className="portal-destino">
             <button className="portal-button portal-button-disabled" type="button" disabled>
               <span>DOIXP ENTREGAS</span>
               <span className="portal-coming-soon">EM BREVE</span>
             </button>
             <p>Seja um Parceiro</p>
-          </div>
+          </div>}
         </nav>
 
         <section className="portal-story" aria-labelledby="portal-story-title">
@@ -60,7 +61,7 @@ export function PortalPage() {
             <p>Reunir consumidores, comércios e entregadores em um só lugar, com tecnologia simples e uma relação mais justa para todos.</p>
           </div>
 
-          <div className="portal-story-grid">
+          <div className={`portal-story-grid${MOTOBOY_DOIXP_VISIVEL ? '' : ' portal-duas-colunas'}`}>
             <article>
               <h3>Quem somos</h3>
               <p>A DoixP nasceu para aproximar quem compra, quem vende e quem entrega. Acreditamos que a tecnologia deve facilitar o trabalho e valorizar cada pessoa que faz parte dessa relação.</p>
@@ -77,11 +78,11 @@ export function PortalPage() {
                 <li>Pedidos online e navegação organizada.</li>
               </ul>
             </article>
-            <article>
+            {MOTOBOY_DOIXP_VISIVEL && <article>
               <h3>Onde queremos chegar</h3>
               <p>Queremos conectar toda essa experiência à <strong>DoixP Entregas, que está em desenvolvimento</strong>. A proposta é que o entregador receba 100% do valor das suas entregas, sem comissão da DoixP.</p>
               <p>Valorizar esse trabalho é incentivar um atendimento cuidadoso e construir uma experiência melhor para o consumidor, o comércio e o entregador.</p>
-            </article>
+            </article>}
           </div>
         </section>
 

@@ -301,6 +301,13 @@ continuam abrindo a mesma loja. `npm run deploy` aplica a migração
 
 ## Funcionamento e impressão do delivery
 
+As telas de motoboy DoixP ficam ocultas enquanto o módulo está em desenvolvimento.
+O controle `MOTOBOY_DOIXP_VISIVEL`, em
+`src/lib/recursos-em-desenvolvimento.ts`, mantém ocultos configuração, checkout,
+painel de corridas e chamadas públicas. A interface também deixa de consultar a
+integração de motoboys. A entrega do estabelecimento e a retirada continuam
+disponíveis; código, APIs e cadastros da integração são preservados.
+
 Em **Configurações → Funcionamento do delivery e cardápio**, ative a aceitação
 automática e configure dias, abertura, fechamento e fuso horário. As mesmas
 opções ficam em **Estoque → Delivery → Dados da loja** e em **Configurar** no

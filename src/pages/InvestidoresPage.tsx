@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { BrandLogo } from '@/components/BrandLogo';
+import { MOTOBOY_DOIXP_VISIVEL } from '@/lib/recursos-em-desenvolvimento';
 import { contatoInvestimento, dadosPendentes, diferenciais, etapas, expansao, pilares, prioridadesAporte } from '@/content/investidores';
 
 const iconesPilares = [UtensilsCrossed, ScanBarcode, Boxes, CalendarClock, Wallet];
@@ -158,7 +159,7 @@ export default function InvestidoresPage() {
 
         <section id="receita" className="scroll-mt-24">
           <TituloSecao numero="03 / Modelo de negócio" titulo="Uma mensalidade. Sem comissão por venda." descricao="Nossa proposta é uma cobrança mensal fixa para os estabelecimentos, sem descontar uma parte de cada pedido." />
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className={`grid gap-5${MOTOBOY_DOIXP_VISIVEL ? ' md:grid-cols-2' : ''}`}>
             <article className="rounded-2xl border border-brand-200 bg-brand-50 p-6 sm:p-8">
               <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Receita principal prevista</p>
               <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">Assinatura mensal</h3>
@@ -166,12 +167,12 @@ export default function InvestidoresPage() {
               <p className="mt-4 text-sm leading-relaxed text-slate-600">Preço, limites de utilização e módulos incluídos ainda precisam ser definidos e validados em relação aos custos de infraestrutura, suporte e atendimento.</p>
               <p className="mt-6 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-bold text-brand-700">Preço e escopo comercial em definição</p>
             </article>
-            <article className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+            {MOTOBOY_DOIXP_VISIVEL && <article className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">DoixP Entregas · Em desenvolvimento</p>
               <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">Valor para quem entrega</h3>
               <p className="mt-4 text-sm leading-relaxed text-slate-600">A proposta é que o entregador receba 100% do valor das suas entregas, sem comissão da DoixP. Queremos valorizar esse trabalho e incentivar uma experiência cuidadosa para o consumidor.</p>
               <p className="mt-4 text-sm leading-relaxed text-slate-600">O módulo está em desenvolvimento. Sua operação e o fluxo de recebimento serão concluídos antes da disponibilização aos parceiros.</p>
-            </article>
+            </article>}
           </div>
         </section>
 

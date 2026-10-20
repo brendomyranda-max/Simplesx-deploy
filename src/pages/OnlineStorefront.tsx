@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toDataURL } from 'qrcode';
 import { fmtBRL } from '@/lib/format';
+import { MOTOBOY_DOIXP_VISIVEL } from '@/lib/recursos-em-desenvolvimento';
 import { authApi, onlineApi, onlinePublicApi, produtoApi } from '@/lib/api';
 import type { AreaEntrega, CategoriaCardapio, CategoriaLoja, ModoEntrega, OnlineCatalogProduct, OnlineStore, Produto } from '@/lib/types';
 import { fmtKm, lerPontoCliente, previaEntrega, taxaDaSacola, textoCobrancaCliente, textoEntrega } from '@/lib/localizacao-cliente';
@@ -396,6 +397,7 @@ function LojaOnline() {
     if (somenteConsulta) throw new Error('Este cardápio está disponível apenas para consulta.');
     if (lojaFechada) throw new Error(loja.motivo_fechado || 'Loja fechada neste momento.');
     if (cart.some((item) => !catalogo.some((produto) => produto.id === item.product.id && produto.disponivel === 1 && produto.ativo !== 0))) throw new Error('Um produto da sacola está indisponível. Remova-o para continuar.');
+    const plataforma = MOTOBOY_DOIXP_VISIVEL && dados.plataforma;
     const chave = `web${crypto.randomUUID().replace(/-/g, '')}`;
     await onlinePublicApi.order(loja.slug, {
       chave,
@@ -404,9 +406,9 @@ function LojaOnline() {
       tipo_entrega: dados.entrega,
       endereco: dados.endereco,
       forma_pagamento: dados.pagamento,
-      entrega_plataforma: dados.plataforma,
-      ...(dados.plataforma ? { cpf_ultimos4: dados.cpfUltimos4 } : {}),
-      ...(dados.plataforma ? { frete_cliente_esperado_centavos: dados.freteClienteCentavos } : {}),
+      entrega_plataforma: plataforma,
+      ...(plataforma ? { cpf_ultimos4: dados.cpfUltimos4 } : {}),
+      ...(plataforma ? { frete_cliente_esperado_centavos: dados.freteClienteCentavos } : {}),
       troco_para: dados.valorEmDinheiro,
       itens: cart.map((item) => ({
         cardapio_produto_id: item.product.id,
@@ -494,7 +496,7 @@ function LojaOnline() {
           {configurandoAgora && !somenteConsulta && loja && <SuporteDaLoja loja={loja} onSaved={atualizarLoja} />}
           {configurandoAgora && !somenteConsulta && loja && <AreaDaLoja loja={loja} onSaved={atualizarLoja} />}
           {configurandoAgora && !somenteConsulta && loja && <PixDaLoja loja={loja} onSaved={atualizarLoja} />}
-          {configurandoAgora && !somenteConsulta && loja && <MotoboyDaPlataforma loja={loja} onSaved={atualizarLoja} />}
+          {MOTOBOY_DOIXP_VISIVEL && configurandoAgora && !somenteConsulta && loja && <MotoboyDaPlataforma loja={loja} onSaved={atualizarLoja} />}
           {estado === 'carregando' && <div className="online-empty"><b>Carregando o cardápio…</b></div>}
           {estado === 'vazio' && <div className="online-empty"><Store /><b>Abra o link da loja</b><span>O cliente entra pelo endereço publicado pelo estabelecimento.</span></div>}
           {estado === 'erro' && <div className="online-empty"><Store /><b>Loja indisponível</b><span>{mensagem}</span></div>}
@@ -1242,7 +1244,8 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
   const guardado = lerPontoCliente();
   const entregaPadrao = loja.aceita_entrega ? 'entrega' : 'retirada';
   const [delivery, setDelivery] = useState<'entrega' | 'retirada'>(entregaPadrao);
-  const [platform, setPlatform] = useState(false);
+  const [platformSelected, setPlatform] = useState(false);
+  const platform = MOTOBOY_DOIXP_VISIVEL && platformSelected;
   const [payment, setPayment] = useState<'pix' | 'dinheiro' | 'maquininha'>('dinheiro');
   const [cpfUltimos4, setCpfUltimos4] = useState('');
   const [valorEmDinheiro, setValorEmDinheiro] = useState('');
@@ -1324,13 +1327,13 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         <button className="online-close" type="button" onClick={onClose} aria-label="Voltar"><ArrowLeft /></button>
         <p className="online-eyebrow">QUASE LÁ</p>
         <h2 id="checkout-title">Finalizar pedido</h2>
-        <p className="online-config-note">Informe seus dados para acompanhar o pedido. Na entrega pela plataforma, os quatro últimos números do CPF confirmam o recebimento.</p>
+        <p className="online-config-note">Informe seus dados para acompanhar o pedido.{MOTOBOY_DOIXP_VISIVEL && ' Na entrega pela plataforma, os quatro últimos números do CPF confirmam o recebimento.'}</p>
         <label>Seu nome<input required value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Como podemos te chamar?" /></label>
         <label>WhatsApp<input required inputMode="tel" value={telefone} onChange={(event) => setTelefone(event.target.value)} placeholder="(00) 00000-0000" /></label>
         <fieldset className="online-delivery-choice">
           <legend>Como você quer receber?</legend>
           {loja.aceita_entrega ? <label className={delivery === 'entrega' && !platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && !platform} onChange={() => { setDelivery('entrega'); setPlatform(false); }} /><Bike /><span><b>Entrega do estabelecimento</b><small>{loja.tempo_min_entrega ? `A partir de ${loja.tempo_min_entrega} min` : 'Entrega'}</small></span><Check /></label> : null}
-          {loja.aceita_entrega && loja.entrega_plataforma_disponivel === 1 ? <label className={delivery === 'entrega' && platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && platform} onChange={() => { setDelivery('entrega'); setPlatform(true); setPayment('pix'); }} /><Bike /><span><b>Motoboy da DoixP</b><small>Pix antes de chamar o entregador · loja assume R$ 10 da base</small></span><Check /></label> : null}
+          {MOTOBOY_DOIXP_VISIVEL && loja.aceita_entrega && loja.entrega_plataforma_disponivel === 1 ? <label className={delivery === 'entrega' && platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && platform} onChange={() => { setDelivery('entrega'); setPlatform(true); setPayment('pix'); }} /><Bike /><span><b>Motoboy da DoixP</b><small>Pix antes de chamar o entregador · loja assume R$ 10 da base</small></span><Check /></label> : null}
           {loja.aceita_retirada ? <label className={delivery === 'retirada' ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'retirada'} onChange={() => { setDelivery('retirada'); setPlatform(false); }} /><Store /><span><b>Retirar no balcão</b><small>Sem taxa de entrega</small></span><Check /></label> : null}
         </fieldset>
         {delivery === 'entrega' && (
@@ -1497,7 +1500,7 @@ function AcompanharPedido() {
             <p className="online-eyebrow">{pedido.etapa === 'cancelado' ? 'PEDIDO ENCERRADO' : pedido.etapa === 'aguardando_pix' ? 'PAGUE COM PIX' : pedido.etapa === 'aguardando_pagamento' ? 'CONFIRMANDO PAGAMENTO' : 'ACOMPANHAR PEDIDO'}</p>
             <h1>Pedido #{pedido.id}</h1>
             <p className="online-track-loja">{pedido.loja} · {pedido.tipo_entrega === 'retirada' ? 'Retirada no balcão' : 'Entrega'}</p>
-            {pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && pedido.etapa !== 'cancelado' && <p className="online-config-note">{pedido.entrega_status === 'searching' || pedido.entrega_status === 'anunciada' ? 'Procurando um motoboy próximo da loja.' : pedido.entrega_status === 'accepted' ? 'Um motoboy aceitou e está indo buscar seu pedido.' : pedido.entrega_status === 'incident' ? 'A entrega está em análise pelo suporte.' : pedido.entrega_status === 'delivered' ? 'Entrega confirmada pelo código informado ao motoboy.' : 'A loja está preparando a chamada do motoboy.'}</p>}
+            {MOTOBOY_DOIXP_VISIVEL && pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && pedido.etapa !== 'cancelado' && <p className="online-config-note">{pedido.entrega_status === 'searching' || pedido.entrega_status === 'anunciada' ? 'Procurando um motoboy próximo da loja.' : pedido.entrega_status === 'accepted' ? 'Um motoboy aceitou e está indo buscar seu pedido.' : pedido.entrega_status === 'incident' ? 'A entrega está em análise pelo suporte.' : pedido.entrega_status === 'delivered' ? 'Entrega confirmada pelo código informado ao motoboy.' : 'A loja está preparando a chamada do motoboy.'}</p>}
             {erro && <p className="online-erro" role="status">Não foi possível atualizar agora. {erro}</p>}
             {pedido.etapa === 'aguardando_pix' && pedido.pix_copia_cola && <PixDoPedido codigo={pedido.pix_copia_cola} loja={pedido.loja} aguardando />}
             {pedido.etapa === 'cancelado' ? (

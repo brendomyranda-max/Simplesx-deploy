@@ -12,6 +12,7 @@ import { entregasApi, impressoraApi, pedidosApi, retryOrder } from '@/lib/api';
 import type { CorridaPlataforma, PainelPedidos, PedidoDelivery } from '@/lib/types';
 import { fmtBRL, fmtHora } from '@/lib/format';
 import { fmtKm } from '@/lib/localizacao-cliente';
+import { MOTOBOY_DOIXP_VISIVEL } from '@/lib/recursos-em-desenvolvimento';
 
 function espera(minutos: number) {
   if (minutos < 1) return 'agora';
@@ -56,7 +57,10 @@ export function DeliveryPage() {
   const carregar = async (silencioso = false) => {
     if (!silencioso) setLoad(true);
     try {
-      const [pedidos, entregas] = await Promise.allSettled([pedidosApi.painel(), entregasApi.loja()]);
+      const [pedidos, entregas] = await Promise.allSettled([
+        pedidosApi.painel(),
+        MOTOBOY_DOIXP_VISIVEL ? entregasApi.loja() : Promise.resolve({ orders: [] as CorridaPlataforma[] }),
+      ]);
       if (pedidos.status === 'rejected') throw pedidos.reason;
       setPainel(pedidos.value);
       if (entregas.status === 'fulfilled') {
@@ -140,7 +144,7 @@ export function DeliveryPage() {
     };
     try {
       const result = await pedidosApi.statusOnline(id, status);
-      if (result.despacho?.error) toast('error', `Pix registrado, mas o motoboy ainda não foi chamado: ${result.despacho.error}`);
+      if (MOTOBOY_DOIXP_VISIVEL && result.despacho?.error) toast('error', `Pix registrado, mas o motoboy ainda não foi chamado: ${result.despacho.error}`);
       else toast('success', avisos[status]);
       if (result.impressao?.falhas?.length) toast('error', `Pedido aceito. Impressão pendente: ${result.impressao.falhas[0].erro}`);
       else if (result.impressao?.sem_rota?.length) toast('error', 'Pedido aceito. Configure a impressora do delivery em Impressoras.');
@@ -171,8 +175,8 @@ export function DeliveryPage() {
         <Button type="button" variant={filtro === 'entregues' ? 'primary' : 'secondary'} onClick={() => setFiltro('entregues')}>Já entregues ({painel.delivery_entregues.length})</Button>
       </div>
 
-      {integracaoErro && <Card className="mb-4 p-3 text-sm text-amber-800">Motoboys da plataforma: {integracaoErro}</Card>}
-      {corridas.length > 0 && <section className="mb-5 space-y-3" aria-label="Corridas dos motoboys">
+      {MOTOBOY_DOIXP_VISIVEL && integracaoErro && <Card className="mb-4 p-3 text-sm text-amber-800">Motoboys da plataforma: {integracaoErro}</Card>}
+      {MOTOBOY_DOIXP_VISIVEL && corridas.length > 0 && <section className="mb-5 space-y-3" aria-label="Corridas dos motoboys">
         <h2 className="text-sm font-bold text-slate-700">Corridas da plataforma</h2>
         {corridas.filter((corrida) => !['delivered', 'cancelled', 'returned'].includes(corrida.status)).map((corrida) => (
           <Card key={corrida.id} className="p-4">
@@ -217,7 +221,7 @@ export function DeliveryPage() {
                     {pedido.forma_pagamento === 'dinheiro' && pedido.troco_para != null && <p className="text-xs font-semibold text-slate-600">Cliente paga com {fmtBRL(pedido.troco_para)} · Troco {fmtBRL(Math.max(0, pedido.troco_para - pedido.total))}</p>}
                     {pedido.forma_pagamento === 'pix' && pedido.etapa === 'aguardando_pix' && <p className="text-xs font-semibold text-slate-500">O cliente já tem o QR Code. O pedido só sobe depois que o Pix cair na conta da loja.</p>}
                     {pedido.forma_pagamento === 'pix' && pedido.etapa !== 'aguardando_pix' && <p className="text-xs font-semibold text-slate-500">Pix na chave desta loja. Confira o recebimento na conta do estabelecimento.</p>}
-                    {pedido.entrega_plataforma === 1 && <p className="text-xs font-semibold text-brand-700">Motoboy DoixP · {corrida ? 'corrida ' + corrida.status : pedido.entrega_despacho_status === 'erro' ? 'chamada pendente de reenvio' : 'aguardando anúncio'}</p>}
+                    {MOTOBOY_DOIXP_VISIVEL && pedido.entrega_plataforma === 1 && <p className="text-xs font-semibold text-brand-700">Motoboy DoixP · {corrida ? 'corrida ' + corrida.status : pedido.entrega_despacho_status === 'erro' ? 'chamada pendente de reenvio' : 'aguardando anúncio'}</p>}
                     {pedido.tipo_entrega === 'entrega' && pedido.valor_entrega != null && (
                       <p className="text-xs font-semibold text-slate-500">
                         {pedido.modo_entrega === 'gratis' || pedido.entrega_gratis === 1
@@ -231,7 +235,7 @@ export function DeliveryPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {pedido.etapa === 'aguardando_pix' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pix_recebido')} loading={ocupado === `status-${pedido.id}`}>Pix recebido</Button>}
-                    {pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && !corrida && pedido.entrega_despacho_status !== 'anunciada' && pedido.etapa !== 'cancelado' && <Button size="sm" onClick={() => tentarChamarMotoboy(pedido.id)} loading={ocupado === `despacho-${pedido.id}`}>Tentar chamar motoboy</Button>}
+                    {MOTOBOY_DOIXP_VISIVEL && pedido.entrega_plataforma === 1 && pedido.etapa !== 'aguardando_pix' && !corrida && pedido.entrega_despacho_status !== 'anunciada' && pedido.etapa !== 'cancelado' && <Button size="sm" onClick={() => tentarChamarMotoboy(pedido.id)} loading={ocupado === `despacho-${pedido.id}`}>Tentar chamar motoboy</Button>}
                     {pedido.etapa === 'recebido' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'confirmado')} loading={ocupado === `status-${pedido.id}`}>Confirmar</Button>}
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'entrega' && pedido.entrega_plataforma !== 1 && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'saiu_entrega')} loading={ocupado === `status-${pedido.id}`}>Saiu para entrega</Button>}
                     {pedido.etapa === 'preparando' && pedido.tipo_entrega === 'retirada' && <Button size="sm" onClick={() => mudarStatus(pedido.id, 'pronto_retirada')} loading={ocupado === `status-${pedido.id}`}>Pronto para retirada</Button>}

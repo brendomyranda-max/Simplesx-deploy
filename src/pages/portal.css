@@ -32,6 +32,7 @@
 .portal-story-heading h2 { margin: 0; color: #f3f3f3; font-size: clamp(24px, 3vw, 32px); font-weight: 600; letter-spacing: -.045em; }
 .portal-story-heading > p:last-child { margin: 11px 0 0; color: #999; font-size: 13px; line-height: 1.7; }
 .portal-story-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 32px; }
+.portal-duas-colunas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .portal-story-grid article { padding-top: 16px; border-top: 1px solid #373737; }
 .portal-story-grid h3 { margin: 0; color: #e7e7e7; font-size: 16px; font-weight: 700; }
 .portal-story-grid p, .portal-story-grid li { color: #aaa; font-size: 14px; line-height: 1.8; }

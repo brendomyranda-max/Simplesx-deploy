@@ -47,6 +47,7 @@ test('cliente consulta detalhes sem controles de pedido e volta a usar sacola no
     '@/components/ComboFields': 'export const ComboEscolha="ComboEscolha",adicionalCombo=()=>0,comboCompleto=()=>true,resumoEscolhasCombo=()=>"";',
   };
   let source = readFileSync('src/pages/OnlineStorefront.tsx', 'utf8').replace("import './online-storefront.css';", '');
+  source = source.replace("'@/lib/recursos-em-desenvolvimento'", JSON.stringify(module(readFileSync('src/lib/recursos-em-desenvolvimento.ts', 'utf8'))));
   source = source.replace("'../../shared/categorias-delivery.js'", JSON.stringify(new URL('../shared/categorias-delivery.js', import.meta.url).href));
   for (const [name, mock] of Object.entries(mocks)) source = source.replaceAll(`'${name}'`, JSON.stringify(module(mock)));
   source = 'const Fragment="Fragment";\n' + source + '\nexport { LojaOnline };';
