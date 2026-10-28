@@ -174,7 +174,7 @@ class PrintSyncService : Service() {
         val fallback = if (task.type == "TEST_PRINTER") "DOIXP - TESTE DE IMPRESSAO\nConexao com o Servidor Android OK" else ""
         require(content.isNotBlank() || fallback.isNotBlank()) { "Trabalho sem conteúdo de impressão" }
         val cut = payload.optBooleanAny("cut", "cortar", default = true)
-        val feed = payload.optIntAny("feed", "alimentar", default = 3)
+        val feed = maxOf(printer.feedLines, payload.optIntAny("feed", "alimentar", default = printer.feedLines))
         val text = content.ifBlank { fallback }
         return PrinterCommands.document(text, printer, copies, feed, cut, centered = task.type == "PRINT_LABEL")
     }

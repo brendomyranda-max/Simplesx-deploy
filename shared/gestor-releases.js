@@ -11,7 +11,7 @@ const instaladores = {
 const arquivosAtualizacao = new Set([
   ...Object.values(instaladores),
   'servidor-doixp-windows-x64.exe.blockmap',
-  'latest.yml', 'latest-linux.yml', 'android.json',
+  'latest.yml', 'latest-linux.yml', 'android.json', 'SHA256SUMS.txt',
 ]);
 
 export function instaladorGestor(sistema) {

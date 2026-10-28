@@ -38,7 +38,29 @@ jobs:
         run: npm ci
       - name: Testar protocolos e sintaxe
         run: npm test
-      - run: ${{ matrix.comando }}
+      - name: Compilar instalador (assinar Windows quando certificado estiver configurado)
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ] && [ -n "$CSC_LINK" ]; then
+            ${{ matrix.comando }} -- --config.forceCodeSigning=true
+          else
+            ${{ matrix.comando }}
+          fi
+      - name: Verificar assinatura Windows quando configurada
+        if: runner.os == 'Windows'
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+        shell: pwsh
+        run: |
+          if ($env:CSC_LINK) {
+            $signature = Get-AuthenticodeSignature release/servidor-doixp-windows-x64.exe
+            if ($signature.Status -ne 'Valid') { throw 'Assinatura Windows inválida' }
+          } else {
+            Write-Warning 'Certificado Windows não configurado: este instalador pode exibir aviso de editor desconhecido.'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: servidor-doixp-${{ runner.os }}
@@ -72,6 +94,16 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle :app:testDebugUnitTest :app:assembleRelease
+      - name: Verificar APK e continuidade da assinatura oficial
+        shell: bash
+        run: |
+          set -euo pipefail
+          verifier=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$verifier" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/new-apk-signature.txt"
+          previous=$(node --input-type=module -e "import { GESTOR_RELEASE } from '../shared/gestor-releases.js'; console.log(GESTOR_RELEASE + 'servidor-doixp-android.apk')")
+          curl --fail --location --retry 3 "$previous" -o "$RUNNER_TEMP/previous.apk"
+          "$verifier" verify --print-certs "$RUNNER_TEMP/previous.apk" > "$RUNNER_TEMP/previous-apk-signature.txt"
+          diff <(grep 'certificate SHA-256 digest:' "$RUNNER_TEMP/previous-apk-signature.txt") <(grep 'certificate SHA-256 digest:' "$RUNNER_TEMP/new-apk-signature.txt")
       - name: Preparar APK
         run: cp app/build/outputs/apk/release/app-release.apk servidor-doixp-android.apk
       - uses: actions/upload-artifact@v4
@@ -100,13 +132,16 @@ jobs:
           files: artefatos/*
           make_latest: false
           body: |
-            Servidor DoixP 1.5.22 para Windows, Linux e Android.
+            Servidor DoixP 1.5.23 para Windows, Linux e Android.
 
-            - Modo Diebold IM453H para tabelas Padrão/Padrão II, com comandos próprios de fonte e corte.
-            - Calibração de caracteres por linha por impressora para cupons ESC/POS e Diebold.
-            - Fonte expandida reaplicada em cada linha no modo Diebold, com espaço para a altura dupla.
-            - A configuração distingue cupons de texto de etiquetas com altura fixa.
-            - Preserva pareamento, dimensões, protocolos selecionados e histórico de impressão.
+            - USB OTG com blocos menores, escritas parciais e seleção da interface de impressora.
+            - Guilhotina e avanço mínimo por impressora em mobile e desktop.
+            - Corte nativo e avanço otimizado opcional para Diebold IM453H PD1.12+.
+            - Opções de mídia e altura de etiquetas padronizadas.
+            - Consulta de atualização ao abrir, instalação pelo próprio servidor e configurações preservadas.
+            - APK verificado com a mesma assinatura da versão oficial anterior e checksums públicos.
 
-            Use Atualizar servidor. No Android, autorize a fonte e confirme Atualizar no instalador do sistema. Para a IM453H, escolha o protocolo Diebold somente se o autoteste indicar Padrão/Padrão II; emulação ESC/POS continua usando ESC/POS. Informe a largura real da bobina e ajuste os caracteres por linha conforme o autoteste.
+            No S21, selecione USB, autorize a impressora e confira o protocolo no autoteste. Use DIEBOLD para IM453H Padrão/Padrão II. O resultado físico depende do modelo e firmware.
+
+            O Android exige confirmação da instalação. Sem certificado de código Windows, o instalador ainda pode apresentar aviso de editor desconhecido. A assinatura não elimina automaticamente avisos de reputação.
 # Testa e publica os instaladores Android, Linux e Windows do Servidor DoixP.

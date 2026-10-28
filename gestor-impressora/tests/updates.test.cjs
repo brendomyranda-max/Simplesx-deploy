@@ -95,3 +95,13 @@ test('evento de download tardio inicia instalação sem exigir um segundo clique
   await updates.action()
   assert.equal(calls.filter(c=>c==='install').length,1)
 })
+
+test('consulta ao abrir informa nova versão sem baixar ou instalar', async () => {
+  const { updates, calls } = setup()
+  assert.equal((await updates.check()).phase, 'available')
+  assert.deepEqual(calls, ['check'])
+  await updates.check()
+  assert.deepEqual(calls, ['check'])
+  await updates.action()
+  assert.deepEqual(calls, ['check', 'download', 'drain', 'install'])
+})

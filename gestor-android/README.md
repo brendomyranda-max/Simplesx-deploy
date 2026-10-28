@@ -230,3 +230,58 @@ automático. Cupons de texto têm altura automática e não usam DPI para mudar 
 O perfil não altera o firmware nem presume a emulação pelo nome da impressora.
 Confira a saída no papel após **Salvar rota e imprimir teste**.
 Referência: [Manual do firmware IM453H](https://www.bztech.com.br/arquivos/manual-firmware-diebold-im453hu.pdf).
+
+## USB OTG, corte e configurações por impressora
+
+O envio direto por USB, rede e Bluetooth clássico usa blocos de até 512 bytes,
+com pausa entre blocos, tratamento de escritas USB parciais e espera final antes
+de liberar a conexão. Falhas após o início do envio não repetem o cupom automaticamente.
+A seleção USB prioriza interfaces da classe impressora e verifica os identificadores
+salvos ao reencontrar o endereço do dispositivo após reconectar o OTG.
+
+Em cada rota, configure **Guilhotina** e **Avanço mínimo após o texto** (padrão:
+3 linhas). Um trabalho pode pedir mais avanço; sem guilhotina desativa o corte
+mesmo se o pedido o solicitar. Essas opções também existem no desktop. As
+configurações são locais a cada servidor e preservadas ao atualizar.
+
+No Galaxy S21 com Diebold, selecione USB, escolha a impressora conectada,
+autorize o acesso e confira o protocolo no autoteste. Para **IM453H Padrão/Padrão II**,
+use DIEBOLD e inicialmente **Corte conforme configuração da Diebold**. O modo
+**Corte com avanço otimizado** requer firmware PD1.12 ou superior; o corte total
+ou parcial depende da configuração física da impressora. Outros modelos e
+emulações precisam do protocolo correspondente. Não é possível deduzir o
+protocolo apenas pela marca.
+
+Cupons ESC/POS oferecem corte total/parcial, com ou sem avanço automático até a
+lâmina. Etiquetas oferecem altura automática ou fixa, largura, DPI, fonte e
+espaço/marca. TSPL configura o sensor de espaço/marca; nos demais protocolos,
+a configuração do sensor depende do equipamento.
+
+O envio concluído confirma os bytes transmitidos, não o papel ou o movimento da
+lâmina. Valide no equipamento: teste curto, pedido longo, várias cópias e reconexão
+do cabo. No desktop, USB, rede e Bluetooth precisam estar instalados como filas no
+Windows/CUPS; selecione o protocolo nativo para preservar os comandos de corte.
+
+## Publicação e confiança dos instaladores (1.5.23)
+
+Os servidores consultam a versão publicada ao abrir, sem baixar ou instalar nessa
+consulta. **Atualizar servidor** baixa e valida os arquivos antes da instalação.
+A publicação exige que o APK tenha a mesma assinatura do APK oficial anterior;
+a chave permanente permanece nos segredos do GitHub. O Android ainda solicita
+confirmação e permissão da fonte quando aplicável. Distribuir pela Google Play
+exige conta de desenvolvedor e preparação própria da distribuição.
+
+O workflow aceita `WINDOWS_CSC_LINK` e `WINDOWS_CSC_KEY_PASSWORD` nos segredos do
+GitHub para um certificado de assinatura de código Windows. Quando configurado,
+a compilação exige assinatura e valida o Authenticode do instalador. Sem esses
+segredos, o arquivo continua sem assinatura Windows e pode mostrar editor
+desconhecido. Não use certificado autoassinado para prometer confiança pública.
+Mesmo um certificado válido não garante ausência de aviso SmartScreen; a
+Microsoft considera reputação. Referências: [Microsoft](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)
+e [Android](https://developer.android.com/distribute/marketing-tools/alternative-distribution).
+
+A release fornece `SHA256SUMS.txt` para conferência dos downloads. Primeiro publique
+a tag e aguarde os três instaladores, metadados e validações. Somente depois avance
+`shared/gestor-releases.js` e publique o feed do site. Isso evita oferecer atualização
+antes que os arquivos estejam disponíveis. Checksums detectam corrupção e não
+substituem a assinatura de um editor certificado.

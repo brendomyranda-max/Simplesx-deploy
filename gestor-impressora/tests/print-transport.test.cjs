@@ -105,3 +105,15 @@ test('Diebold envia protocolo nativo e todas as cópias em Windows e Linux', asy
     assert.ok(platform === 'linux' ? f.calls[0].args.includes('raw') : f.calls[0].args.some(arg => arg.endsWith('windows-raw.ps1')))
   }
 })
+
+test('configuração da guilhotina e avanço mínimo vale para jobs e teste', async () => {
+  for (const protocol of ['ESC_POS', 'DIEBOLD']) {
+    const f = fixture('linux', { protocolosImpressoras: { Caixa: protocol }, acabamentosImpressoras: { Caixa: { cutMode: 'NONE', feedLines: 6 } } })
+    await f.print({ texto: 'Teste', alimentar: 0, cortar: true }, { name: 'Caixa' })
+    const bytes = [...f.files.values()][0]
+    assert.ok(!bytes.includes(Buffer.from([29, 86])))
+    assert.notEqual(bytes.at(-1), 0x11)
+    if (protocol === 'ESC_POS') assert.ok(bytes.includes(Buffer.from([27, 100, 6])))
+    else assert.ok(bytes.toString().endsWith('\n'.repeat(6)))
+  }
+})

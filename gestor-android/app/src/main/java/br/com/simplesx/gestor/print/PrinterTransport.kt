@@ -73,11 +73,18 @@ object PrinterTransport {
     }
 
     private fun sendNetwork(config: PrinterConfig, bytes: ByteArray) {
+        require(config.port in 1..65535) { "Porta da impressora deve estar entre 1 e 65535" }
         require(config.host.isNotBlank()) { "Informe o IP da impressora" }
         Socket().use { socket ->
             TransportGuard.withTimeout(socket, 60_000) {
                 socket.connect(InetSocketAddress(config.host.trim(), config.port), 10_000)
-                socket.getOutputStream().apply { write(bytes); flush() }
+                socket.getOutputStream().apply {
+                    ChunkedTransfer.send(bytes) { offset, length ->
+                        write(bytes, offset, length)
+                        flush()
+                        length
+                    }
+                }
             }
         }
     }
@@ -113,16 +120,12 @@ object PrinterTransport {
                 }, send = { connected ->
                     TransportGuard.withTimeout(connected, 60_000) {
                         connected.outputStream.apply {
-                            var offset = 0
-                            while (offset < bytes.size) {
-                                val size = minOf(BLUETOOTH_CHUNK_SIZE, bytes.size - offset)
-                                write(bytes, offset, size)
+                            ChunkedTransfer.send(bytes) { offset, length ->
+                                write(bytes, offset, length)
                                 flush()
-                                offset += size
-                                if (offset < bytes.size) Thread.sleep(BLUETOOTH_CHUNK_DELAY_MS)
+                                length
                             }
                         }
-                        Thread.sleep(BLUETOOTH_FINISH_DELAY_MS)
                     }
                 })
             } finally {
@@ -171,12 +174,13 @@ object PrinterTransport {
         try {
             check(connection.claimInterface(usbInterface, true)) { "Não foi possível acessar a interface USB" }
             try {
-                var offset = 0
-                while (offset < bytes.size) {
-                    val size = minOf(16_384, bytes.size - offset)
-                    val written = connection.bulkTransfer(endpoint, bytes, offset, size, 10_000)
-                    check(written > 0) { "Falha ao enviar dados pela USB" }
-                    offset += written
+                if (usbInterface.alternateSetting != 0) {
+                    check(connection.setInterface(usbInterface)) { "Não foi possível selecionar a interface USB da impressora" }
+                }
+                val deadline = android.os.SystemClock.elapsedRealtime() + 60_000
+                ChunkedTransfer.send(bytes) { offset, length ->
+                    check(android.os.SystemClock.elapsedRealtime() < deadline) { "Tempo de envio USB esgotado. Confira a impressão antes de reenviar." }
+                    connection.bulkTransfer(endpoint, bytes, offset, length, 10_000)
                 }
             } finally {
                 connection.releaseInterface(usbInterface)
@@ -187,7 +191,8 @@ object PrinterTransport {
     }
 
     private fun findUsbDevice(manager: UsbManager, config: PrinterConfig): UsbDevice? =
-        manager.deviceList.values.firstOrNull { it.deviceName == config.usbDeviceName }
+        manager.deviceList.values.firstOrNull { it.deviceName == config.usbDeviceName && (config.usbVendorId == 0 ||
+                it.vendorId == config.usbVendorId && it.productId == config.usbProductId) }
             ?: manager.deviceList.values.firstOrNull {
                 config.usbVendorId != 0 && it.vendorId == config.usbVendorId && it.productId == config.usbProductId
             }
@@ -197,12 +202,11 @@ object PrinterTransport {
         .flatMap { usbInterface ->
             (0 until usbInterface.endpointCount).asSequence().map { usbInterface to usbInterface.getEndpoint(it) }
         }
-        .firstOrNull { (_, endpoint) ->
+        .filter { (_, endpoint) ->
             endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK && endpoint.direction == UsbConstants.USB_DIR_OUT
         }
+        .sortedBy { (usbInterface, _) -> if (usbInterface.interfaceClass == UsbConstants.USB_CLASS_PRINTER) 0 else 1 }
+        .firstOrNull()
 
     const val ACTION_USB_PERMISSION = "br.com.simplesx.gestor.USB_PERMISSION"
-    private const val BLUETOOTH_CHUNK_SIZE = 512
-    private const val BLUETOOTH_CHUNK_DELAY_MS = 40L
-    private const val BLUETOOTH_FINISH_DELAY_MS = 400L
 }

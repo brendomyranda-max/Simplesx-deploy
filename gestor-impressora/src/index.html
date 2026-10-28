@@ -83,6 +83,16 @@
       <small id="colunasAjuda">Ajuste ao limite informado no autoteste, por exemplo 32, 42 ou 48. Reduza se o texto passar da borda. Na fonte Grande, o limite cai pela metade.</small>
       <label>Altura da etiqueta (opcional)<input id="altura" type="number" min="10" max="500" step="0.1" placeholder="Vazio = automática"></label>
       <small id="alturaAjuda">Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.</small>
+      <div id="acabamentoCupom">
+        <label>Guilhotina<select id="cutMode"><option value="FULL">Corte total</option><option value="PARTIAL">Corte parcial</option><option value="FEED_FULL">Avançar e cortar total</option><option value="FEED_PARTIAL">Avançar e cortar parcial</option><option value="NONE">Sem guilhotina</option></select></label>
+        <label>Avanço mínimo após o texto (linhas)<input id="feedLines" type="number" min="0" max="255" value="3"></label>
+        <small>Escolha o corte aceito pelo modelo. Diebold usa seu comando nativo. Válido para filas USB, rede e Bluetooth.</small>
+      </div>
+      <div id="midiaEtiqueta">
+        <label>Tipo de papel<select id="paperMode"><option value="CONTINUOUS">Contínuo</option><option value="GAP">Etiqueta com espaço</option><option value="BLACK_MARK">Marca preta</option></select></label>
+        <label>Espaço / marca (mm)<input id="gapMm" type="number" min="1" max="20" value="2"></label>
+        <small>Para etiquetas com espaço ou marca, informe a altura física acima. O sensor de marca é configurado pelo protocolo TSPL.</small>
+      </div>
       <small>Use Driver para impressoras comuns instaladas no sistema. Para filas RAW, escolha a linguagem indicada no autoteste da impressora.</small>
       <div class="dialog-actions"><button value="cancel" class="secondary">Cancelar</button><button id="salvarTamanho" value="default">Salvar</button></div>
     </form>

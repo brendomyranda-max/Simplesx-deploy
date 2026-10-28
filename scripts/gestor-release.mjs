@@ -37,3 +37,11 @@ await fs.writeFile(path.join(directory, 'android.json'), JSON.stringify({
   sha256: crypto.createHash('sha256').update(apk).digest('hex'), size: apk.length,
 }, null, 2) + '\n');
 console.log(`Instaladores ${GESTOR_VERSION} validados e manifesto Android preparado.`);
+
+const checksums = [];
+for (const filename of (await fs.readdir(directory)).sort()) {
+  if (!/\.(exe|AppImage|apk|blockmap|yml|json)$/.test(filename)) continue;
+  const bytes = await fs.readFile(path.join(directory, filename));
+  checksums.push(`${crypto.createHash('sha256').update(bytes).digest('hex')}  ${filename}`);
+}
+await fs.writeFile(path.join(directory, 'SHA256SUMS.txt'), checksums.join('\n') + '\n');

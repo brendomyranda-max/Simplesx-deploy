@@ -15,6 +15,7 @@ enum class PrinterProtocol {
     val isReceipt: Boolean get() = this == ESC_POS || this == DIEBOLD
 }
 enum class PrinterFontSize(val scale: Double) { SMALL(0.75), NORMAL(1.0), LARGE(2.0) }
+enum class CutMode { FULL, PARTIAL, FEED_FULL, FEED_PARTIAL, NONE }
 enum class TsplPaperMode { CONTINUOUS, GAP, BLACK_MARK }
 
 data class PrinterConfig(
@@ -31,9 +32,12 @@ data class PrinterConfig(
     val dpi: Int = 203,
     val fontSize: PrinterFontSize = PrinterFontSize.NORMAL,
     val columnsNormal: Int? = null,
+    val cutMode: CutMode = CutMode.FULL,
+    val feedLines: Int = 3,
     val protocol: PrinterProtocol = PrinterProtocol.ESC_POS,
     val tsplPaperMode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
     val labelHeightMm: Int = 30,
+    val fixedHeight: Boolean = false,
     val gapMm: Int = 2,
     val categoryIds: List<Int> = emptyList(),
 )
@@ -123,9 +127,12 @@ class AppConfig(context: Context) {
         dpi = json.optInt("dpi", 203).coerceIn(100, 1200),
         fontSize = runCatching { PrinterFontSize.valueOf(json.optString("fontSize", "NORMAL")) }.getOrDefault(PrinterFontSize.NORMAL),
         columnsNormal = json.optInt("columnsNormal", 0).takeIf { it in 8..160 },
+        cutMode = runCatching { CutMode.valueOf(json.optString("cutMode", "FULL")) }.getOrDefault(CutMode.FULL),
+        feedLines = json.optInt("feedLines", 3).coerceIn(0, 255),
         protocol = runCatching { PrinterProtocol.valueOf(json.optString("protocol", "ESC_POS")) }.getOrDefault(PrinterProtocol.ESC_POS),
         tsplPaperMode = runCatching { TsplPaperMode.valueOf(json.optString("tsplPaperMode", "CONTINUOUS")) }.getOrDefault(TsplPaperMode.CONTINUOUS),
         labelHeightMm = json.optInt("labelHeightMm", 30).coerceIn(10, 500),
+        fixedHeight = json.optBoolean("fixedHeight", false),
         gapMm = json.optInt("gapMm", 2).coerceIn(0, 20),
         categoryIds = json.optJSONArray("categoryIds")?.let { array ->
             (0 until array.length()).mapNotNull { array.optInt(it).takeIf { id -> id > 0 } }
@@ -137,7 +144,8 @@ class AppConfig(context: Context) {
         .put("bluetoothAddress", value.bluetoothAddress).put("bluetoothName", value.bluetoothName)
         .put("usbDeviceName", value.usbDeviceName).put("usbVendorId", value.usbVendorId).put("usbProductId", value.usbProductId)
         .put("widthMm", value.widthMm).put("dpi", value.dpi).put("fontSize", value.fontSize.name).put("protocol", value.protocol.name)
+        .put("cutMode", value.cutMode.name).put("feedLines", value.feedLines)
         .put("columnsNormal", value.columnsNormal ?: JSONObject.NULL)
-        .put("tsplPaperMode", value.tsplPaperMode.name).put("labelHeightMm", value.labelHeightMm).put("gapMm", value.gapMm)
+        .put("tsplPaperMode", value.tsplPaperMode.name).put("fixedHeight", value.fixedHeight).put("labelHeightMm", value.labelHeightMm).put("gapMm", value.gapMm)
         .put("categoryIds", org.json.JSONArray(value.categoryIds))
 }

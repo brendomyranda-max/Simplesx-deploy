@@ -13,12 +13,12 @@ object Tspl {
     fun label(
         text: String, widthMm: Int = 58, copies: Int = 1,
         paperMode: TsplPaperMode = TsplPaperMode.CONTINUOUS,
-        configuredHeightMm: Int = 30, gapMm: Int = 2, dpi: Int = 203, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL,
+        configuredHeightMm: Int = 30, gapMm: Int = 2, dpi: Int = 203, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL, fixedHeight: Boolean = false,
     ): ByteArray {
         val width = widthMm.coerceIn(20, 320)
-        val fixedHeight = configuredHeightMm.takeIf { paperMode != TsplPaperMode.CONTINUOUS }
-        val layout = LabelLayouts.calculate(text, width, fixedHeight, dpi, fontSize.scale)
-        val heightMm = fixedHeight ?: ((layout.heightDots / (dpi.coerceIn(100, 1200) / 25.4)).toInt() + 1).coerceAtLeast(10)
+        val height = configuredHeightMm.takeIf { paperMode != TsplPaperMode.CONTINUOUS || fixedHeight }
+        val layout = LabelLayouts.calculate(text, width, height, dpi, fontSize.scale)
+        val heightMm = height ?: ((layout.heightDots / (dpi.coerceIn(100, 1200) / 25.4)).toInt() + 1).coerceAtLeast(10)
         val commands = buildString {
             append("SIZE $width mm,$heightMm mm\r\n")
             when (paperMode) {

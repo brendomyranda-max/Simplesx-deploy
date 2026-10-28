@@ -79,6 +79,7 @@ function configPadrao() {
     fontesImpressoras: {},
     colunasImpressoras: {},
     protocolosImpressoras: {},
+    acabamentosImpressoras: {},
     iniciarComSistema: true,
     conectado: true,
     nfcAtivo: false,
@@ -121,6 +122,7 @@ async function salvarConfig(novaConfig) {
     dpisImpressoras: normalizarDpis(novaConfig.dpisImpressoras || config?.dpisImpressoras),
     fontesImpressoras: normalizarFontes(novaConfig.fontesImpressoras || config?.fontesImpressoras),
     colunasImpressoras: normalizarColunas(novaConfig.colunasImpressoras || config?.colunasImpressoras),
+    acabamentosImpressoras: Object.fromEntries(Object.entries(novaConfig.acabamentosImpressoras || config?.acabamentosImpressoras || {}).map(([name, value]) => [name, normalizarAcabamento(value)])),
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
     iniciarComSistema: novaConfig.iniciarComSistema !== false,
     conectado: novaConfig.conectado ?? config?.conectado ?? true,
@@ -164,6 +166,18 @@ function normalizarProtocolos(value) {
     if (nome && permitidos.has(normalizado)) result[nome] = normalizado
   }
   return result
+}
+
+function normalizarAcabamento(value = {}) {
+  const cutMode = value.cutMode ?? 'FULL'
+  const feedLines = Number(value.feedLines ?? 3)
+  const paperMode = value.paperMode ?? 'CONTINUOUS'
+  const gapMm = Number(value.gapMm ?? 2)
+  if (!['FULL', 'PARTIAL', 'FEED_FULL', 'FEED_PARTIAL', 'NONE'].includes(cutMode)) throw new Error('Corte inválido')
+  if (!Number.isInteger(feedLines) || feedLines < 0 || feedLines > 255) throw new Error('Avanço deve estar entre 0 e 255 linhas')
+  if (!['CONTINUOUS', 'GAP', 'BLACK_MARK'].includes(paperMode)) throw new Error('Tipo de papel inválido')
+  if (!Number.isInteger(gapMm) || gapMm < 1 || gapMm > 20) throw new Error('Espaço/marca deve estar entre 1 e 20 mm')
+  return { cutMode, feedLines, paperMode, gapMm }
 }
 
 function normalizarFontes(value) {
@@ -293,7 +307,7 @@ function quebrarPorColunas(texto, colunas) {
   }).join('\n')
 }
 
-function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null } = {}) {
+function bytesEscPos(texto, { alimentar = 3, cortar = true, larguraMm = 58, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null, cutMode = 'FULL' } = {}) {
   const normalizado = quebrarPorLargura(textoAscii(texto).replaceAll('\t', '    '), larguraMm, tamanhoFonte, colunasNormal)
     .replace(/\r\n?/g, '\n')
     .normalize('NFD')
@@ -308,14 +322,17 @@ function bytesEscPos(texto, { alimentar = 0, cortar = true, larguraMm = 58, cent
   partes.push(Buffer.from(normalizado + '\n', 'ascii'))
   if (centralizar) partes.push(Buffer.from([0x1b, 0x61, 0x00]))
   if (alimentar > 0) partes.push(Buffer.from([0x1b, 0x64, Math.min(255, Number(alimentar) || 0)]))
-  if (cortar) partes.push(Buffer.from([0x1d, 0x56, 0x00]))
+  if (cortar && cutMode !== 'NONE') {
+    const cortes = { FULL: [0x1d, 0x56, 0], PARTIAL: [0x1d, 0x56, 1], FEED_FULL: [0x1d, 0x56, 65, 0], FEED_PARTIAL: [0x1d, 0x56, 66, 0] }
+    partes.push(Buffer.from(cortes[cutMode] || cortes.FULL))
+  }
   return Buffer.concat(partes)
 }
 
 // IM453H em modo Padrão/Padrão II: ESC M não recebe parâmetro e GS ! não
 // seleciona fonte. SO é reaplicado por linha porque Padrão II o cancela no LF.
 // Manual do firmware I43.51.00.PD1.XX, seções 3.1 e 3.3.
-function bytesDiebold(texto, { alimentar = 0, cortar = true, larguraMm = 80, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null } = {}) {
+function bytesDiebold(texto, { alimentar = 3, cortar = true, larguraMm = 80, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null, cutMode = 'FULL' } = {}) {
   const base = Number.isInteger(colunasNormal) && colunasNormal >= 8 && colunasNormal <= 160
     ? colunasNormal : larguraMm <= 58 ? Math.max(8, Math.floor(larguraMm * 32 / 58)) : Math.floor(Math.min(larguraMm, 80) * 48 / 80)
   // A densidade condensada varia com o CPP do firmware. Conserva o limite
@@ -333,7 +350,7 @@ function bytesDiebold(texto, { alimentar = 0, cortar = true, larguraMm = 80, cen
   }
   partes.push(reset)
   if (alimentar > 0) partes.push(Buffer.from('\n'.repeat(Math.min(255, Math.floor(Number(alimentar) || 0))), 'ascii'))
-  if (cortar) partes.push(Buffer.from([0x11]))
+  if (cortar && cutMode !== 'NONE') partes.push(Buffer.from(cutMode === 'FEED_PARTIAL' ? [0x1b, 0x1f] : [0x11]))
   return Buffer.concat(partes)
 }
 
@@ -371,16 +388,17 @@ function layoutEtiqueta(texto, { larguraMm = 58, alturaMm = null, dpi = 203, tam
   }
 }
 
-function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm = null, dpi = 203, centralizar = false, tamanhoFonte = 'normal' } = {}) {
+function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm = null, dpi = 203, centralizar = false, tamanhoFonte = 'normal', paperMode = 'CONTINUOUS', gapMm = 2 } = {}) {
   const { linhas, escalaFonte, margem, alturaLinha, fonte, largura, altura } = layoutEtiqueta(texto, { larguraMm, alturaMm, dpi, tamanhoFonte })
   const escala = (dpi / 203) * escalaFonte
   const quantidade = Math.min(20, Math.max(1, Number(copias) || 1))
   const xCentralizado = (linha, larguraCaractere = 12) => centralizar
     ? Math.max(margem, Math.round((largura - linha.length * larguraCaractere * escala) / 2))
     : Math.round(8 * escala)
+  const midia = paperMode === 'BLACK_MARK' ? `BLINE ${gapMm} mm,0 mm` : `GAP ${paperMode === 'GAP' ? gapMm : 0} mm,0 mm`
   let comandos
   if (protocolo === 'TSPL') {
-    comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / (dpi / 25.4))} mm\r\nGAP 0 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\n`
+    comandos = `SIZE ${larguraMm} mm,${Math.ceil(altura / (dpi / 25.4))} mm\r\n${midia}\r\nDIRECTION 1\r\nCLS\r\n`
     // TSPL2 font 0 receives a size in points, not a bitmap multiplier.
     const pontosTspl = Math.max(1, Math.round(24 / 203 * 72 * escalaFonte))
     comandos += linhas.map((linha, i) => `TEXT ${xCentralizado(linha)},${margem + i * alturaLinha},"0",0,${pontosTspl},${pontosTspl},"${linha.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join('\r\n')
@@ -400,7 +418,7 @@ function bytesEtiqueta(protocolo, texto, { copias = 1, larguraMm = 58, alturaMm 
     comandos += linhas.map((linha, i) => `TEXT ${fonteCpcl} ${tamanhoCpcl} ${xCentralizado(linha)} ${margem + i * alturaLinha} ${linha}`).join('\r\n')
     comandos += '\r\nFORM\r\nPRINT\r\n'
   } else if (protocolo === 'EPL') {
-    comandos = `N\nq${largura}\nQ${altura},0\n`
+    comandos = `N\nq${largura}\nQ${altura},${paperMode === 'CONTINUOUS' ? 0 : mmDots(gapMm, dpi)}\n`
     const multiplicador = Math.max(1, Math.floor(escala))
     const fonteEpl = escalaFonte < 0.85 ? 1 : 3
     comandos += linhas.map((linha, i) => `A${xCentralizado(linha)},${margem + i * alturaLinha},0,${fonteEpl},${multiplicador},${multiplicador},N,"${linha.replaceAll('\\', ' ').replaceAll('"', "'")}"`).join('\n')
@@ -428,7 +446,13 @@ function layoutDriver(texto, larguraMm, alturaMm, tamanhoFonte = 'normal') {
   }
 }
 
-async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 0, centralizar = false, larguraMm: larguraTrabalho }, printer) {
+async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar, centralizar = false, larguraMm: larguraTrabalho }, printer) {
+  const acabamento = config.acabamentosImpressoras?.[printer.name] || {}
+  alimentar = Math.max(Number(alimentar) || 0, acabamento.feedLines ?? 3)
+  cortar = cortar && acabamento.cutMode !== 'NONE'
+  const cutMode = acabamento.cutMode || 'FULL'
+  const paperMode = acabamento.paperMode || 'CONTINUOUS'
+  const gapMm = acabamento.gapMm || 2
   const solicitada = Number(larguraTrabalho)
   const larguraMm = Number(config.largurasImpressoras?.[printer.name]) ||
     (Number.isFinite(solicitada) && solicitada >= 20 && solicitada <= 320 ? solicitada : 58)
@@ -444,8 +468,8 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar = 
   const textoAjustado = filaRaw ? texto : layout.texto
   await fs.writeFile(temporario, filaRaw
     ? (cupomRaw
-        ? (protocolo === 'DIEBOLD' ? bytesDiebold : bytesEscPos)(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte, colunasNormal })
-        : bytesEtiqueta(protocolo, texto, { copias, larguraMm, alturaMm, dpi, centralizar, tamanhoFonte }))
+        ? (protocolo === 'DIEBOLD' ? bytesDiebold : bytesEscPos)(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte, colunasNormal, cutMode })
+        : bytesEtiqueta(protocolo, texto, { copias, larguraMm, alturaMm, dpi, centralizar, tamanhoFonte, paperMode, gapMm }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
     const repeticoes = filaRaw && !cupomRaw ? 1 : Math.max(1, Number(copias) || 1)
@@ -686,10 +710,11 @@ ipcMain.handle('salvar-config', async (_e, value) => {
 ipcMain.handle('desconectar', desconectar)
 ipcMain.handle('listar-impressoras', () => listarImpressoras(true))
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
-  await imprimirRaw({ texto: 'DOIXP - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora, alimentar: 3, cortar: true })
+  await imprimirRaw({ texto: 'DOIXP - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora })
   return { ok: true }
 })
 ipcMain.handle('salvar-impressora', async (_e, value) => {
+  const acabamento = normalizarAcabamento(value?.acabamento)
   const impressora = String(value?.impressora || '').trim()
   const larguraMm = Number(value?.larguraMm)
   const alturaMm = value?.alturaMm === null || value?.alturaMm === '' || value?.alturaMm === undefined ? null : Number(value.alturaMm)
@@ -712,6 +737,7 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
     fontesImpressoras: { ...config.fontesImpressoras, [impressora]: tamanhoFonte },
     colunasImpressoras: { ...config.colunasImpressoras, [impressora]: colunasNormal },
     protocolosImpressoras: { ...config.protocolosImpressoras, [impressora]: protocolo },
+    acabamentosImpressoras: { ...config.acabamentosImpressoras, [impressora]: acabamento },
   })
 })
 ipcMain.handle('abrir-externamente', (_e, url) => shell.openExternal(url))
@@ -756,6 +782,7 @@ if (instanciaUnica) {
     criarJanela()
     criarTray()
     iniciarServidorLocal()
+    void updates.check()
     heartbeatTimer = setInterval(() => {
       if ((config?.conectado || sincronizando) && ultimoContato) api('/gestor/heartbeat', { token: config.token, nfc: estadoNfc() }).catch(() => {})
     }, 20_000)

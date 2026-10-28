@@ -156,3 +156,25 @@ test('Diebold ajusta bobina e fonte sem perder texto; colunas calibradas prevale
   assert.ok(context.bytesEscPos(text, { colunasNormal: 42, larguraMm: 80 }).toString('ascii').includes(text.slice(0, 42) + '\n'))
   assert.ok(context.bytesEscPos(text, { colunasNormal: 42, tamanhoFonte: 'large' }).toString('ascii').includes(text.slice(0, 21) + '\n'))
 })
+
+test('corte parcial, avanço até guilhotina e desativação usam um único comando', () => {
+  for (const [cutMode, expected] of Object.entries({ FULL: [29, 86, 0], PARTIAL: [29, 86, 1], FEED_FULL: [29, 86, 65, 0], FEED_PARTIAL: [29, 86, 66, 0] })) {
+    const bytes = context.bytesEscPos('Teste', { cutMode })
+    assert.deepEqual([...bytes.subarray(-expected.length)], expected)
+    assert.ok(!context.bytesEscPos('Teste', { cutMode, cortar: false }).includes(Buffer.from([29, 86])))
+  }
+  assert.ok(!context.bytesEscPos('Teste', { cutMode: 'NONE' }).includes(Buffer.from([29, 86])))
+})
+
+test('TSPL configura espaço e marca e EPL mantém espaço físico', () => {
+  assert.match(context.bytesEtiqueta('TSPL', 'Teste', { paperMode: 'GAP', gapMm: 3, alturaMm: 30 }).toString(), /GAP 3 mm,0 mm/)
+  assert.match(context.bytesEtiqueta('TSPL', 'Teste', { paperMode: 'BLACK_MARK', gapMm: 4, alturaMm: 30 }).toString(), /BLINE 4 mm,0 mm/)
+  assert.match(context.bytesEtiqueta('EPL', 'Teste', { paperMode: 'GAP', gapMm: 2, alturaMm: 30 }).toString(), /Q240,16/)
+})
+
+test('Diebold oferece avanço otimizado nativo sem misturar ESC/POS', () => {
+  const bytes = context.bytesDiebold('Teste', { cutMode: 'FEED_PARTIAL' })
+  assert.deepEqual([...bytes.subarray(-2)], [27, 31])
+  assert.ok(!bytes.includes(Buffer.from([29, 86])))
+  assert.ok(!context.bytesDiebold('Teste', { cutMode: 'NONE' }).includes(Buffer.from([17])))
+})

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.ConnectionType
+import br.com.simplesx.gestor.data.CutMode
 import br.com.simplesx.gestor.data.PrinterFontSize
 import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
@@ -353,12 +354,17 @@ private fun GestorScreen(activity: ComponentActivity) {
                     }
                     Text(
                         when (printer.tsplPaperMode) {
-                            TsplPaperMode.CONTINUOUS -> "Contínuo selecionado: a altura acompanha somente o conteúdo."
+                            TsplPaperMode.CONTINUOUS -> "Contínuo selecionado: escolha altura automática ou fixa."
                             TsplPaperMode.GAP -> "Etiqueta com espaço selecionada: informe a altura física e o espaço."
                             TsplPaperMode.BLACK_MARK -> "Papel com marca preta selecionado: informe a altura e o tamanho da marca."
                         }, style = MaterialTheme.typography.bodySmall,
                     )
-                    if (printer.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
+                    if (printer.tsplPaperMode == TsplPaperMode.CONTINUOUS) {
+                        OutlinedButton(onClick = { printer = printer.copy(fixedHeight = !printer.fixedHeight) }) {
+                            Text(if (printer.fixedHeight) "Altura fixa selecionada" else "Altura automática selecionada")
+                        }
+                    }
+                    if (printer.tsplPaperMode != TsplPaperMode.CONTINUOUS || printer.fixedHeight) {
                         OutlinedTextField(
                             labelHeightInput,
                             { value ->
@@ -496,6 +502,25 @@ private fun GestorScreen(activity: ComponentActivity) {
                     )
                     Text("A altura do cupom acompanha o conteúdo. O DPI não altera as letras neste modo.", style = MaterialTheme.typography.bodySmall)
                 }
+                if (printer.protocol.isReceipt) {
+                    Text("Guilhotina: ${printer.cutMode.name}", fontWeight = FontWeight.Bold)
+                    val modes = if (printer.protocol == PrinterProtocol.DIEBOLD) listOf(CutMode.FULL, CutMode.FEED_PARTIAL, CutMode.NONE) else CutMode.entries.toList()
+                    modes.forEach { mode ->
+                        OutlinedButton(onClick = { printer = printer.copy(cutMode = mode) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(when (mode) {
+                                CutMode.FULL -> if (printer.protocol == PrinterProtocol.DIEBOLD) "Corte conforme configuração da Diebold" else "Corte total"
+                                CutMode.PARTIAL -> "Corte parcial"
+                                CutMode.FEED_FULL -> "Avançar até a guilhotina e cortar total"
+                                CutMode.FEED_PARTIAL -> if (printer.protocol == PrinterProtocol.DIEBOLD) "Corte com avanço otimizado (PD1.12+)" else "Avançar até a guilhotina e cortar parcial"
+                                CutMode.NONE -> "Sem guilhotina"
+                            })
+                        }
+                    }
+                    Text("Escolha o corte aceito pelo modelo. A configuração vale para USB OTG, rede e Bluetooth.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(printer.feedLines.toString(), { value ->
+                        value.toIntOrNull()?.takeIf { it in 0..255 }?.let { printer = printer.copy(feedLines = it) }
+                    }, label = { Text("Avanço mínimo após o texto (0 a 255 linhas)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
                 Text("Resolução da cabeça", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(203, 300, 600).forEach { dpi ->
@@ -563,7 +588,7 @@ private fun GestorScreen(activity: ComponentActivity) {
                         return@Button
                     }
                     var validatedPrinter = printer.copy(widthMm = customWidth, dpi = customDpi, columnsNormal = columns)
-                    if (!validatedPrinter.protocol.isReceipt && validatedPrinter.tsplPaperMode != TsplPaperMode.CONTINUOUS) {
+                    if (!validatedPrinter.protocol.isReceipt && (validatedPrinter.tsplPaperMode != TsplPaperMode.CONTINUOUS || validatedPrinter.fixedHeight)) {
                         val customHeight = labelHeightInput.toIntOrNull()
                         val customGap = gapInput.toIntOrNull()
                         if (customHeight == null || customHeight !in 10..500) {

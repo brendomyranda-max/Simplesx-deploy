@@ -1,13 +1,14 @@
 package br.com.simplesx.gestor.print
 
 import br.com.simplesx.gestor.data.PrinterFontSize
+import br.com.simplesx.gestor.data.CutMode
 import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 
 /** IM453H: tabela Padrão/Padrão II, conforme manual I43.51.00.PD1.XX. */
 object Diebold {
     fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 80, centered: Boolean = false,
-               fontSize: PrinterFontSize = PrinterFontSize.NORMAL, columnsNormal: Int? = null): ByteArray {
+               fontSize: PrinterFontSize = PrinterFontSize.NORMAL, columnsNormal: Int? = null, cutMode: CutMode = CutMode.FULL): ByteArray {
         val width = widthMm.coerceIn(20, 320)
         val base = columnsNormal?.takeIf { it in 8..160 }
             ?: if (width <= 58) (width * 32 / 58).coerceAtLeast(8) else width.coerceAtMost(80) * 48 / 80
@@ -33,7 +34,10 @@ object Diebold {
             }
             out.write(reset)
             repeat(feed.coerceIn(0, 255)) { out.write(0x0A) }
-            if (cut) out.write(0x11) // Avança até a posição de corte e aciona guilhotina.
+            if (cut && cutMode != CutMode.NONE) {
+                if (cutMode == CutMode.FEED_PARTIAL) out.write(byteArrayOf(0x1B, 0x1F)) // Firmware PD1.12+: avanço otimizado.
+                else out.write(0x11) // Corte conforme configuração da impressora.
+            }
             out.toByteArray()
         }
     }

@@ -6,16 +6,18 @@
 package br.com.simplesx.gestor.print
 
 import br.com.simplesx.gestor.data.PrinterFontSize
+import br.com.simplesx.gestor.data.CutMode
 
 import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 
 object EscPos {
-    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL, columnsNormal: Int? = null): ByteArray {
+    fun ticket(text: String, feed: Int = 3, cut: Boolean = true, widthMm: Int = 58, centered: Boolean = false, fontSize: PrinterFontSize = PrinterFontSize.NORMAL, columnsNormal: Int? = null, cutMode: CutMode = CutMode.FULL): ByteArray {
         val clean = Normalizer.normalize(text, Normalizer.Form.NFD).replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "").replace("\t", "    ")
         val wrapped = wrapToWidth(clean, widthMm, fontSize.scale, columnsNormal)
         val normalized = Normalizer.normalize(wrapped.replace("\r\n", "\n").replace('\r', '\n'), Normalizer.Form.NFD)
             .replace(Regex("[\\p{InCombiningDiacriticalMarks}]"), "")
+            .replace('“', '"').replace('”', '"').replace('‘', '\'').replace('’', '\'')
             .replace('º', 'o').replace('ª', 'a').replace('–', '-').replace('—', '-')
             .replace(Regex("[^\\x09\\x0A\\x0D\\x20-\\x7E]"), "")
             .trimEnd()
@@ -28,7 +30,13 @@ object EscPos {
             out.write((normalized + "\n").toByteArray(Charsets.US_ASCII))
             if (centered) out.write(byteArrayOf(0x1B, 0x61, 0x00))
             if (feed > 0) out.write(byteArrayOf(0x1B, 0x64, feed.coerceIn(0, 255).toByte()))
-            if (cut) out.write(byteArrayOf(0x1D, 0x56, 0x00))
+            if (cut) when (cutMode) {
+                CutMode.FULL -> out.write(byteArrayOf(0x1D, 0x56, 0))
+                CutMode.PARTIAL -> out.write(byteArrayOf(0x1D, 0x56, 1))
+                CutMode.FEED_FULL -> out.write(byteArrayOf(0x1D, 0x56, 65, 0))
+                CutMode.FEED_PARTIAL -> out.write(byteArrayOf(0x1D, 0x56, 66, 0))
+                CutMode.NONE -> Unit
+            }
             out.toByteArray()
         }
     }

@@ -9,12 +9,12 @@ import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 
 object PrinterCommands {
-    fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = 3, cut: Boolean = true, centered: Boolean = false): ByteArray =
+    fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = printer.feedLines, cut: Boolean = true, centered: Boolean = false): ByteArray =
         when (printer.protocol) {
-            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal)
-            PrinterProtocol.DIEBOLD -> Diebold.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal)
+            PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal, printer.cutMode)
+            PrinterProtocol.DIEBOLD -> Diebold.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal, printer.cutMode)
             PrinterProtocol.TSPL -> Tspl.label(
-                text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered, printer.fontSize,
+                text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered, printer.fontSize, printer.fixedHeight,
             )
             PrinterProtocol.ZPL -> zpl(text, printer, copies, centered)
             PrinterProtocol.CPCL -> cpcl(text, printer, copies, centered)
@@ -66,7 +66,7 @@ object PrinterCommands {
         val multiplier = scale.toInt().coerceAtLeast(1)
         val eplFont = if (layout.fontScale < 0.85) 1 else 3
         return buildString {
-            append("N\nq${layout.widthDots}\nQ${layout.heightDots},${LabelLayouts.mmToDots(printer.gapMm, printer.dpi)}\n")
+            append("N\nq${layout.widthDots}\nQ${layout.heightDots},${LabelLayouts.mmToDots(if (printer.tsplPaperMode.name == "CONTINUOUS") 0 else printer.gapMm, printer.dpi)}\n")
             layout.lines.forEachIndexed { index, line ->
                 val x = if (centered) ((layout.widthDots - line.length * 12 * scale) / 2).toInt().coerceAtLeast(layout.margin) else layout.margin
                 append("A$x,${layout.margin + index * layout.lineHeight},0,$eplFont,$multiplier,$multiplier,N,\"${line.replace("\\", " ").replace("\"", "'")}\"\n")
@@ -77,7 +77,7 @@ object PrinterCommands {
 
     private fun labelLayout(text: String, printer: PrinterConfig): LabelLayout = LabelLayouts.calculate(
         text, printer.widthMm,
-        printer.labelHeightMm.takeIf { printer.tsplPaperMode.name != "CONTINUOUS" },
+        printer.labelHeightMm.takeIf { printer.tsplPaperMode.name != "CONTINUOUS" || printer.fixedHeight },
         printer.dpi, printer.fontSize.scale,
     )
 }

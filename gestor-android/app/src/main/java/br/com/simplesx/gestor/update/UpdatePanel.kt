@@ -115,6 +115,18 @@ fun UpdatePanel(activity: ComponentActivity, config: AppConfig) {
             continueAfterPermission = false
         }
     }
+    LaunchedEffect(Unit) {
+        if (!busy && !permissionPending && !continueAfterPermission) {
+            busy = true
+            try {
+                val available = withContext(Dispatchers.IO) { updater.check() }
+                message = if (available.versionCode > BuildConfig.VERSION_CODE) "Versão ${available.version} disponível. Toque em Atualizar servidor."
+                    else "O servidor já está atualizado."
+            } catch (_: Exception) {
+                message = "Não foi possível consultar atualizações. Toque em Atualizar servidor para tentar novamente."
+            } finally { busy = false }
+        }
+    }
     Text("Versão instalada: ${BuildConfig.VERSION_NAME}")
     Text(message)
     Button(enabled = !busy && !permissionPending, modifier = Modifier.fillMaxWidth(), onClick = { scope.launch { update() } }) { Text("Atualizar servidor") }

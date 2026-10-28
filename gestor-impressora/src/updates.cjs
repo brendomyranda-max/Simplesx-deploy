@@ -42,6 +42,17 @@ function createUpdates({ updater, supported, prepareInstall, recoverInstall = as
     return installation
   }
 
+  async function check() {
+    if (busy || state.phase !== 'idle' || !supported()) return state
+    busy = true
+    try {
+      change('checking', 'Buscando atualizações…')
+      await updater.checkForUpdates()
+    } catch (error) { await failed(error) }
+    finally { busy = false }
+    return state
+  }
+
   async function action() {
     if (busy || state.phase === 'installing') return state
     if (!supported()) return change('unsupported', 'Use o aplicativo instalado no Windows ou o arquivo AppImage no Linux para atualizar por aqui.')
@@ -61,7 +72,7 @@ function createUpdates({ updater, supported, prepareInstall, recoverInstall = as
     } finally { busy = false }
     return state
   }
-  return { status: () => state, action }
+  return { status: () => state, action, check }
 }
 
 module.exports = { createUpdates }

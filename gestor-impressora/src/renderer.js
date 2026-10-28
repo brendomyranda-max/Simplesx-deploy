@@ -111,6 +111,13 @@ function dpiAtual(nome) {
 
 function atualizarCamposImpressora() {
   const cupom = ['ESC_POS', 'DIEBOLD'].includes($('protocolo').value)
+  const diebold = $('protocolo').value === 'DIEBOLD'
+  for (const option of $('cutMode').options) option.disabled = diebold && !['FULL', 'FEED_PARTIAL', 'NONE'].includes(option.value)
+  $('cutMode').options[0].textContent = diebold ? 'Corte conforme configuração da Diebold' : 'Corte total'
+  $('cutMode').options[3].textContent = diebold ? 'Corte com avanço otimizado (PD1.12+)' : 'Avançar e cortar parcial'
+  if (diebold && ['PARTIAL', 'FEED_FULL'].includes($('cutMode').value)) $('cutMode').value = 'FULL'
+  $('acabamentoCupom').hidden = !cupom
+  $('midiaEtiqueta').hidden = !['TSPL', 'ZPL', 'CPCL', 'EPL'].includes($('protocolo').value)
   $('colunasLabel').hidden = !cupom
   $('colunasAjuda').hidden = !cupom
   $('altura').disabled = cupom
@@ -133,6 +140,11 @@ $('tamanho').onclick = () => {
   $('protocolo').value = protocoloAtual(nome)
   $('dpi').value = dpiAtual(nome)
   $('tamanhoFonte').value = estado?.fontesImpressoras?.[nome] || 'normal'
+  const acabamento = estado?.acabamentosImpressoras?.[nome] || {}
+  $('cutMode').value = acabamento.cutMode || 'FULL'
+  $('feedLines').value = acabamento.feedLines ?? 3
+  $('paperMode').value = acabamento.paperMode || 'CONTINUOUS'
+  $('gapMm').value = acabamento.gapMm ?? 2
   $('colunasNormal').value = estado?.colunasImpressoras?.[nome] || ''
   atualizarCamposImpressora()
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
@@ -153,7 +165,9 @@ $('salvarTamanho').onclick = async (event) => {
     const colunasTexto = $('colunasNormal').value.trim()
     const colunas = colunasTexto === '' ? null : Number(colunasTexto)
     if (colunas !== null && (!Number.isInteger(colunas) || colunas < 8 || colunas > 160)) return toast('Informe entre 8 e 160 caracteres por linha ou deixe vazio')
-    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, $('tamanhoFonte').value, colunas)
+    const acabamento = { cutMode: $('cutMode').value, feedLines: Number($('feedLines').value), paperMode: $('paperMode').value, gapMm: Number($('gapMm').value) }
+    if (acabamento.paperMode !== 'CONTINUOUS' && altura === null && ['TSPL', 'ZPL', 'CPCL', 'EPL'].includes($('protocolo').value)) return toast('Informe a altura física da etiqueta')
+    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, $('tamanhoFonte').value, colunas, acabamento)
     render(status)
     $('tamanhoDialog').close()
     toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${$('tamanhoFonte').selectedOptions[0].textContent} · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)

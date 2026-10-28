@@ -15,6 +15,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PrinterCommandsTest {
+    @Test fun cutterSettingsApplyOnAllConnectionsAndNoCutIsRespected() {
+        for (connection in br.com.simplesx.gestor.data.ConnectionType.entries) {
+            for ((mode, tail) in listOf(
+                br.com.simplesx.gestor.data.CutMode.FULL to byteArrayOf(29, 86, 0),
+                br.com.simplesx.gestor.data.CutMode.PARTIAL to byteArrayOf(29, 86, 1),
+                br.com.simplesx.gestor.data.CutMode.FEED_FULL to byteArrayOf(29, 86, 65, 0),
+                br.com.simplesx.gestor.data.CutMode.FEED_PARTIAL to byteArrayOf(29, 86, 66, 0),
+            )) {
+                val printer = config(PrinterProtocol.ESC_POS).copy(connection = connection, cutMode = mode, feedLines = 6)
+                val bytes = PrinterCommands.document("Teste", printer)
+                assertTrue(bytes.takeLast(tail.size).toByteArray().contentEquals(tail))
+                assertTrue(bytes.indexOfSubsequence(byteArrayOf(27, 100, 6)) >= 0)
+                assertEquals(-1, PrinterCommands.document("Teste", printer, cut = false).indexOfSubsequence(byteArrayOf(29, 86)))
+            }
+            val diebold = config(PrinterProtocol.DIEBOLD).copy(connection = connection, cutMode = br.com.simplesx.gestor.data.CutMode.NONE)
+            assertFalse(PrinterCommands.document("Teste", diebold).contains(0x11.toByte()))
+        }
+    }
+
+    @Test fun dieboldOptimizedCutUsesNativeCommand() {
+        val printer = config(PrinterProtocol.DIEBOLD).copy(cutMode = br.com.simplesx.gestor.data.CutMode.FEED_PARTIAL)
+        assertTrue(PrinterCommands.document("Teste", printer).takeLast(2).toByteArray().contentEquals(byteArrayOf(27, 31)))
+        assertFalse(PrinterCommands.document("Teste", printer, cut = false).takeLast(2).toByteArray().contentEquals(byteArrayOf(27, 31)))
+    }
+
+    @Test fun continuousLabelCanHaveFixedHeight() {
+        val printer = config(PrinterProtocol.TSPL).copy(fixedHeight = true, labelHeightMm = 30)
+        assertTrue(PrinterCommands.document("Teste", printer).toString(Charsets.US_ASCII).startsWith("SIZE 58 mm,30 mm"))
+    }
+
     @Test fun dieboldUsesNativeFontsAndCutAndReappliesExpandedOnEveryLine() {
         val normal = PrinterCommands.document("Ação", config(PrinterProtocol.DIEBOLD), feed = 0)
         assertTrue(normal.take(5).toByteArray().contentEquals(byteArrayOf(0x1B, 0x4D, 0x1B, 0x5D, 0)))
