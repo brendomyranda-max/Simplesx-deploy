@@ -7,7 +7,7 @@ test('downloads e feed apontam para a mesma release, sem aceitar arquivos arbitr
     assert.equal(instaladorGestor(`gestor-${platform}`), GESTOR_RELEASE + file);
     assert.equal(arquivoAtualizacaoGestor(file), instaladorGestor(`gestor-${platform}`));
   }
-  for (const file of ['latest.yml', 'latest-linux.yml', 'android.json', 'servidor-doixp-windows-x64.exe.blockmap']) assert.equal(arquivoAtualizacaoGestor(file), GESTOR_RELEASE + file);
+  for (const file of ['latest.yml', 'latest-linux.yml', 'android.json', 'SHA256SUMS.txt', 'servidor-doixp-windows-x64.exe.blockmap']) assert.equal(arquivoAtualizacaoGestor(file), GESTOR_RELEASE + file);
   for (const file of ['../latest.yml', 'https://evil.test', 'android.json?redirect=evil', 'app.exe', '__proto__']) assert.equal(arquivoAtualizacaoGestor(file), null);
   assert.equal(instaladorGestor('unknown'), null);
 });
