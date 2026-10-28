@@ -13,6 +13,7 @@ object PrinterCommands {
         when (printer.protocol) {
             PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal, printer.cutMode)
             PrinterProtocol.DIEBOLD -> Diebold.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal, printer.cutMode)
+            PrinterProtocol.ESC_BEMA, PrinterProtocol.STAR_LINE -> NativeReceipt.ticket(text, printer, feed, cut, centered)
             PrinterProtocol.TSPL -> Tspl.label(
                 text, printer.widthMm, copies, printer.tsplPaperMode, printer.labelHeightMm, printer.gapMm, printer.dpi, centered, printer.fontSize, printer.fixedHeight,
             )
@@ -24,6 +25,8 @@ object PrinterCommands {
     fun displayName(protocol: PrinterProtocol): String = when (protocol) {
         PrinterProtocol.ESC_POS -> "ESC/POS (cupons)"
         PrinterProtocol.DIEBOLD -> "Diebold IM453H (Padrão / Padrão II)"
+        PrinterProtocol.ESC_BEMA -> "ESC/Bema (Bematech)"
+        PrinterProtocol.STAR_LINE -> "Star Line Mode"
         PrinterProtocol.TSPL -> "TSPL/TSPL2 (etiquetas)"
         PrinterProtocol.ZPL -> "ZPL (Zebra)"
         PrinterProtocol.CPCL -> "CPCL (portáteis)"

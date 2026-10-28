@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.ConnectionType
+import br.com.simplesx.gestor.data.PrinterProfiles
 import br.com.simplesx.gestor.data.CutMode
 import br.com.simplesx.gestor.data.PrinterFontSize
 import br.com.simplesx.gestor.data.PrinterConfig
@@ -104,6 +106,9 @@ private fun GestorScreen(activity: ComponentActivity) {
     var printers by remember { mutableStateOf(config.printers) }
     var selectedPrinterIndex by remember { mutableStateOf(0) }
     var printer by remember { mutableStateOf(printers.first()) }
+    val printerProfiles = remember { PrinterProfiles.load(context) }
+    var profileExpanded by remember { mutableStateOf(false) }
+    var profileNote by remember { mutableStateOf("") }
     var widthInput by remember { mutableStateOf(printer.widthMm.toString()) }
     var labelHeightInput by remember { mutableStateOf(printer.labelHeightMm.toString()) }
     var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
@@ -322,6 +327,26 @@ private fun GestorScreen(activity: ComponentActivity) {
                     }, modifier = Modifier.weight(1f)) { Text("USB") }
                 }
                 OutlinedTextField(printer.name, { printer = printer.copy(name = it) }, label = { Text("Nome da rota na DoixP") }, modifier = Modifier.fillMaxWidth())
+                Box {
+                    OutlinedButton(onClick = { profileExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text("Escolher perfil da marca / modelo") }
+                    DropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
+                        printerProfiles.forEach { profile ->
+                            DropdownMenuItem(text = { Text(profile.label) }, onClick = {
+                                profileExpanded = false
+                                runCatching { profile.applyTo(printer) }.onSuccess { selected ->
+                                    printer = selected
+                                    widthInput = selected.widthMm.toString()
+                                    dpiInput = selected.dpi.toString()
+                                    columnsInput = selected.columnsNormal?.toString() ?: ""
+                                    profileNote = profile.notes
+                                    message = "Perfil aplicado. Confira o protocolo no autoteste e salve a rota."
+                                }.onFailure { message = it.message ?: "Perfil indisponível" }
+                            })
+                        }
+                    }
+                }
+                if (profileNote.isNotBlank()) Text(profileNote, style = MaterialTheme.typography.bodySmall)
+                Text("O perfil prepara os ajustes. Use somente a linguagem e as interfaces disponíveis no seu modelo. Bluetooth direto requer SPP clássico; BLE e USB serial precisam de integração específica.", style = MaterialTheme.typography.bodySmall)
                 Text("Protocolo", fontWeight = FontWeight.Bold)
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     PrinterProtocol.entries.chunked(2).forEach { row ->

@@ -117,3 +117,14 @@ test('configuração da guilhotina e avanço mínimo vale para jobs e teste', as
     else assert.ok(bytes.toString().endsWith('\n'.repeat(6)))
   }
 })
+
+test('Star Line e ESC/Bema conservam todas as cópias como cupons em Windows e Linux', async () => {
+  for (const platform of ['linux', 'win32']) for (const protocol of ['STAR_LINE', 'ESC_BEMA']) {
+    const f = fixture(platform, { protocolosImpressoras: { Caixa: protocol }, acabamentosImpressoras: { Caixa: { cutMode: 'PARTIAL', feedLines: 3 } } })
+    await f.print({ texto: 'Teste', copias: 2 }, { name: 'Caixa' })
+    assert.equal(f.calls.length, 2)
+    const bytes = [...f.files.values()][0]
+    assert.deepEqual([...bytes.subarray(protocol === 'STAR_LINE' ? -3 : -2)], protocol === 'STAR_LINE' ? [27, 100, 1] : [27, 109])
+    assert.ok(platform === 'linux' ? f.calls[0].args.includes('raw') : f.calls[0].args.some(arg => arg.endsWith('windows-raw.ps1')))
+  }
+})

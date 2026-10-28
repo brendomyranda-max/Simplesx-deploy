@@ -132,16 +132,15 @@ jobs:
           files: artefatos/*
           make_latest: false
           body: |
-            Servidor DoixP 1.5.23 para Windows, Linux e Android.
+            Servidor DoixP 1.5.24 para Windows, Linux e Android.
 
-            - USB OTG com blocos menores, escritas parciais e seleção da interface de impressora.
-            - Guilhotina e avanço mínimo por impressora em mobile e desktop.
-            - Corte nativo e avanço otimizado opcional para Diebold IM453H PD1.12+.
-            - Opções de mídia e altura de etiquetas padronizadas.
-            - Consulta de atualização ao abrir, instalação pelo próprio servidor e configurações preservadas.
-            - APK verificado com a mesma assinatura da versão oficial anterior e checksums públicos.
+            - Catálogo único de perfis por fabricante e linguagem para Android e desktop.
+            - Protocolos nativos ESC/Bema (Bematech MP-4200 TH) e Star Line Mode, com fonte, alinhamento e guilhotina próprios.
+            - Perfis para Epson, Bematech, Elgin, Diebold, Gertec, Tanca, Citizen, Bixolon, Star, Zebra, TSC e emulações Brother, Honeywell e SATO.
+            - Perfis genéricos ESC/POS/TSPL e opção de driver oficial no desktop.
+            - Preserva rotas, conexões, pareamento, categorias e histórico ao aplicar um perfil ou atualizar.
 
-            No S21, selecione USB, autorize a impressora e confira o protocolo no autoteste. Use DIEBOLD para IM453H Padrão/Padrão II. O resultado físico depende do modelo e firmware.
+            Escolha o perfil correspondente à linguagem ativa no autoteste. Os perfis são documentais e não representam homologação física de todos os modelos. BLE, USB serial, protocolos fiscais e linguagens proprietárias podem exigir SDK/driver específico. Consulte docs/IMPRESSORAS_COMPATIBILIDADE.md.
 
-            O Android exige confirmação da instalação. Sem certificado de código Windows, o instalador ainda pode apresentar aviso de editor desconhecido. A assinatura não elimina automaticamente avisos de reputação.
+            Use Atualização do servidor → Atualizar servidor. O APK mantém a assinatura oficial. Sem certificado Windows configurado, o instalador pode apresentar aviso de editor desconhecido.
 # Testa e publica os instaladores Android, Linux e Windows do Servidor DoixP.

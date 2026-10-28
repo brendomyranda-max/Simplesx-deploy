@@ -72,7 +72,10 @@
   <dialog id="tamanhoDialog">
     <form method="dialog">
       <h2>Configurar impressora</h2><p id="tamanhoImpressora"></p>
-      <label>Protocolo<select id="protocolo"><option value="DRIVER">Driver do Windows/Linux</option><option value="ESC_POS">ESC/POS (cupons)</option><option value="DIEBOLD">Diebold IM453H (Padrão / Padrão II)</option><option value="TSPL">TSPL/TSPL2 (etiquetas)</option><option value="ZPL">ZPL (Zebra)</option><option value="CPCL">CPCL (portáteis)</option><option value="EPL">EPL/EPL2 (etiquetas antigas)</option></select></label>
+      <label>Perfil da marca / modelo<select id="perfilImpressora"><option value="">Configuração manual</option></select></label>
+      <button id="aplicarPerfil" type="button" class="secondary">Aplicar perfil</button>
+      <small id="perfilAjuda">O perfil prepara os ajustes. Confira a linguagem no autoteste e use as interfaces disponíveis no seu modelo. Instale a fila USB, rede ou Bluetooth no sistema.</small>
+      <label>Protocolo<select id="protocolo"><option value="DRIVER">Driver do Windows/Linux</option><option value="ESC_POS">ESC/POS (cupons)</option><option value="DIEBOLD">Diebold IM453H (Padrão / Padrão II)</option><option value="ESC_BEMA">ESC/Bema (Bematech)</option><option value="STAR_LINE">Star Line Mode</option><option value="TSPL">TSPL/TSPL2 (etiquetas)</option><option value="ZPL">ZPL (Zebra)</option><option value="CPCL">CPCL (portáteis)</option><option value="EPL">EPL/EPL2 (etiquetas antigas)</option></select></label>
       <small>Na Diebold IM453H, confira a tabela de comandos no autoteste: Padrão/Padrão II usa o modo Diebold; emulação ESC/POS usa ESC/POS.</small>
       <label>Resolução da cabeça (DPI)<input id="dpi" type="number" min="100" max="1200" step="1" list="dpiComuns"><datalist id="dpiComuns"><option value="203"><option value="300"><option value="600"></datalist></label>
       <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>

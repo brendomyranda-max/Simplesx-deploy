@@ -158,7 +158,7 @@ function normalizarAlturas(value) {
 }
 
 function normalizarProtocolos(value) {
-  const permitidos = new Set(['DRIVER', 'ESC_POS', 'DIEBOLD', 'TSPL', 'ZPL', 'CPCL', 'EPL'])
+  const permitidos = new Set(['DRIVER', 'ESC_POS', 'DIEBOLD', 'ESC_BEMA', 'STAR_LINE', 'TSPL', 'ZPL', 'CPCL', 'EPL'])
   const result = {}
   if (!value || typeof value !== 'object') return result
   for (const [nome, protocolo] of Object.entries(value)) {
@@ -354,6 +354,36 @@ function bytesDiebold(texto, { alimentar = 3, cortar = true, larguraMm = 80, cen
   return Buffer.concat(partes)
 }
 
+// Comandos nativos: Star Line Rev. 1.12 e Bematech MP-4200 TH Rev. 1.0.
+function bytesNativeReceipt(texto, { alimentar = 3, cortar = true, larguraMm = 80, centralizar = false, tamanhoFonte = 'normal', colunasNormal = null, cutMode = 'FULL' } = {}, star = false) {
+  const base = colunasNormal || (larguraMm <= 58 ? 32 : 48)
+  const normalized = quebrarPorLargura(textoAscii(texto).replaceAll('\t', '    '), larguraMm, tamanhoFonte, base)
+  const partes = [Buffer.from([27, 64])]
+  if (star) {
+    partes.push(Buffer.from([27, 30, 70, tamanhoFonte === 'small' ? 1 : 0]))
+    partes.push(Buffer.from([27, 105, tamanhoFonte === 'large' ? 1 : 0, tamanhoFonte === 'large' ? 1 : 0]))
+    partes.push(Buffer.from([27, 29, 97, centralizar ? 1 : 0]))
+    partes.push(Buffer.from(normalized + '\n', 'ascii'))
+  } else {
+    if (tamanhoFonte === 'small') partes.push(Buffer.from([15]))
+    partes.push(Buffer.from([27, 87, tamanhoFonte === 'large' ? 1 : 0, 27, 97, centralizar ? 1 : 0]))
+    for (const line of normalized.split('\n')) {
+      if (tamanhoFonte === 'large') partes.push(Buffer.from([27, 86]))
+      partes.push(Buffer.from(line + '\n', 'ascii'))
+    }
+  }
+  partes.push(Buffer.from(star ? [27, 29, 97, 0] : [27, 97, 0]))
+  partes.push(Buffer.from('\n'.repeat(Math.max(0, Math.min(255, Math.floor(Number(alimentar) || 0)))), 'ascii'))
+  if (cortar && cutMode !== 'NONE') {
+    const partial = ['PARTIAL', 'FEED_PARTIAL'].includes(cutMode)
+    if (star) partes.push(Buffer.from([27, 100, cutMode === 'FEED_FULL' ? 2 : cutMode === 'FEED_PARTIAL' ? 3 : partial ? 1 : 0]))
+    else partes.push(Buffer.from([27, partial ? 109 : 119]))
+  }
+  return Buffer.concat(partes)
+}
+function bytesStarLine(texto, options) { return bytesNativeReceipt(texto, options, true) }
+function bytesBema(texto, options) { return bytesNativeReceipt(texto, options, false) }
+
 function textoAscii(texto) {
   return String(texto || '').replace(/\r\n?/g, '\n').normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').replaceAll('º', 'o').replaceAll('ª', 'a')
@@ -462,13 +492,13 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar, c
   const colunasNormal = config.colunasImpressoras?.[printer.name] || null
   const protocolo = config.protocolosImpressoras?.[printer.name] || (printer.raw || /RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
   const filaRaw = protocolo !== 'DRIVER'
-  const cupomRaw = protocolo === 'ESC_POS' || protocolo === 'DIEBOLD'
+  const cupomRaw = ['ESC_POS', 'DIEBOLD', 'ESC_BEMA', 'STAR_LINE'].includes(protocolo)
   const temporario = path.join(app.getPath('temp'), `simplexsa-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
   const layout = layoutDriver(texto, larguraMm, alturaMm, tamanhoFonte)
   const textoAjustado = filaRaw ? texto : layout.texto
   await fs.writeFile(temporario, filaRaw
     ? (cupomRaw
-        ? (protocolo === 'DIEBOLD' ? bytesDiebold : bytesEscPos)(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte, colunasNormal, cutMode })
+        ? (protocolo === 'DIEBOLD' ? bytesDiebold : protocolo === 'STAR_LINE' ? bytesStarLine : protocolo === 'ESC_BEMA' ? bytesBema : bytesEscPos)(textoAjustado, { alimentar, cortar, larguraMm, centralizar, tamanhoFonte, colunasNormal, cutMode })
         : bytesEtiqueta(protocolo, texto, { copias, larguraMm, alturaMm, dpi, centralizar, tamanhoFonte, paperMode, gapMm }))
     : textoAjustado + '\n', filaRaw ? undefined : 'utf8')
   try {
@@ -708,6 +738,7 @@ ipcMain.handle('salvar-config', async (_e, value) => {
   return statusAtual()
 })
 ipcMain.handle('desconectar', desconectar)
+ipcMain.handle('listar-perfis-impressoras', () => require('./catalog/printer-profiles.json').profiles)
 ipcMain.handle('listar-impressoras', () => listarImpressoras(true))
 ipcMain.handle('testar-impressora', async (_e, impressora) => {
   await imprimirRaw({ texto: 'DOIXP - TESTE DE IMPRESSAO\nGarcom | File | Limao | Acai\n\nConexao OK', impressora })
@@ -728,7 +759,7 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
   if (!Number.isFinite(larguraMm) || larguraMm < 20 || larguraMm > 320) throw new Error('Largura deve estar entre 20 e 320 mm')
   if (alturaMm !== null && (!Number.isFinite(alturaMm) || alturaMm < 10 || alturaMm > 500)) throw new Error('Altura deve estar entre 10 e 500 mm')
   if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) throw new Error('DPI deve estar entre 100 e 1200')
-  if (!['DRIVER', 'ESC_POS', 'DIEBOLD', 'TSPL', 'ZPL', 'CPCL', 'EPL'].includes(protocolo)) throw new Error('Protocolo inválido')
+  if (!['DRIVER', 'ESC_POS', 'DIEBOLD', 'ESC_BEMA', 'STAR_LINE', 'TSPL', 'ZPL', 'CPCL', 'EPL'].includes(protocolo)) throw new Error('Protocolo inválido')
   return salvarConfig({
     ...config,
     largurasImpressoras: { ...config.largurasImpressoras, [impressora]: larguraMm },

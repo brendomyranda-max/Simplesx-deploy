@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('simplexsa', {
   status: () => ipcRenderer.invoke('status'),
   salvar: (config) => ipcRenderer.invoke('salvar-config', config),
   desconectar: () => ipcRenderer.invoke('desconectar'),
+  listarPerfisImpressoras: () => ipcRenderer.invoke('listar-perfis-impressoras'),
   listarImpressoras: () => ipcRenderer.invoke('listar-impressoras'),
   testar: (impressora) => ipcRenderer.invoke('testar-impressora', impressora),
   salvarImpressora: (impressora, larguraMm, alturaMm, protocolo, dpi, tamanhoFonte, colunasNormal, acabamento) => ipcRenderer.invoke('salvar-impressora', { impressora, larguraMm, alturaMm, protocolo, dpi, tamanhoFonte, colunasNormal, acabamento }),

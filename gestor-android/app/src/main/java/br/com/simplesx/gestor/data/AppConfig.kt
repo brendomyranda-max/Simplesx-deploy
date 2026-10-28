@@ -11,8 +11,8 @@ import org.json.JSONObject
 
 enum class ConnectionType { NETWORK, BLUETOOTH, USB }
 enum class PrinterProtocol {
-    ESC_POS, DIEBOLD, TSPL, ZPL, CPCL, EPL;
-    val isReceipt: Boolean get() = this == ESC_POS || this == DIEBOLD
+    ESC_POS, DIEBOLD, ESC_BEMA, STAR_LINE, TSPL, ZPL, CPCL, EPL;
+    val isReceipt: Boolean get() = this in setOf(ESC_POS, DIEBOLD, ESC_BEMA, STAR_LINE)
 }
 enum class PrinterFontSize(val scale: Double) { SMALL(0.75), NORMAL(1.0), LARGE(2.0) }
 enum class CutMode { FULL, PARTIAL, FEED_FULL, FEED_PARTIAL, NONE }

@@ -110,7 +110,7 @@ function dpiAtual(nome) {
 }
 
 function atualizarCamposImpressora() {
-  const cupom = ['ESC_POS', 'DIEBOLD'].includes($('protocolo').value)
+  const cupom = ['ESC_POS', 'DIEBOLD', 'ESC_BEMA', 'STAR_LINE'].includes($('protocolo').value)
   const diebold = $('protocolo').value === 'DIEBOLD'
   for (const option of $('cutMode').options) option.disabled = diebold && !['FULL', 'FEED_PARTIAL', 'NONE'].includes(option.value)
   $('cutMode').options[0].textContent = diebold ? 'Corte conforme configuração da Diebold' : 'Corte total'
@@ -148,6 +148,8 @@ $('tamanho').onclick = () => {
   $('colunasNormal').value = estado?.colunasImpressoras?.[nome] || ''
   atualizarCamposImpressora()
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
+  $('perfilImpressora').value = ''
+  $('perfilAjuda').textContent = 'Confira a linguagem no autoteste. O perfil prepara os ajustes e só será salvo ao clicar em Salvar.'
   $('tamanhoDialog').showModal()
 }
 $('larguraPreset').onchange = () => { $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom' }
@@ -269,3 +271,29 @@ $('atualizarServidor').onclick = async () => {
 window.simplexsa.onAtualizacao(renderAtualizacao)
 window.simplexsa.atualizacaoStatus().then(renderAtualizacao).catch((error) => toast(error.message))
 window.simplexsa.status().then(async (s) => { render(s); await carregarImpressoras() }).catch((e) => toast(`Erro: ${e.message}`))
+
+let perfisImpressoras = []
+window.simplexsa.listarPerfisImpressoras().then((profiles) => {
+  perfisImpressoras = profiles
+  for (const profile of profiles) {
+    const option = document.createElement('option')
+    option.value = profile.id
+    option.textContent = profile.label
+    $('perfilImpressora').appendChild(option)
+  }
+}).catch((error) => toast(`Não foi possível carregar perfis: ${error.message}`))
+$('aplicarPerfil').onclick = () => {
+  const profile = perfisImpressoras.find((p) => p.id === $('perfilImpressora').value)
+  if (!profile) return toast('Escolha um perfil')
+  $('protocolo').value = profile.protocol
+  $('larguraPreset').value = [58, 76, 80, 100, 102].includes(profile.widthMm) ? String(profile.widthMm) : 'custom'
+  $('larguraCustom').value = profile.widthMm
+  $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
+  $('dpi').value = profile.dpi
+  $('colunasNormal').value = profile.columnsNormal ?? ''
+  $('cutMode').value = profile.cutMode
+  $('feedLines').value = profile.feedLines
+  $('perfilAjuda').textContent = profile.notes
+  atualizarCamposImpressora()
+  toast('Perfil aplicado. Confira os ajustes e clique em Salvar.')
+}

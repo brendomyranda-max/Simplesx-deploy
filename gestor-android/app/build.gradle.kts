@@ -17,9 +17,11 @@ android {
         applicationId = "br.com.simplesx.gestor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 36
-        versionName = "1.5.23"
+        versionCode = 37
+        versionName = "1.5.24"
     }
+
+    sourceSets["main"].assets.srcDir("../../gestor-impressora/src/catalog")
 
     buildFeatures { compose = true; buildConfig = true }
 

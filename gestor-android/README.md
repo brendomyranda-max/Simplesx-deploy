@@ -285,3 +285,10 @@ a tag e aguarde os três instaladores, metadados e validações. Somente depois 
 `shared/gestor-releases.js` e publique o feed do site. Isso evita oferecer atualização
 antes que os arquivos estejam disponíveis. Checksums detectam corrupção e não
 substituem a assinatura de um editor certificado.
+
+## Perfis de fabricantes (1.5.24)
+
+O catálogo é o mesmo usado pelo desktop. Agora há modos nativos ESC/Bema e
+Star Line, além de ESC/POS, Diebold, TSPL, ZPL, CPCL e EPL2. Consulte a
+[matriz de compatibilidade](../docs/IMPRESSORAS_COMPATIBILIDADE.md) para os perfis,
+as condições de emulação e as interfaces que exigem SDK/driver.

@@ -1,6 +1,6 @@
 {
   "name": "servidor-doixp",
-  "version": "1.5.23",
+  "version": "1.5.24",
   "private": true,
   "description": "Servidor DoixP para impressoras e cartões NFC",
   "homepage": "https://doixp.com",
