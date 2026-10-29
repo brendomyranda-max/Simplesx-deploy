@@ -10,6 +10,7 @@ import { DevicePrinterTest } from '@/components/DevicePrinterTest';
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Tabs, Toggle, useToast } from '@/components/ui';
 import { impressoraApi, gestorApi, deviceApi, configApi, categoriaApi, nfcApi, type NfcEvento } from '@/lib/api';
 import { INSTALADORES } from '@/lib/instaladores';
+import { GESTOR_VERSION } from '../../shared/gestor-releases.js';
 import { getBobina, setBobina, type Bobina } from '@/lib/print';
 import {
   cupsHealth,
@@ -338,7 +339,7 @@ export function ImpressorasPage() {
         <div className="flex flex-wrap items-center gap-3">
           <img src="/brand/LogoDoixPAmarelo.png" alt="Servidor DoixP" className="h-11 w-11 shrink-0 rounded-xl object-contain" />
           <div className="mr-auto">
-            <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.22</p>
+            <p className="font-extrabold text-slate-800">Servidor DoixP · versão {GESTOR_VERSION}</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
             <p className="mt-1 text-sm text-slate-500">No servidor, abra Configurar na impressora para ajustar o papel, a largura imprimível, o tamanho da fonte em pixels, o modelo da fonte e o negrito. Salve e imprima um teste.</p>
           </div>

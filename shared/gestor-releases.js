@@ -1,6 +1,6 @@
 // Alterar somente quando os três instaladores e seus manifestos estiverem publicados.
-export const GESTOR_VERSION = '1.5.24';
-export const GESTOR_ANDROID_CODE = 37;
+export const GESTOR_VERSION = '1.5.25';
+export const GESTOR_ANDROID_CODE = 38;
 export const GESTOR_RELEASE = `https://github.com/brendomyranda-max/Simplesx-deploy/releases/download/gestor-v${GESTOR_VERSION}/`;
 
 const instaladores = {
