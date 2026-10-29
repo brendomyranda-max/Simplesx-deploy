@@ -386,7 +386,7 @@ export function ValidadePage() {
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setEtiqueta(null)}>Fechar</Button>
-          <Button icon={<Printer className="h-4 w-4" />} onClick={() => printReceipt(printRef.current)}>Imprimir</Button>
+          <Button icon={<Printer className="h-4 w-4" />} onClick={() => { void printReceipt(printRef.current).catch(e => toast('error', e?.message || 'Não foi possível enviar a etiqueta ao servidor')); }}>Imprimir</Button>
         </div>
       </Modal>
     </AnimatedPage>

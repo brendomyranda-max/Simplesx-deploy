@@ -18,6 +18,7 @@ const { externalFilePath } = require('./native-files.cjs')
 const { interpretarLeituraNfc, prefixoValido, PREFIXO_PADRAO } = require('./nfc-leitura.cjs')
 const { autoUpdater } = require('electron-updater')
 const { createUpdates } = require('./updates.cjs')
+const { printWithTypography } = require('./print-typography.cjs')
 
 const executarArquivo = promisify(execFile)
 
@@ -77,6 +78,7 @@ function configPadrao() {
     alturasImpressoras: {},
     dpisImpressoras: {},
     fontesImpressoras: {},
+    tipografiasImpressoras: {},
     colunasImpressoras: {},
     protocolosImpressoras: {},
     acabamentosImpressoras: {},
@@ -121,6 +123,7 @@ async function salvarConfig(novaConfig) {
     alturasImpressoras: normalizarAlturas(novaConfig.alturasImpressoras || config?.alturasImpressoras),
     dpisImpressoras: normalizarDpis(novaConfig.dpisImpressoras || config?.dpisImpressoras),
     fontesImpressoras: normalizarFontes(novaConfig.fontesImpressoras || config?.fontesImpressoras),
+    tipografiasImpressoras: normalizarTipografias(novaConfig.tipografiasImpressoras || config?.tipografiasImpressoras),
     colunasImpressoras: normalizarColunas(novaConfig.colunasImpressoras || config?.colunasImpressoras),
     acabamentosImpressoras: Object.fromEntries(Object.entries(novaConfig.acabamentosImpressoras || config?.acabamentosImpressoras || {}).map(([name, value]) => [name, normalizarAcabamento(value)])),
     protocolosImpressoras: normalizarProtocolos(novaConfig.protocolosImpressoras || config?.protocolosImpressoras),
@@ -187,6 +190,10 @@ function normalizarFontes(value) {
     if (nome && ['small', 'normal', 'large'].includes(fonte)) result[nome] = fonte
   }
   return result
+}
+
+function normalizarTipografias(value) {
+  return Object.fromEntries(Object.entries(value || {}).map(([name, settings]) => [name, require('./typography.cjs').normalizeTypography(settings)]))
 }
 
 function normalizarColunas(value) {
@@ -491,6 +498,10 @@ async function imprimirRawAgora({ texto, copias = 1, cortar = true, alimentar, c
   const tamanhoFonte = config.fontesImpressoras?.[printer.name] || 'normal'
   const colunasNormal = config.colunasImpressoras?.[printer.name] || null
   const protocolo = config.protocolosImpressoras?.[printer.name] || (printer.raw || /RAW$/i.test(printer.name) ? 'ESC_POS' : 'DRIVER')
+  const tipografia = config.tipografiasImpressoras?.[printer.name]
+  if (tipografia) return printWithTypography({ BrowserWindow, fs, path, app, crypto, execute: executarArquivo, printer,
+    text: texto, typography: tipografia, widthMm: larguraMm, heightMm: ['ESC_POS', 'DIEBOLD', 'ESC_BEMA', 'STAR_LINE'].includes(protocolo) ? null : alturaMm,
+    dpi, centered: centralizar, protocol: protocolo, copies: Math.max(1, Math.min(20, Math.trunc(Number(copias) || 1))), feed: alimentar, cut: cortar, cutMode, paperMode, gapMm })
   const filaRaw = protocolo !== 'DRIVER'
   const cupomRaw = ['ESC_POS', 'DIEBOLD', 'ESC_BEMA', 'STAR_LINE'].includes(protocolo)
   const temporario = path.join(app.getPath('temp'), `simplexsa-job-${crypto.randomUUID()}.${filaRaw ? 'bin' : 'txt'}`)
@@ -751,6 +762,8 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
   const alturaMm = value?.alturaMm === null || value?.alturaMm === '' || value?.alturaMm === undefined ? null : Number(value.alturaMm)
   const dpi = Number(value?.dpi)
   const tamanhoFonte = value?.tamanhoFonte ?? 'normal'
+  const tipografia = value?.tipografia == null ? config.tipografiasImpressoras?.[impressora] : require('./typography.cjs').normalizeTypography(value.tipografia)
+  if (tipografia?.printableWidthMm > larguraMm) throw new Error('Largura imprimível não pode superar a largura do papel')
   const colunasNormal = value?.colunasNormal == null || value.colunasNormal === '' ? null : Number(value.colunasNormal)
   if (colunasNormal !== null && (!Number.isInteger(colunasNormal) || colunasNormal < 8 || colunasNormal > 160)) throw new Error('Colunas devem estar entre 8 e 160 ou vazias para automático')
   if (!['small', 'normal', 'large'].includes(tamanhoFonte)) throw new Error('Tamanho da fonte inválido')
@@ -766,6 +779,7 @@ ipcMain.handle('salvar-impressora', async (_e, value) => {
     alturasImpressoras: { ...config.alturasImpressoras, [impressora]: alturaMm },
     dpisImpressoras: { ...config.dpisImpressoras, [impressora]: dpi },
     fontesImpressoras: { ...config.fontesImpressoras, [impressora]: tamanhoFonte },
+    tipografiasImpressoras: { ...config.tipografiasImpressoras, ...(tipografia ? { [impressora]: tipografia } : {}) },
     colunasImpressoras: { ...config.colunasImpressoras, [impressora]: colunasNormal },
     protocolosImpressoras: { ...config.protocolosImpressoras, [impressora]: protocolo },
     acabamentosImpressoras: { ...config.acabamentosImpressoras, [impressora]: acabamento },

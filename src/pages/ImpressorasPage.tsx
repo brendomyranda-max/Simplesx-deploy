@@ -14,10 +14,8 @@ import { getBobina, setBobina, type Bobina } from '@/lib/print';
 import {
   cupsHealth,
   cupsPrinters,
-  getDirectPrint,
   getGestorToken,
   getPrinterForWidth,
-  setDirectPrint,
   setGestorToken,
   setPrinterForWidth,
   type CupsPrinter,
@@ -41,7 +39,6 @@ export function ImpressorasPage() {
   const [cupsList, setCupsList] = useState<CupsPrinter[]>([]);
   const [printer80, setPrinter80State] = useState<string>(getPrinterForWidth('80'));
   const [printer58, setPrinter58State] = useState<string>(getPrinterForWidth('58'));
-  const [direct, setDirectState] = useState<boolean>(getDirectPrint());
   const [gestorToken, setGestorTokenState] = useState<string>(getGestorToken());
   const [gestores, setGestores] = useState<any[]>([]);
   const [salvandoGestor, setSalvandoGestor] = useState(false);
@@ -79,12 +76,6 @@ export function ImpressorasPage() {
     if (width === '80') setPrinter80State(name);
     else setPrinter58State(name);
     toast('success', `Impressora de ${width}mm: ${name || 'padrão do CUPS'}`);
-  };
-
-  const mudarDirect = (v: boolean) => {
-    setDirectPrint(v);
-    setDirectState(v);
-    toast('success', v ? 'Impressão direta via CUPS ativada' : 'Impressão voltará a usar o diálogo do navegador');
   };
 
   const loadAll = async () => {
@@ -349,7 +340,7 @@ export function ImpressorasPage() {
           <div className="mr-auto">
             <p className="font-extrabold text-slate-800">Servidor DoixP · versão 1.5.22</p>
             <p className="text-sm text-slate-500">Instale no computador ou celular das impressoras. Ele configura as impressoras e o NFC e faz a ponte com este aplicativo.</p>
-            <p className="mt-1 text-sm text-slate-500">No servidor, abra Configurar na impressora para ajustar as dimensões do papel e o tamanho da fonte.</p>
+            <p className="mt-1 text-sm text-slate-500">No servidor, abra Configurar na impressora para ajustar o papel, a largura imprimível, o tamanho da fonte em pixels, o modelo da fonte e o negrito. Salve e imprima um teste.</p>
           </div>
           {INSTALADORES.map((item) => (
             <a
@@ -507,7 +498,7 @@ export function ImpressorasPage() {
       <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card className="p-4">
           <p className="font-bold text-slate-800">Largura da bobina</p>
-          <p className="mt-1 text-sm text-slate-500">Usada na impressão via navegador (cupom, comanda e etiqueta)</p>
+          <p className="mt-1 text-sm text-slate-500">Largura padrão para recibos enviados ao servidor. Contas usam a largura configurada na rota.</p>
           <div className="mt-3 flex gap-2">
             <Button
               variant={bobina === '80' ? 'primary' : 'secondary'}
@@ -536,7 +527,7 @@ export function ImpressorasPage() {
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <p className="font-bold text-slate-800">Impressão direta (Servidor DoixP local)</p>
+            <p className="font-bold text-slate-800">Impressoras do Servidor DoixP local</p>
             {cupsOnline === null ? (
               <Badge color="slate">verificando…</Badge>
             ) : cupsOnline ? (
@@ -550,15 +541,10 @@ export function ImpressorasPage() {
           </Button>
         </div>
         <p className="mt-1 text-sm leading-relaxed text-slate-500">
-          Ao tocar em "Imprimir", o app envia o recibo direto para o Servidor DoixP (sem diálogo do navegador),
-          usando o serviço rodando em <code className="rounded bg-slate-100 px-1">http://127.0.0.1:8410</code>.
-          Se o servidor estiver offline, a impressão cai automaticamente para o diálogo do navegador.
+          A impressão usa a fila do servidor. Para contas e pré-contas, selecione uma rota em Fechamento de conta.
+          As impressoras instaladas neste computador aparecem abaixo quando o Servidor DoixP local está ativo.
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="flex items-center gap-3">
-            <Toggle checked={direct} onChange={mudarDirect} label="Impressão direta via Servidor DoixP" />
-            <span className="text-sm text-slate-600">{direct ? 'Direto via Servidor DoixP (sem diálogo)' : 'Diálogo do navegador'}</span>
-          </div>
+        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Field label="Impressora da bobina 80mm">
             <Select value={printer80} onChange={(e) => mudarPrinter('80', e.target.value)}>
               <option value="">— (padrão do CUPS)</option>

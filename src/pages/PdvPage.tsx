@@ -118,16 +118,16 @@ export function PdvPage() {
   const totalItens = useMemo(() => cart.reduce((s, i) => s + i.qtd, 0), [cart]);
 
   const imprimirComprovante = async () => {
-    if (!comprovante?.venda_id) return printReceipt(comprovanteRef.current);
     try {
+      if (!comprovante?.venda_id) { await printReceipt(comprovanteRef.current); return; }
       const result = await vendaApi.imprimir(comprovante.venda_id);
       if (result.jobs?.length) toast('success', `Cupom enviado para ${result.jobs.length} impressora(s)`);
       else {
-        toast('info', 'Nenhuma impressora configurada para Cupom de venda; abrindo impressão local');
-        printReceipt(comprovanteRef.current);
+        toast('info', 'Nenhuma rota para Cupom de venda; enviando ao servidor padrão');
+        await printReceipt(comprovanteRef.current);
       }
     } catch (error: any) {
-      toast('error', error?.error || 'Não foi possível enviar o cupom ao gestor');
+      toast('error', error?.error || error?.message || 'Não foi possível enviar o cupom ao gestor');
     }
   };
 

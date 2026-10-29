@@ -14,6 +14,7 @@ import {
   EmptyState,
   IconButton,
   Input,
+  Select,
   Modal,
   Field,
   Spinner,
@@ -22,8 +23,8 @@ import {
 } from '@/components/ui';
 import { ProdutoForm } from '@/components/ProdutoForm';
 import { OnlineCatalogPage } from '@/pages/OnlineCatalogPage';
-import { produtoApi, estoqueApi, configApi } from '@/lib/api';
-import type { Produto, ConfigEmpresa, ProdutoTipo } from '@/lib/types';
+import { produtoApi, estoqueApi, configApi, categoriaApi } from '@/lib/api';
+import type { Produto, ConfigEmpresa, ProdutoTipo, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum } from '@/lib/format';
 import { avisarEstoqueAtualizado } from '@/lib/estoqueSync';
 
@@ -46,6 +47,8 @@ const TIPO_LABEL: Record<ProdutoTipo, string> = {
 export function EstoquePage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState('');
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [categoria, setCategoria] = useState('');
   const [params] = useSearchParams();
   const [tipo, setTipo] = useState<ProdutoTipo | 'todos' | 'delivery'>(params.get('aba') === 'delivery' ? 'delivery' : 'todos');
   const [deliveryTick, setDeliveryTick] = useState(0);
@@ -81,6 +84,8 @@ export function EstoquePage() {
     ativoRef.current = true;
     configApi.get().then((c) => { if (ativo) setConfig(c); })
       .catch((e: any) => { if (ativo) toast('error', e?.error || 'Erro ao carregar configurações'); });
+    categoriaApi.list().then((lista) => { if (ativo) setCategorias(lista); })
+      .catch((e: any) => { if (ativo) toast('error', e?.error || 'Erro ao carregar categorias'); });
     return () => { ativo = false; ativoRef.current = false; carregamentoSeq.current++; };
   }, []);
 
@@ -136,7 +141,16 @@ export function EstoquePage() {
     }
   };
 
-  const somaEstoque = useMemo(() => produtos.reduce((s, p) => s + p.estoque_atual, 0), [produtos]);
+  const produtosExibidos = useMemo(() => {
+    if (!categoria) return produtos;
+    if (categoria === 'sem') return produtos.filter((p) => !p.categorias?.length);
+    const ids = new Set([Number(categoria)]);
+    for (const id of ids) {
+      categorias.filter((c) => c.categoria_pai_id === id).forEach((c) => ids.add(c.id));
+    }
+    return produtos.filter((p) => p.categorias?.some((c) => ids.has(c.id)));
+  }, [produtos, categorias, categoria]);
+  const somaEstoque = useMemo(() => produtosExibidos.reduce((s, p) => s + p.estoque_atual, 0), [produtosExibidos]);
 
   return (
     <AnimatedPage>
@@ -144,7 +158,7 @@ export function EstoquePage() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Estoque</h1>
           <p className="text-sm text-slate-500">
-            {tipo === 'delivery' ? 'Produtos do estoque publicados no site' : `${produtos.length} produtos · ${fmtNum(somaEstoque)} unidades`}
+            {tipo === 'delivery' ? 'Produtos do estoque publicados no site' : `${produtosExibidos.length} produtos · ${fmtNum(somaEstoque)} unidades`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -172,13 +186,25 @@ export function EstoquePage() {
         ))}
       </div>
 
+      {tipo !== 'delivery' && <div className="mb-4 max-w-sm">
+        <Field label="Filtrar por categoria">
+          <Select aria-label="Filtrar por categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+            <option value="">Todas as categorias</option>
+            <option value="sem">Sem categoria</option>
+            {categorias.map((c) => <option key={c.id} value={String(c.id)}>
+              {c.categoria_pai_nome ? `${c.categoria_pai_nome} / ${c.nome}` : c.nome}
+            </option>)}
+          </Select>
+        </Field>
+      </div>}
+
       {tipo === 'delivery' ? (
         <OnlineCatalogPage key={deliveryTick} embutido />
       ) : load ? (
         <Spinner />
-      ) : produtos.length === 0 ? (
+      ) : produtosExibidos.length === 0 ? (
         <Card>
-          <EmptyState icon={<Boxes className="h-8 w-8" />} title="Nenhum produto encontrado" subtitle="Cadastre seu primeiro produto para começar" />
+          <EmptyState icon={<Boxes className="h-8 w-8" />} title="Nenhum produto encontrado" subtitle={busca || categoria || tipo !== 'todos' ? 'Tente outra busca, categoria ou tipo de produto.' : 'Cadastre seu primeiro produto para começar'} />
         </Card>
       ) : (
         <Card className="overflow-hidden">
@@ -197,7 +223,7 @@ export function EstoquePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {produtos.map((p) => {
+                {produtosExibidos.map((p) => {
                   const baixo = p.estoque_atual <= p.estoque_minimo && p.tipo !== 'composto' && p.tipo !== 'combo';
                   const tipoLabel = p.tipo || 'produto';
                   return (

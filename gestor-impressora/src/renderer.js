@@ -118,15 +118,20 @@ function atualizarCamposImpressora() {
   if (diebold && ['PARTIAL', 'FEED_FULL'].includes($('cutMode').value)) $('cutMode').value = 'FULL'
   $('acabamentoCupom').hidden = !cupom
   $('midiaEtiqueta').hidden = !['TSPL', 'ZPL', 'CPCL', 'EPL'].includes($('protocolo').value)
-  $('colunasLabel').hidden = !cupom
-  $('colunasAjuda').hidden = !cupom
   $('altura').disabled = cupom
-  $('dpi').disabled = cupom
+  $('dpi').disabled = false
   $('alturaAjuda').textContent = cupom
-    ? 'Em cupons de texto, a altura acompanha o conteúdo e o DPI não altera as letras. Ajuste a fonte e os caracteres por linha.'
-    : 'Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.'
+    ? 'A altura acompanha o conteúdo. O DPI deve corresponder à cabeça da impressora para manter o tamanho escolhido em px.'
+    : 'Deixe a altura vazia para acompanhar o conteúdo. Com altura fixa, textos longos continuam na próxima etiqueta mantendo a fonte.'
 }
 $('protocolo').onchange = atualizarCamposImpressora
+
+function atualizarPreviaFonte() {
+  $('previaFonte').style.fontSize = `${Math.max(6, Math.min(96, Number($('tamanhoFontePx').value) || 12))}px`
+  $('previaFonte').style.fontFamily = $('modeloFonte').value
+  $('previaFonte').style.fontWeight = $('fonteNegrito').checked ? '700' : '400'
+}
+for (const id of ['tamanhoFontePx', 'modeloFonte', 'fonteNegrito']) $(id).oninput = atualizarPreviaFonte
 
 $('tamanho').onclick = () => {
   const nome = impressoraSelecionada()
@@ -139,13 +144,18 @@ $('tamanho').onclick = () => {
   $('altura').value = alturaAtual(nome) ?? ''
   $('protocolo').value = protocoloAtual(nome)
   $('dpi').value = dpiAtual(nome)
-  $('tamanhoFonte').value = estado?.fontesImpressoras?.[nome] || 'normal'
+  const antiga = estado?.fontesImpressoras?.[nome]
+  const tipografia = estado?.tipografiasImpressoras?.[nome] || { sizePx: antiga === 'small' ? 9 : antiga === 'large' ? 24 : 12, family: 'monospace', bold: false }
+  $('tamanhoFontePx').value = tipografia.sizePx
+  $('modeloFonte').value = tipografia.family
+  $('fonteNegrito').checked = tipografia.bold
+  $('larguraImprimivel').value = tipografia.printableWidthMm ?? ''
+  atualizarPreviaFonte()
   const acabamento = estado?.acabamentosImpressoras?.[nome] || {}
   $('cutMode').value = acabamento.cutMode || 'FULL'
   $('feedLines').value = acabamento.feedLines ?? 3
   $('paperMode').value = acabamento.paperMode || 'CONTINUOUS'
   $('gapMm').value = acabamento.gapMm ?? 2
-  $('colunasNormal').value = estado?.colunasImpressoras?.[nome] || ''
   atualizarCamposImpressora()
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
   $('perfilImpressora').value = ''
@@ -164,15 +174,17 @@ $('salvarTamanho').onclick = async (event) => {
   try {
     const dpi = Number($('dpi').value)
     if (!Number.isInteger(dpi) || dpi < 100 || dpi > 1200) return toast('Informe um DPI entre 100 e 1200')
-    const colunasTexto = $('colunasNormal').value.trim()
-    const colunas = colunasTexto === '' ? null : Number(colunasTexto)
-    if (colunas !== null && (!Number.isInteger(colunas) || colunas < 8 || colunas > 160)) return toast('Informe entre 8 e 160 caracteres por linha ou deixe vazio')
+    const sizePx = Number($('tamanhoFontePx').value)
+    if (!Number.isFinite(sizePx) || sizePx < 6 || sizePx > 96) return toast('Informe o tamanho da fonte entre 6 e 96 px')
+    const printableWidthMm = $('larguraImprimivel').value.trim() === '' ? null : Number($('larguraImprimivel').value)
+    if (printableWidthMm !== null && (!Number.isFinite(printableWidthMm) || printableWidthMm < 10 || printableWidthMm > largura)) return toast('A largura imprimível deve ficar entre 10 mm e a largura do papel')
+    const tipografia = { sizePx, family: $('modeloFonte').value, bold: $('fonteNegrito').checked, printableWidthMm }
     const acabamento = { cutMode: $('cutMode').value, feedLines: Number($('feedLines').value), paperMode: $('paperMode').value, gapMm: Number($('gapMm').value) }
     if (acabamento.paperMode !== 'CONTINUOUS' && altura === null && ['TSPL', 'ZPL', 'CPCL', 'EPL'].includes($('protocolo').value)) return toast('Informe a altura física da etiqueta')
-    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, $('tamanhoFonte').value, colunas, acabamento)
+    const status = await window.simplexsa.salvarImpressora(nome, largura, altura, $('protocolo').value, dpi, estado?.fontesImpressoras?.[nome] || 'normal', estado?.colunasImpressoras?.[nome] || null, acabamento, tipografia)
     render(status)
     $('tamanhoDialog').close()
-    toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${$('tamanhoFonte').selectedOptions[0].textContent} · ${dpi} DPI · ${$('protocolo').value.replace('_', '/')}`)
+    toast(`${nome}: ${largura} × ${altura ?? 'auto'} mm · ${sizePx} px · ${tipografia.family}${tipografia.bold ? ' · negrito' : ''} · ${dpi} DPI`)
   } catch (e) { toast(`Erro: ${e.message}`) }
 }
 
@@ -290,7 +302,7 @@ $('aplicarPerfil').onclick = () => {
   $('larguraCustom').value = profile.widthMm
   $('larguraCustomLabel').hidden = $('larguraPreset').value !== 'custom'
   $('dpi').value = profile.dpi
-  $('colunasNormal').value = profile.columnsNormal ?? ''
+  $('larguraImprimivel').value = profile.columnsNormal ? (profile.columnsNormal * 12 / profile.dpi * 25.4).toFixed(1) : ''
   $('cutMode').value = profile.cutMode
   $('feedLines').value = profile.feedLines
   $('perfilAjuda').textContent = profile.notes

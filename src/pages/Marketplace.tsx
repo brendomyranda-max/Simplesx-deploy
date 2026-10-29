@@ -1,11 +1,13 @@
 /**
- * Vitrine DoixP Delivery. Ao entrar, pede a localização e mostra quem entrega na região.
+ * Vitrine DoixP Delivery com entrega na região e lojas que atendem somente por retirada.
  */
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BadgePercent, Bike, Clock3, CookingPot, IceCreamBowl, MapPin, Pizza, Search, Sandwich, ShoppingBag, Store, UtensilsCrossed, X } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
+import { ContaCliente } from '@/components/ContaCliente';
+import { pontoDoPerfil, useClienteMarketplace } from '@/lib/cliente-marketplace';
 import { lerUltimoPedido, SUPORTE_DOIXP_URL } from '@/lib/delivery-cliente';
 import { FotoGaleria } from '@/components/FotoGaleria';
 import { SeletorLocalizacao } from '@/components/SeletorLocalizacao';
@@ -26,6 +28,7 @@ function prazo(loja: RedePedidos['lojas'][number]) {
 }
 
 export function Marketplace() {
+  const { cliente } = useClienteMarketplace();
   const [categoria, setCategoria] = useState('');
   const [busca, setBusca] = useState('');
   const [consulta, setConsulta] = useState('');
@@ -45,6 +48,11 @@ export function Marketplace() {
   const [ponto, setPonto] = useState<PontoCliente | null>(pontoInicial);
   const [regiao, setRegiao] = useState(true);
   const [endereco, setEndereco] = useState(pontoInicial?.endereco || '');
+
+  useEffect(() => {
+    const salvo = lerPontoCliente() || pontoDoPerfil(cliente);
+    setPonto(salvo); setEndereco(salvo?.endereco || '');
+  }, [cliente]);
 
   useEffect(() => {
     let ativo = true;
@@ -133,8 +141,7 @@ export function Marketplace() {
       <main className="online-market">
         <nav className="online-customer-links" aria-label="Pedidos e suporte">
           {ultimoPedido && <Link className="online-track-shortcut" to={ultimoPedido}>Acompanhar meu pedido</Link>}
-          <span>Cadastro (nome, CPF, telefone e endereço): em breve</span>
-          <span>Código de confirmação (4 últimos dígitos do CPF): em breve</span>
+          <ContaCliente />
           <a href={SUPORTE_DOIXP_URL} target="_blank" rel="noopener noreferrer">Suporte DoixP no WhatsApp</a>
         </nav>
         <section className="online-where online-market-location" aria-label="Sua localização">
@@ -144,7 +151,7 @@ export function Marketplace() {
               <b>{ponto?.endereco || (ponto ? 'Usando sua localização' : 'Encontre restaurantes próximos a você')}</b>
               <span>
                 {ponto && regiao
-                  ? 'Mostrando quem entrega até você.'
+                  ? 'Mostrando entrega até você e lojas com retirada no balcão.'
                   : ponto
                     ? 'Mostrando todas as lojas, com a distância.'
                     : 'É necessário informar sua localização para encontrar restaurantes próximos a você.'}
@@ -163,7 +170,7 @@ export function Marketplace() {
             }}
           />
           <div className="online-region-toggle">
-            <button type="button" className={ponto && regiao ? 'active' : ''} disabled={!ponto} onClick={() => setRegiao(true)}>Na minha região</button>
+            <button type="button" className={ponto && regiao ? 'active' : ''} disabled={!ponto} onClick={() => setRegiao(true)}>Entrega aqui ou retirada</button>
             <button type="button" className={ponto && !regiao ? 'active' : ''} onClick={() => setRegiao(false)}>Ver todas</button>
           </div>
           {ponto && !regiao && <p className="online-where-note">Lojas sem área definida continuam nesta lista.</p>}
@@ -218,7 +225,7 @@ export function Marketplace() {
         </section>
         <section className="online-market-stores" aria-labelledby="delivery-lojas">
           <header className="online-market-stores-heading">
-            <div><h2 id="delivery-lojas">Lojas</h2><p>{ponto && regiao ? 'Restaurantes que entregam na sua região.' : 'Explore as lojas disponíveis.'}</p></div>
+            <div><h2 id="delivery-lojas">Lojas</h2><p>{ponto && regiao ? 'Entrega na sua região e lojas com retirada no balcão.' : 'Explore as lojas disponíveis.'}</p></div>
             {categoria && <button type="button" onClick={() => setCategoria('')}>Ver todas as categorias</button>}
           </header>
         {estado === 'carregando' && <div className="online-empty"><b>Carregando restaurantes…</b></div>}
@@ -226,7 +233,7 @@ export function Marketplace() {
         {estado === 'pronto' && rede.lojas.length === 0 && (
           <div className="online-empty">
             <Store />
-            <b>{vazioRegiao ? 'Nenhum restaurante entrega nesta região ainda' : (categoria || consulta ? 'Nenhum restaurante nesta busca' : 'Nenhum restaurante publicado')}</b>
+            <b>{vazioRegiao ? 'Nenhuma loja disponível para entrega ou retirada' : (categoria || consulta ? 'Nenhum restaurante nesta busca' : 'Nenhum restaurante publicado')}</b>
             <span>{vazioRegiao ? 'Informe outro endereço ou veja todas as lojas disponíveis.' : 'Experimente outra categoria ou busque pelo nome de uma loja.'}</span>
             {vazioRegiao && <button type="button" onClick={() => setRegiao(false)}>Ver todas</button>}
           </div>
@@ -245,7 +252,7 @@ export function Marketplace() {
                   <p>{loja.descricao || 'Cardápio com os produtos cadastrados no estoque.'}</p>
                   {loja.segmentos.length > 0 && <div className="online-market-tags">{loja.segmentos.map((nome) => <span key={nome}>{nome}</span>)}</div>}
                   <small>
-                    {loja.distancia_km != null && <em className={loja.entrega_na_regiao === 0 ? 'online-distance fora' : 'online-distance'}>a {fmtKm(loja.distancia_km)}{loja.entrega_na_regiao === 0 ? ' · fora da área' : ''}</em>}
+                    {loja.distancia_km != null && <em className={loja.aceita_entrega && loja.entrega_na_regiao === 0 ? 'online-distance fora' : 'online-distance'}>a {fmtKm(loja.distancia_km)}{!loja.aceita_entrega && loja.aceita_retirada ? ' · somente retirada' : loja.entrega_na_regiao === 0 ? ' · fora da área' : ''}</em>}
                     {loja.distancia_km != null ? ' · ' : null}
                     {loja.aceita_entrega ? <><Bike /> {textoEntrega(loja)}</> : textoEntrega(loja)}
                     {loja.raio_entrega_km != null ? <> · até {fmtKm(loja.raio_entrega_km)}</> : null}

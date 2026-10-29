@@ -18,6 +18,7 @@ import { chamarEntregas } from './entregas-bridge.js';
 import { cifrarCodigoEntrega, decifrarCodigoEntrega } from './entregas-code.js';
 import { configurarHorario, diasDaLoja, funcionamentoLoja } from './online-hours.js';
 import { TenantDb } from './tenant-db.js';
+import { clienteDaSessao } from './handlers-clientes.js';
 import { dispatchOrders } from './order-printing.js';
 
 const MAX_ITEMS = 30;
@@ -1385,7 +1386,7 @@ export async function listPublicStoresHandler(c, env) {
       buscas: daLoja.map((item) => item.nome_busca),
     };
   });
-  if (soRegiao) lista = lista.filter((loja) => loja.entrega_na_regiao === 1);
+  if (soRegiao) lista = lista.filter((loja) => loja.entrega_na_regiao === 1 || (!loja.aceita_entrega && loja.aceita_retirada === 1));
   const naRegiao = lista;
   if (categoria) lista = lista.filter((loja) => loja.buscas.some((busca) => categoriaPrincipalDelivery(busca) === categoriaPrincipalDelivery(categoria)));
   if (termo) {
@@ -1565,6 +1566,7 @@ function orderNote(note, selected) {
 }
 
 export async function createPublicOrderHandler(c, env) {
+  const cliente = await clienteDaSessao(c, env);
   const store = await publicStore(env, c.params.slug);
   if (store.aceita_pedidos_online === 0) {
     return c.json({ error: 'Este estabelecimento disponibiliza apenas o cardápio online e não recebe pedidos pelo site.' }, 403);
@@ -1734,12 +1736,12 @@ export async function createPublicOrderHandler(c, env) {
   const etapaPendente = 'aguardando_pix';
   const statements = [
     env.DB.prepare(
-      `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em,entrega_destino_lat,entrega_destino_lng)
-       SELECT ?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?,?,?
+      `INSERT OR IGNORE INTO pedidos_online (estabelecimento_id,chave,cliente_nome,telefone,tipo_entrega,endereco,forma_pagamento,troco_para,observacao,status,etapa,subtotal,taxa_entrega,total,valor_entrega,distancia_km,modo_entrega,checkout_url,checkout_charge_id,criado_em,atualizado_em,entrega_destino_lat,entrega_destino_lng,cliente_id)
+       SELECT ?,?,?,?,?,?,?,?,?,'recebido',?,?,?,?,?,?,?,?,?,?,?,?,?,?
        WHERE EXISTS (SELECT 1 FROM lojas_online WHERE estabelecimento_id=? AND ativo=1 AND aceita_pedidos_online=1)
          AND ?=(SELECT COUNT(*) FROM cardapio_online_produtos cp JOIN produtos p ON p.id=cp.produto_id AND p.estabelecimento_id=cp.estabelecimento_id
            WHERE cp.estabelecimento_id=? AND cp.id IN (SELECT value FROM json_each(?)) AND cp.ativo=1 AND cp.disponivel=1 AND p.ativo=1)`
-    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp, destinationPoint?.latitude ?? null, destinationPoint?.longitude ?? null,
+    ).bind(store.estabelecimento_id, key, customer, phone, delivery, address || null, payment, change, orderObservation || null, segurarPix ? etapaPendente : 'recebido', subtotal, deliveryFee, total, nulo(cobranca.valor_entrega), nulo(delivery === 'entrega' ? (distanciaBruta == null ? null : kmExibido(distanciaBruta)) : null), nulo(cobranca.modo_entrega), null, null, timestamp, timestamp, destinationPoint?.latitude ?? null, destinationPoint?.longitude ?? null, cliente?.id ?? null,
       store.estabelecimento_id, catalogIds.length, store.estabelecimento_id, JSON.stringify(catalogIds)),
   ];
   if (platformDelivery) {

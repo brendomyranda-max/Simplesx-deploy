@@ -31,7 +31,7 @@ import { comandaApi, produtoApi, impressoraApi, configApi, categoriaApi, authApi
 import { useAuth } from '@/store/auth';
 import type { Comanda, Produto, ComandaItem, Categoria } from '@/lib/types';
 import { fmtBRL, fmtNum, fmtHora, FORMAS_PAGAMENTO, formaLabel } from '@/lib/format';
-import { printReceipt } from '@/lib/print';
+import { confirmarImpressao } from '@/lib/print-result';
 import { taxaServicoAtual, type EdicaoTaxaServico } from '@/lib/taxa-servico';
 
 const CORES = ['#0a0a0a', '#262626', '#404040', '#525252', '#737373', '#a3a3a3'];
@@ -75,7 +75,7 @@ export function ComandaPage() {
   const [finalizando, setFinalizando] = useState(false);
   const finalizandoRef = useRef(false);
   const [enviandoCozinha, setEnviandoCozinha] = useState(false);
-  const [imprimir, setImprimir] = useState<{ impressao: string; setor: string } | null>(null);
+  const [imprimir, setImprimir] = useState<{ impressao: string; setor: string; pessoaId?: number; enviada: boolean } | null>(null);
   const [addProduto, setAddProduto] = useState<Produto | null>(null);
   const [comboChoices, setComboChoices] = useState<number[][]>([]);
   const [editandoItem, setEditandoItem] = useState<ComandaItem | null>(null);
@@ -104,7 +104,8 @@ export function ComandaPage() {
   const [actorId, setActorId] = useState<number | null>(null);
   const storageKey = actorId ? `simplesx_pedido:${actorId}:${comandaId}` : null;
   const [valoresIndiv, setValoresIndiv] = useState<Record<string, string>>({});
-  const impressaoRef = useRef<HTMLDivElement>(null);
+  const impressaoEmCurso = useRef(false);
+  const [imprimindoConta, setImprimindoConta] = useState(false);
 
   const loadComanda = async (background = false) => {
     if (background && loadingRequests.current) return;
@@ -427,17 +428,21 @@ export function ComandaPage() {
     loadComanda();
   };
 
-  const imprimirComanda = async () => {
-    if (pessoaCartao) {
-      try { const r = await impressoraApi.imprimirPessoa(comandaId,pessoaCartao.id); setImprimir({ impressao:r.impressao, setor:'Conta individual' }); }
-      catch (e: any) { toast('error',e?.error || 'Erro ao imprimir conta individual'); }
-      return;
-    }
-    if (!locked) { await enviarCozinha(); return; }
+  const imprimirConta = async (pessoaId?: number) => {
+    if (impressaoEmCurso.current) return;
+    impressaoEmCurso.current = true; setImprimindoConta(true);
     try {
-      const r = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
-      setImprimir(r);
-    } catch (e: any) { toast('error', e?.error || 'Erro ao imprimir conta'); }
+      const r = pessoaId
+        ? await impressoraApi.imprimirPessoa(comandaId, pessoaId)
+        : await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
+      setImprimir({ impressao: r.impressao, setor: pessoaId ? 'Conta individual' : 'Pré-conta', pessoaId, enviada: !!r.jobs?.some(job=>job.ok) });
+      toast('success', confirmarImpressao(r.jobs));
+    } catch (e: any) { toast('error', e?.error || e?.message || 'Erro ao imprimir conta'); }
+    finally { impressaoEmCurso.current = false; setImprimindoConta(false); }
+  };
+  const imprimirComanda = async () => {
+    if (pessoaCartao || locked) { await imprimirConta(pessoaCartao?.id); return; }
+    await enviarCozinha();
   };
 
   const salvarNomePessoa = async (p: Comanda['pessoas'][0]) => {
@@ -644,10 +649,10 @@ export function ComandaPage() {
       await loadComanda();
       try {
         const imp = await impressoraApi.imprimirComanda(comandaId, { setor, tipo: 'conta' });
-        setImprimir({ impressao: imp.impressao, setor: imp.setor });
-        toast('success', `${r.mensagem || 'Conta pré-fechada'} · ${imp.jobs?.length || 0} impressão(ões) enviada(s)`);
+        setImprimir({ impressao: imp.impressao, setor: 'Pré-conta', enviada: !!imp.jobs?.some(job=>job.ok) });
+        toast('success', `${r.mensagem || 'Conta pré-fechada'} · ${confirmarImpressao(imp.jobs)}`);
       } catch (err: any) {
-        toast('error', `Conta pré-fechada, mas a impressão não foi confirmada: ${err?.error || 'falha de conexão'}. Use Imprimir para tentar novamente.`);
+        toast('error', `Conta pré-fechada, mas a impressão não foi confirmada: ${err?.error || err?.message || 'falha de conexão'}. Use Reimprimir pré-conta para tentar novamente.`);
       }
     } catch (err: any) {
       falhaFechamento(err, 'Erro ao pré-fechar');
@@ -776,9 +781,10 @@ export function ComandaPage() {
               <option key={s} value={s}>{s}</option>
             ))}
           </Select>
-          <Button variant="secondary" icon={<Printer className="h-4 w-4" />} onClick={imprimirComanda}>
-            Imprimir
+          <Button variant="secondary" icon={<Printer className="h-4 w-4" />} loading={imprimindoConta} onClick={imprimirComanda}>
+            {pessoaCartao ? 'Imprimir pré-conta' : locked ? 'Reimprimir pré-conta' : 'Imprimir pedidos'}
           </Button>
+          {!locked && !pessoaCartao && <Button variant="secondary" icon={<Printer className="h-4 w-4" />} loading={imprimindoConta} onClick={()=>void imprimirConta()}>Imprimir pré-conta</Button>}
           {pessoaCartao ? (
             <Button variant="success" icon={<HandCoins className="h-4 w-4" />} onClick={()=>navigate(`/restaurante/recepcao?atendimento=${pessoaCartao.cartao_atendimento_id}&fechar=1`)}>Fechar comanda individual</Button>
           ) : mesaVazia ? (
@@ -1485,12 +1491,12 @@ export function ComandaPage() {
 
       {/* Impressão preview */}
       <Modal open={!!imprimir} onClose={() => setImprimir(null)} title={`Comanda · ${imprimir?.setor || ''}`}>
-        <div ref={impressaoRef} className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4">
+        <div className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4">
           <pre className="whitespace-pre-wrap text-slate-800">{imprimir?.impressao}</pre>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setImprimir(null)}>Fechar</Button>
-          <Button icon={<Printer className="h-4 w-4" />} onClick={() => printReceipt(impressaoRef.current)}>Imprimir</Button>
+          <Button icon={<Printer className="h-4 w-4" />} loading={imprimindoConta} onClick={() => void imprimirConta(imprimir?.pessoaId)}>{imprimir?.enviada ? 'Reimprimir pré-conta' : 'Tentar imprimir novamente'}</Button>
         </div>
       </Modal>
     </AnimatedPage>

@@ -54,3 +54,17 @@ test('falha compartilhada é liberada para nova tentativa e operações de grava
   requests[2].resolve(new Response('{}')); requests[3].resolve(new Response('{}'));
   await Promise.all(writes);
 });
+
+test('sessão expirada do comprador não encerra a sessão do lojista', async t => {
+  const events = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { value: { dispatchEvent: (event) => events.push(event.type) }, configurable: true });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else delete globalThis.window; });
+  t.mock.method(globalThis, 'fetch', async () => new Response('{"error":"Sessão inválida"}', { status: 401 }));
+  await assert.rejects(api.get('/public/clientes/me'), (error) => error.status === 401);
+  assert.deepEqual(events, ['doixp:cliente-expirado']);
+  await assert.rejects(api.post('/public/clientes/login', {}), (error) => error.status === 401);
+  assert.deepEqual(events, ['doixp:cliente-expirado']);
+  await assert.rejects(api.get('/auth/me'), (error) => error.status === 401);
+  assert.deepEqual(events, ['doixp:cliente-expirado', 'simplexsa:logout']);
+});

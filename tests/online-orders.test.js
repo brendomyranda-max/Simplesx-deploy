@@ -537,3 +537,31 @@ test('cardápio digital usa o link próprio, fica fora do marketplace e registra
   const painel = await painelPedidosHandler(context(), direta);
   assert.equal(painel.data.delivery[0].troco_para, 50);
 });
+
+
+test('somente retirada é salva por loja, permanece na vitrine e bloqueia entrega sem cobrar frete', async t => {
+  const raw = new SqliteDb(':memory:'); t.after(() => raw.close());
+  raw.prepare("INSERT INTO estabelecimentos (id,nome,ativo) VALUES (1,'Balcao',1),(2,'Entrega',1)").run();
+  raw.prepare("INSERT INTO produtos (id,estabelecimento_id,nome,preco,ativo,tipo) VALUES (1,1,'Prato',20,1,'produto')").run();
+  const env = { DB: new TenantDb(raw,1), rawDB: raw, estabelecimentoId: 1 };
+  const outra = { DB: new TenantDb(raw,2), rawDB: raw, estabelecimentoId: 2 };
+  await updateOnlineStoreHandler(context({ nome:'Entrega',ativo:1,aceita_entrega:1,aceita_retirada:0 }), outra);
+  const salvo = await updateOnlineStoreHandler(context({ nome:'Balcao',ativo:1,aceita_entrega:0,aceita_retirada:1,taxa_entrega:15,valor_por_km:3,raio_entrega_km:1 }), env);
+  assert.equal(salvo.status,200);
+  assert.equal(salvo.data.aceita_entrega,0); assert.equal(salvo.data.aceita_retirada,1);
+  assert.equal(raw.prepare('SELECT aceita_entrega FROM lojas_online WHERE estabelecimento_id=2').first().aceita_entrega,1);
+  const produto = await upsertOnlineCatalogProductHandler(context({produto_id:1,preco:20}), env);
+  const publico = {DB:raw};
+  const vitrine = await listPublicStoresHandler(context({}, {}, {lat:'-23.55',lng:'-46.63'}), publico);
+  assert.ok(vitrine.data.lojas.some(loja=>loja.slug===salvo.data.slug));
+  const loja = await getPublicStoreHandler(context({}, {slug:salvo.data.slug}), publico);
+  assert.equal(loja.data.loja.aceita_entrega,0);
+  const pedido = {chave:'retirada-somente-0001',cliente_nome:'Ana',telefone:'11999990000',forma_pagamento:'maquininha',itens:[{cardapio_produto_id:produto.data.id,quantidade:1}]};
+  const entrega = await createPublicOrderHandler(context({...pedido,tipo_entrega:'entrega',endereco:'Rua 1, 10'}, {slug:salvo.data.slug}), publico);
+  assert.equal(entrega.status,400);
+  assert.equal(raw.prepare('SELECT COUNT(*) n FROM pedidos_online').first().n,0);
+  const retirada = await createPublicOrderHandler(context({...pedido,tipo_entrega:'retirada'}, {slug:salvo.data.slug}), publico);
+  assert.equal(retirada.status,201,JSON.stringify(retirada.data));
+  assert.equal(retirada.data.total,20);
+  assert.equal(raw.prepare('SELECT taxa_entrega FROM pedidos_online').first().taxa_entrega,0);
+});

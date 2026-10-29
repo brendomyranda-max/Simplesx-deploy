@@ -9,8 +9,9 @@ import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 
 object PrinterCommands {
-    fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = printer.feedLines, cut: Boolean = true, centered: Boolean = false): ByteArray =
-        when (printer.protocol) {
+    fun document(text: String, printer: PrinterConfig, copies: Int = 1, feed: Int = printer.feedLines, cut: Boolean = true, centered: Boolean = false): ByteArray {
+        if (printer.fontSizePx != null) return RasterCommands.document(RasterTypography.render(text, printer, centered), printer, copies, feed, cut)
+        return when (printer.protocol) {
             PrinterProtocol.ESC_POS -> EscPos.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal, printer.cutMode)
             PrinterProtocol.DIEBOLD -> Diebold.ticket(text, feed, cut, printer.widthMm, centered, printer.fontSize, printer.columnsNormal, printer.cutMode)
             PrinterProtocol.ESC_BEMA, PrinterProtocol.STAR_LINE -> NativeReceipt.ticket(text, printer, feed, cut, centered)
@@ -21,6 +22,7 @@ object PrinterCommands {
             PrinterProtocol.CPCL -> cpcl(text, printer, copies, centered)
             PrinterProtocol.EPL -> epl(text, printer, copies, centered)
         }
+    }
 
     fun displayName(protocol: PrinterProtocol): String = when (protocol) {
         PrinterProtocol.ESC_POS -> "ESC/POS (cupons)"

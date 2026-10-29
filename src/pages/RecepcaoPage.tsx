@@ -9,7 +9,7 @@ import { cartaoApi, mesaApi, type CartaoAtendimento, type NfcEvento } from '@/li
 import { useNfcLeitura } from '@/lib/useNfcBridge';
 import { useWebNfc } from '@/lib/useWebNfc';
 import { fmtBRL, FORMAS_PAGAMENTO } from '@/lib/format';
-import { printReceipt } from '@/lib/print';
+import { confirmarImpressao } from '@/lib/print-result';
 import type { Mesa } from '@/lib/types';
 
 type Cadastro = Pick<NfcEvento, 'uid' | 'payload'> & { cartao: string; chave: string };
@@ -44,8 +44,7 @@ export function RecepcaoPage() {
   const [forma, setForma] = useState('dinheiro');
   const [taxaEditada, setTaxaEditada] = useState<{ id: string; valor: string } | null>(null);
   const [encerrada, setEncerrada] = useState<ContaEncerrada | null>(null);
-  const [impressao, setImpressao] = useState<string | null>(null);
-  const impressaoRef = useRef<HTMLDivElement>(null);
+  const [impressao, setImpressao] = useState<{ id: string; percentual?: number; texto: string; paga: boolean; enviada: boolean } | null>(null);
   const taxaTexto = conta && taxaEditada?.id===conta.id ? taxaEditada.valor : String(conta?.taxa_garcom_pct ?? 0);
   const taxaPct = Number(taxaTexto);
   const taxaValida = taxaTexto.trim()!=='' && Number.isFinite(taxaPct) && taxaPct>=0 && taxaPct<=100;
@@ -114,20 +113,14 @@ export function RecepcaoPage() {
     } finally { ocupadoRef.current=false; setOcupado(false); }
   };
   const prepararImpressao = async (id: string, percentual?: number) => {
-    if (ocupadoRef.current || (percentual!==undefined && !taxaValida)) return;
+    if (ocupadoRef.current) return;
     ocupadoRef.current=true; setOcupado(true);
     try {
       const r = await cartaoApi.conta(id,percentual===undefined ? {} : {taxa_garcom_pct:percentual});
       if (conta?.id===id) setConta({...conta,subtotal:r.subtotal});
-      setImpressao(r.impressao);
-    } catch (e: any) { toast('error',e?.error || 'Não foi possível preparar a conta para impressão'); }
-    finally { ocupadoRef.current=false; setOcupado(false); }
-  };
-  const imprimir = async () => {
-    if (ocupadoRef.current) return;
-    ocupadoRef.current=true; setOcupado(true);
-    try { await printReceipt(impressaoRef.current); }
-    catch (e: any) { toast('error',e?.error || e?.message || 'Não foi possível imprimir a conta'); }
+      setImpressao({id,percentual,texto:r.impressao,paga:encerrada?.id===id,enviada:r.jobs.some(job=>job.ok)});
+      toast('success',confirmarImpressao(r.jobs));
+    } catch (e: any) { toast('error',e?.error || e?.message || 'Não foi possível enviar a conta para impressão'); }
     finally { ocupadoRef.current=false; setOcupado(false); }
   };
   const verConta = (a: CartaoAtendimento) => navigate(`/restaurante/comanda/${a.comanda_id}?pessoa=${a.pessoa_id}`);
@@ -149,7 +142,7 @@ export function RecepcaoPage() {
         <div className="flex justify-between gap-3"><h2 className="font-bold text-slate-800">{nomeCliente(a)}</h2><Badge color="purple">Mesa {a.mesa_numero}</Badge></div>
         <p className="mt-2 break-all text-xs text-slate-500">Cartão {a.cartao}</p>
         <p className="my-3 text-lg font-bold">{fmtBRL(totalConta(a))}</p>
-        <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={()=>verConta(a)}>Ver / lançar pedidos</Button><Button size="sm" icon={<Wallet className="h-4 w-4" />} onClick={()=>{setConta(a);setFechar(true);setForma('dinheiro');}}>Fechar comanda</Button></div>
+        <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={()=>verConta(a)}>Ver / lançar pedidos</Button><Button size="sm" variant="secondary" icon={<Printer className="h-4 w-4" />} disabled={ocupado} onClick={()=>void prepararImpressao(a.id)}>Imprimir pré-conta</Button><Button size="sm" icon={<Wallet className="h-4 w-4" />} onClick={()=>{setConta(a);setFechar(true);setForma('dinheiro');}}>Fechar comanda</Button></div>
       </Card>)}</div>}
     <Modal open={espera} title="Aproxime o cartão do cliente" onClose={()=>{if(!ocupadoRef.current){webNfc.stop();versaoRef.current++;setEspera(false);}}}>
       <div className="space-y-4 py-4 text-center"><Nfc className="mx-auto h-12 w-12 text-brand-600" />
@@ -175,7 +168,7 @@ export function RecepcaoPage() {
           {!taxaValida && <p className="text-sm text-red-600">Informe uma porcentagem entre 0 e 100.</p>}
           <p className="text-xs text-slate-500">Este percentual vale somente para a conta deste cliente.</p></div>}
         <div className="space-y-1 text-sm"><p>Consumo: {fmtBRL(Number(conta.subtotal))}</p><p>Serviço ({taxaValida ? taxaPct : '—'}%): {taxaValida ? fmtBRL(totalConta(conta,taxaPct)-Number(Number(conta.subtotal).toFixed(2))) : '—'}</p><p className="text-lg font-bold">Total: {taxaValida ? fmtBRL(totalConta(conta,taxaPct)) : '—'}</p></div>
-        <Button variant="secondary" icon={<Printer className="h-4 w-4" />} disabled={ocupado || !taxaValida} onClick={()=>void prepararImpressao(conta.id,taxaPct)}>Imprimir conta</Button>
+        <Button variant="secondary" icon={<Printer className="h-4 w-4" />} disabled={ocupado || !taxaValida} onClick={()=>void prepararImpressao(conta.id,taxaPct)}>Imprimir pré-conta</Button>
         {fechar ? <><Field label="Forma de pagamento"><Select disabled={ocupado} value={forma} onChange={e=>setForma(e.target.value)}>{FORMAS_PAGAMENTO.map(f=><option key={f.valor} value={f.valor}>{f.label}</option>)}</Select></Field>
           <p className="text-sm text-slate-500">Confirme após receber o pagamento. A conta deste cliente será encerrada e o cartão ficará disponível para outro atendimento.</p>
           <Button loading={ocupado} disabled={!taxaValida} onClick={()=>void encerrar()}>{Number(conta.subtotal)===0 ? 'Encerrar atendimento' : 'Confirmar pagamento e liberar cartão'}</Button></> :
@@ -189,8 +182,8 @@ export function RecepcaoPage() {
       </div>}
     </Modal>
     <Modal open={!!impressao} title="Conta individual para impressão" onClose={()=>{if(!ocupadoRef.current)setImpressao(null);}}>
-      <div ref={impressaoRef} className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4"><pre className="whitespace-pre-wrap">{impressao}</pre></div>
-      <div className="mt-4 flex gap-2"><Button icon={<Printer className="h-4 w-4" />} loading={ocupado} onClick={()=>void imprimir()}>Imprimir</Button><Button variant="secondary" disabled={ocupado} onClick={()=>setImpressao(null)}>Voltar</Button></div>
+      <div className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4"><pre className="whitespace-pre-wrap">{impressao?.texto}</pre></div>
+      <div className="mt-4 flex gap-2"><Button icon={<Printer className="h-4 w-4" />} loading={ocupado} onClick={()=>impressao && void prepararImpressao(impressao.id,impressao.percentual)}>{impressao?.enviada ? (impressao.paga ? 'Reimprimir conta' : 'Reimprimir pré-conta') : 'Tentar imprimir novamente'}</Button><Button variant="secondary" disabled={ocupado} onClick={()=>setImpressao(null)}>Voltar</Button></div>
     </Modal>
   </AnimatedPage>;
 }

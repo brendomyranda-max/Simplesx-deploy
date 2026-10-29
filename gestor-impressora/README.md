@@ -22,7 +22,22 @@ O empacotamento gera `latest.yml`/`latest-linux.yml` e seus checksums para o fee
 `https://doixp.com/atualizacoes/`. O workflow publica esses arquivos junto dos
 instaladores; o site só deve apontar para a nova release depois de publicada.
 
-## Fonte por impressora (1.5.21)
+## Fonte em pixels, modelo e negrito (1.5.25)
+
+Selecione a impressora e abra **Configurar**. Informe o tamanho em pixels, de
+**6 a 96 px**, inclusive frações, escolha o modelo da fonte e marque **Negrito**
+quando desejar. A prévia mostra a aparência; salve antes de imprimir o teste.
+Configure também o DPI real e a largura imprimível indicados no autoteste.
+
+Os ajustes valem para pedidos, contas, etiquetas e testes, individualmente por
+impressora. O desenho preserva acentos e usa os comandos gráficos da emulação
+selecionada ou o driver do sistema. Em altura fixa, o texto continua na próxima
+etiqueta sem reduzir a fonte. Fontes não instaladas usam uma alternativa do sistema.
+As preferências antigas são preservadas até salvar os novos controles.
+
+Consulte [Contas de clientes e tipografia](../docs/CLIENTES_E_TIPOGRAFIA.md).
+
+## Histórico: fonte por impressora (1.5.21)
 
 Selecione a impressora e abra **Configurar → Tamanho da fonte**. Escolha
 **Pequena**, **Normal** ou **Grande** e salve. A preferência fica gravada para

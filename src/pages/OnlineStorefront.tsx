@@ -14,7 +14,9 @@ import {
 import { toDataURL } from 'qrcode';
 import { fmtBRL } from '@/lib/format';
 import { MOTOBOY_DOIXP_VISIVEL } from '@/lib/recursos-em-desenvolvimento';
-import { authApi, onlineApi, onlinePublicApi, produtoApi } from '@/lib/api';
+import { authApi, clienteApi, onlineApi, onlinePublicApi, produtoApi } from '@/lib/api';
+import { ContaCliente, ModalContaCliente } from '@/components/ContaCliente';
+import { pontoDoPerfil, useClienteMarketplace } from '@/lib/cliente-marketplace';
 import type { AreaEntrega, CategoriaCardapio, CategoriaLoja, ModoEntrega, OnlineCatalogProduct, OnlineStore, Produto } from '@/lib/types';
 import { fmtKm, gravarPontoCliente, limparPontoCliente, lerPontoCliente, previaEntrega, taxaDaSacola, textoCobrancaCliente, textoEntrega, type PontoCliente } from '@/lib/localizacao-cliente';
 import { Marketplace } from '@/pages/Marketplace';
@@ -22,6 +24,7 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { gravarUltimoPedido, lerUltimoPedido, SUPORTE_DOIXP_URL, whatsappDaLoja } from '@/lib/delivery-cliente';
 import { FotoGaleria } from '@/components/FotoGaleria';
 import { SeletorLocalizacao } from '@/components/SeletorLocalizacao';
+import { ModalidadesDelivery } from '@/components/ModalidadesDelivery';
 import { FuncionamentoDelivery } from '@/components/FuncionamentoDelivery';
 import { ConfiguracaoCardapioOnline } from '@/components/ModoCardapioOnline';
 import { descricaoComIngredientes } from '@/lib/descricao-composto';
@@ -121,6 +124,7 @@ export function OnlineStorefront() {
 }
 
 function LojaOnline() {
+  const { cliente } = useClienteMarketplace();
   const { slug: slugRota } = useParams();
   const [params] = useSearchParams();
   const configurarNaUrl = params.get('configurar') === '1';
@@ -142,6 +146,7 @@ function LojaOnline() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [localizacaoAberta, setLocalizacaoAberta] = useState(false);
   const [pontoCliente, setPontoCliente] = useState<PontoCliente | null>(lerPontoCliente);
+  useEffect(() => { setPontoCliente(lerPontoCliente() || pontoDoPerfil(cliente)); }, [cliente]);
   const pontoConsultadoRef = useRef<string | null>(null);
   const somenteConsulta = loja?.aceita_pedidos_online === 0;
   const lojaFechada = loja?.ativo === 0 || loja?.aberta_agora === 0;
@@ -468,7 +473,8 @@ function LojaOnline() {
           <span>{loja?.nome || 'DoixP Delivery'}</span>
         </Link>}
         {!somenteConsulta && <Link className="online-market-back" to="/pedido">Todas as lojas</Link>}
-        {!somenteConsulta && <button type="button" className="online-address" onClick={() => setLocalizacaoAberta(true)} aria-label="Alterar localização de entrega"><MapPin aria-hidden="true" /><span>Entregar em</span><b>{enderecoTopo || (loja?.aceita_entrega ? 'Informar no pedido' : 'Retirada no balcão')}</b><ChevronRight aria-hidden="true" /></button>}
+        {!somenteConsulta && <ContaCliente />}
+        {!somenteConsulta && loja?.aceita_entrega === 1 && <button type="button" className="online-address" onClick={() => setLocalizacaoAberta(true)} aria-label="Alterar localização de entrega"><MapPin aria-hidden="true" /><span>Entregar em</span><b>{enderecoTopo || (loja?.aceita_entrega ? 'Informar no pedido' : 'Retirada no balcão')}</b><ChevronRight aria-hidden="true" /></button>}
         {!somenteConsulta && aba === 'cardapio' && <button className="online-cart-trigger" type="button" onClick={() => setCartOpen(true)} aria-label={`Abrir sacola, ${cartCount} itens`}>
           <ShoppingBag aria-hidden="true" /><span>Sacola</span>{cartCount > 0 && <em>{cartCount}</em>}
         </button>}
@@ -550,7 +556,7 @@ function LojaOnline() {
           <div><BookOpen /><span><b>Cardápio online</b><small>Consulte produtos, fotos, descrições e preços.</small></span></div>
           <div><Store /><span><b>Atendimento no estabelecimento</b><small>Para fazer seu pedido, fale com a equipe da loja.</small></span></div>
         </section> : <section className="online-benefits">
-          <div><Bike /><span><b>Entrega</b><small>{loja?.aceita_entrega ? (loja.raio_entrega_km != null ? `Até ${fmtKm(loja.raio_entrega_km)} do estabelecimento.` : 'No endereço informado no pedido.') : 'Esta loja não está aceitando entrega.'}</small></span></div>
+          <div>{loja?.aceita_entrega ? <Bike /> : <Store />}<span><b>{loja?.aceita_entrega ? 'Entrega' : 'Somente retirada'}</b><small>{loja?.aceita_entrega ? (loja.raio_entrega_km != null ? `Até ${fmtKm(loja.raio_entrega_km)} do estabelecimento.` : 'No endereço informado no pedido.') : (loja?.endereco || 'Retire o pedido no balcão do estabelecimento.')}</small></span></div>
           <div><CreditCard /><span><b>Pagamento</b><small>Dinheiro ou maquininha na entrega ou retirada.</small></span></div>
           <div><Heart /><span><b>Cardápio real</b><small>Só entra o que foi cadastrado no estoque.</small></span></div>
         </section>}
@@ -1155,6 +1161,7 @@ function MotoboyDaPlataforma({ loja, onSaved }: { loja: OnlineStore; onSaved: (l
 }
 
 function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: OnlineStore) => void }) {
+  const [modalidades, setModalidades] = useState({ entrega: !!loja.aceita_entrega, retirada: !!loja.aceita_retirada });
   const [endereco, setEndereco] = useState(loja.endereco || '');
   const [raio, setRaio] = useState(loja.raio_entrega_km == null ? '' : String(loja.raio_entrega_km).replace('.', ','));
   const [valorKm, setValorKm] = useState(loja.valor_por_km == null ? '' : String(loja.valor_por_km).replace('.', ','));
@@ -1167,6 +1174,7 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
   const valorNumero = Number(valorKm.trim().replace(',', '.'));
 
   useEffect(() => {
+    setModalidades({ entrega: !!loja.aceita_entrega, retirada: !!loja.aceita_retirada });
     setEndereco(loja.endereco || '');
     setRaio(loja.raio_entrega_km == null ? '' : String(loja.raio_entrega_km).replace('.', ','));
     setValorKm(loja.valor_por_km == null ? '' : String(loja.valor_por_km).replace('.', ','));
@@ -1174,18 +1182,19 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
     setLatitude(loja.latitude ?? null);
     setLongitude(loja.longitude ?? null);
     setPontoLoja(loja.latitude != null && loja.longitude != null ? { latitude: loja.latitude, longitude: loja.longitude, endereco: loja.endereco || '', origem: 'endereco' } : null);
-  }, [loja.endereco, loja.raio_entrega_km, loja.latitude, loja.longitude, loja.valor_por_km, loja.modo_entrega]);
+  }, [loja.endereco, loja.raio_entrega_km, loja.latitude, loja.longitude, loja.valor_por_km, loja.modo_entrega, loja.aceita_entrega, loja.aceita_retirada]);
 
   const salvar = async () => {
+    if (!modalidades.entrega && !modalidades.retirada) { setErro('Selecione como o cliente recebe o pedido.'); return; }
     const texto = raio.trim();
     const numero = texto ? Number(texto.replace(',', '.')) : null;
     const valorTexto = valorKm.trim();
     const valor = valorTexto ? Number(valorTexto.replace(',', '.')) : null;
-    if (numero != null && (!Number.isFinite(numero) || numero < 0.1 || numero > 100)) {
+    if (modalidades.entrega && numero != null && (!Number.isFinite(numero) || numero < 0.1 || numero > 100)) {
       setErro('O limite fica entre 0,1 e 100 km.');
       return;
     }
-    if (valorTexto && (valor == null || !Number.isFinite(valor) || valor < 0 || valor > 1000)) {
+    if (modalidades.entrega && valorTexto && (valor == null || !Number.isFinite(valor) || valor < 0 || valor > 1000)) {
       setErro('O valor por km fica entre 0 e 1000.');
       return;
     }
@@ -1200,10 +1209,9 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
         endereco,
         latitude,
         longitude,
-        raio_entrega_km: numero,
-        valor_por_km: valor,
-        modo_entrega: modo,
-        taxa_entrega: valorTexto ? 0 : loja.taxa_entrega,
+        aceita_entrega: modalidades.entrega ? 1 : 0,
+        aceita_retirada: modalidades.retirada ? 1 : 0,
+        ...(modalidades.entrega ? { raio_entrega_km: numero, valor_por_km: valor, modo_entrega: modo, taxa_entrega: valorTexto ? 0 : loja.taxa_entrega } : {}),
       }));
     } catch (error: any) {
       setErro(error?.error || 'Não foi possível salvar a área');
@@ -1214,9 +1222,9 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
 
   return (
     <section className="online-category-box online-where">
-      <p className="online-eyebrow">ÁREA DE ENTREGA</p>
-      <h3>Até onde esta loja entrega</h3>
-      <p>O cliente só vê a loja na região quando a distância cabe neste limite. Pode ser 3,5 km, 10 km ou outro valor.</p>
+      <p className="online-eyebrow">ENTREGA E RETIRADA</p>
+      <h3>Como o cliente recebe o pedido</h3>
+      <ModalidadesDelivery {...modalidades} onChange={setModalidades} disabled={ocupado} />
       <SeletorLocalizacao
         label="Localização da loja"
         endereco={endereco}
@@ -1225,6 +1233,8 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
         onChange={(ponto) => { setPontoLoja(ponto); setLatitude(ponto?.latitude ?? null); setLongitude(ponto?.longitude ?? null); setErro(''); }}
         disabled={ocupado}
       />
+      {modalidades.entrega && <>
+      <p>Defina até onde esta loja entrega.</p>
       <div className="online-category-suggestions">
         {[3.5, 5, 10].map((km) => <button key={km} type="button" onClick={() => setRaio(String(km).replace('.', ','))}>{km.toLocaleString('pt-BR')} km</button>)}
       </div>
@@ -1242,8 +1252,9 @@ function AreaDaLoja({ loja, onSaved }: { loja: OnlineStore; onSaved: (loja: Onli
       <p className="online-where-note">Exemplo: 7 km × R$ 2,00 = R$ 14,00. Dividido, o cliente paga R$ 7,00. Um produto de R$ 50,00 fica R$ 57,00.</p>
       {valorKm.trim() && Number.isFinite(valorNumero) && <p className="online-where-note">{previaEntrega(valorNumero, modo)}</p>}
       {!valorKm.trim() && loja.taxa_entrega > 0 && <p className="online-where-note">Taxa fixa atual {fmtBRL(loja.taxa_entrega)}. Informe o valor por km para cobrar pela distância.</p>}
+      </>}
       <div className="online-where-actions">
-        <button type="button" onClick={salvar} disabled={ocupado}>{ocupado ? 'Salvando…' : 'Salvar área'}</button>
+        <button type="button" onClick={salvar} disabled={ocupado}>{ocupado ? 'Salvando…' : 'Salvar entrega e retirada'}</button>
       </div>
       {erro && <p className="online-erro">{erro}</p>}
     </section>
@@ -1264,7 +1275,12 @@ function LocalizacaoClienteModal({ ponto, onClose, onSaved }: { ponto: PontoClie
 }
 
 function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineStore; totalBase: number; onClose: () => void; onSubmit: (dados: DadosCheckout) => Promise<void> }) {
+  const { cliente, carregando: carregandoCliente, definir } = useClienteMarketplace();
+  const [contaAberta, setContaAberta] = useState(false);
+  const [salvarDados, setSalvarDados] = useState(true);
+  const dadosEditados = useRef(false);
   const [guardado] = useState(lerPontoCliente);
+  const mesmoEnderecoSalvo = !guardado || guardado.endereco === cliente?.endereco;
   const entregaPadrao = loja.aceita_entrega ? 'entrega' : 'retirada';
   const [delivery, setDelivery] = useState<'entrega' | 'retirada'>(entregaPadrao);
   const [platformSelected, setPlatform] = useState(false);
@@ -1273,12 +1289,12 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
   const [cpfUltimos4, setCpfUltimos4] = useState('');
   const [valorEmDinheiro, setValorEmDinheiro] = useState('');
   const [avisoPagamento, setAvisoPagamento] = useState('');
-  const [nome, setNome] = useState('');
-  const [telefone, setTelefone] = useState('');
+  const [nome, setNome] = useState(cliente?.nome || '');
+  const [telefone, setTelefone] = useState(cliente?.telefone || '');
   const [endereco, setEndereco] = useState(guardado?.endereco || '');
   const [ponto, setPonto] = useState<PontoCliente | null>(guardado);
-  const [numero, setNumero] = useState('');
-  const [complemento, setComplemento] = useState('');
+  const [numero, setNumero] = useState(mesmoEnderecoSalvo ? cliente?.numero || '' : '');
+  const [complemento, setComplemento] = useState(mesmoEnderecoSalvo ? cliente?.complemento || '' : '');
   const [cotacao, setCotacao] = useState<{ chave: string; dados: AreaEntrega } | null>(null);
   const chaveCotacao = ponto ? `${ponto.latitude},${ponto.longitude},${platform}` : '';
   const area = cotacao?.chave === chaveCotacao ? cotacao.dados : null;
@@ -1286,6 +1302,14 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
   const [tentativaCotacao, setTentativaCotacao] = useState(0);
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
+  useEffect(() => {
+    if (!cliente || dadosEditados.current) return;
+    setNome(cliente.nome); setTelefone(cliente.telefone);
+    const salvo = lerPontoCliente() || pontoDoPerfil(cliente);
+    setEndereco(salvo?.endereco || cliente.endereco); setPonto(salvo);
+    const mesmoEndereco = !salvo || salvo.endereco === cliente.endereco;
+    setNumero(mesmoEndereco ? cliente.numero : ''); setComplemento(mesmoEndereco ? cliente.complemento : '');
+  }, [cliente]);
   const aguardando = delivery === 'entrega' && (!ponto || medindo || !area || (platform ? area.plataforma?.customerCents == null : loja.valor_por_km != null && area.taxa_cliente == null));
   const taxa = delivery !== 'entrega' ? 0
     : platform ? (area?.plataforma?.customerCents || 0) / 100
@@ -1323,7 +1347,7 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
 
   return (
     <div className="online-overlay" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
-      <form className="online-checkout" onSubmit={async (event) => {
+      <form className="online-checkout" onChange={() => { dadosEditados.current = true; }} onSubmit={async (event) => {
         event.preventDefault();
         if (delivery === 'entrega' && aguardando) {
           setErro('Escolha a localização de entrega e aguarde o cálculo do frete.');
@@ -1345,6 +1369,13 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         setErro('');
         try {
           const enderecoCompleto = delivery === 'entrega' ? `${endereco.trim()}, número ${numero.trim()}${complemento.trim() ? `, ${complemento.trim()}` : ''}` : '';
+          if (cliente && salvarDados) {
+            const salvo = await clienteApi.atualizar({ nome, endereco: delivery === 'entrega' ? endereco : cliente.endereco,
+              numero: delivery === 'entrega' ? numero : cliente.numero, complemento: delivery === 'entrega' ? complemento : cliente.complemento,
+              latitude: delivery === 'entrega' ? ponto?.latitude ?? null : cliente.latitude,
+              longitude: delivery === 'entrega' ? ponto?.longitude ?? null : cliente.longitude });
+            definir(salvo);
+          }
           await onSubmit({ nome, telefone, entrega: delivery, endereco: enderecoCompleto, ponto: delivery === 'entrega' ? ponto : null, pagamento: payment, valorEmDinheiro: payment === 'dinheiro' ? valorInformado : null, plataforma: platform, cpfUltimos4, freteClienteCentavos: platform ? area?.plataforma?.customerCents : undefined });
         } catch (error: any) {
           setErro(error?.error || error?.message || 'Não foi possível enviar o pedido');
@@ -1355,15 +1386,18 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         <button className="online-close" type="button" onClick={onClose} aria-label="Voltar"><ArrowLeft /></button>
         <p className="online-eyebrow">QUASE LÁ</p>
         <h2 id="checkout-title">Finalizar pedido</h2>
+        {!cliente && <button className="online-account-switch" type="button" disabled={carregandoCliente || enviando} onClick={() => { dadosEditados.current = false; setContaAberta(true); }}>Entrar ou criar conta para usar meus dados salvos</button>}
         <p className="online-config-note">Informe seus dados para acompanhar o pedido.{MOTOBOY_DOIXP_VISIVEL && ' Na entrega pela plataforma, os quatro últimos números do CPF confirmam o recebimento.'}</p>
-        <label>Seu nome<input required value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Como podemos te chamar?" /></label>
-        <label>WhatsApp<input required inputMode="tel" value={telefone} onChange={(event) => setTelefone(event.target.value)} placeholder="(00) 00000-0000" /></label>
+        <label>Seu nome<input required autoComplete="name" maxLength={120} value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Como podemos te chamar?" /></label>
+        <label>WhatsApp<input required type="tel" autoComplete="tel-national" maxLength={30} value={telefone} onChange={(event) => setTelefone(event.target.value)} placeholder="(00) 00000-0000" /></label>
+        {cliente && <label className="online-save-profile"><input type="checkbox" checked={salvarDados} onChange={(event) => setSalvarDados(event.target.checked)} />Salvar nome e endereço na minha conta para os próximos pedidos</label>}
         <fieldset className="online-delivery-choice">
           <legend>Como você quer receber?</legend>
           {loja.aceita_entrega ? <label className={delivery === 'entrega' && !platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && !platform} onChange={() => { setDelivery('entrega'); setPlatform(false); }} /><Bike /><span><b>Entrega do estabelecimento</b><small>{loja.tempo_min_entrega ? `A partir de ${loja.tempo_min_entrega} min` : 'Entrega'}</small></span><Check /></label> : null}
           {MOTOBOY_DOIXP_VISIVEL && loja.aceita_entrega && loja.entrega_plataforma_disponivel === 1 ? <label className={delivery === 'entrega' && platform ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'entrega' && platform} onChange={() => { setDelivery('entrega'); setPlatform(true); setPayment('pix'); }} /><Bike /><span><b>Motoboy da DoixP</b><small>Pix antes de chamar o entregador · loja assume R$ 10 da base</small></span><Check /></label> : null}
           {loja.aceita_retirada ? <label className={delivery === 'retirada' ? 'selected' : ''}><input type="radio" name="delivery" checked={delivery === 'retirada'} onChange={() => { setDelivery('retirada'); setPlatform(false); }} /><Store /><span><b>Retirar no balcão</b><small>Sem taxa de entrega</small></span><Check /></label> : null}
         </fieldset>
+        {delivery === 'retirada' && loja.endereco && <p className="online-config-note"><b>Endereço para retirada:</b> {loja.endereco}</p>}
         {delivery === 'entrega' && (
           <div className="online-checkout-endereco">
             <SeletorLocalizacao label="Endereço de entrega" required endereco={endereco} onEnderecoChange={setEndereco} value={ponto}
@@ -1396,6 +1430,7 @@ function CheckoutModal({ loja, totalBase, onClose, onSubmit }: { loja: OnlineSto
         {erro && <p className="online-erro">{erro}</p>}
         <button className="online-place-order" type="submit" disabled={enviando || fora || aguardando || dinheiroInsuficiente}>{enviando ? 'Enviando…' : fora ? 'Fora da área de entrega' : aguardando ? 'Informe o endereço' : 'Fazer pedido'} <b>{fmtBRL(totalPedido)}</b></button>
       </form>
+      {contaAberta && <ModalContaCliente onClose={() => setContaAberta(false)} />}
     </div>
   );
 }

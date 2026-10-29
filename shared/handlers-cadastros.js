@@ -401,6 +401,27 @@ function textoCompativelComEscPos(value) {
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
 }
 
+async function enfileirarConta(c, env, conteudo) {
+  const destinos = await env.DB.prepare(
+    `SELECT nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
+     FROM impressora_agentes WHERE ativo=1 AND imprime_conta=1 ORDER BY id`
+  ).all();
+  const jobs = [];
+  for (const destino of destinos.results) {
+    try {
+      const job = await enqueueGestorJob(env, c.user, {
+        conteudo, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
+        servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id, impressoraDestino: destino.impressora_destino,
+        taskType: 'PRINT_RECEIPT',
+      });
+      jobs.push({ impressora: destino.nome, ...job });
+    } catch (error) {
+      jobs.push({ impressora: destino.nome, ok: false, error: error.message || 'Falha ao enviar a conta' });
+    }
+  }
+  return jobs;
+}
+
 export async function imprimirComandaHandler(c, env) {
   const b = await c.req.json();
   if (b.tipo !== 'conta') return c.json(await dispatchOrders(c, env, b));
@@ -450,19 +471,7 @@ export async function imprimirComandaHandler(c, env) {
     ]
       .filter((l) => l !== '')
       .join('\n');
-    const destinos = await env.DB.prepare(
-      `SELECT nome, largura_mm, servidor_tipo, servidor_id, impressora_destino
-       FROM impressora_agentes WHERE ativo=1 AND imprime_conta=1 ORDER BY id`
-    ).all();
-    const jobs = [];
-    for (const destino of destinos.results) {
-      const job = await enqueueGestorJob(env, c.user, {
-        conteudo: txt, impressora: destino.nome, larguraMm: num(destino.largura_mm) || 80,
-        servidorTipo: destino.servidor_tipo, servidorId: destino.servidor_id, impressoraDestino: destino.impressora_destino,
-        taskType: 'PRINT_RECEIPT',
-      });
-      jobs.push({ impressora: destino.nome, ...job });
-    }
+    const jobs = await enfileirarConta(c, env, txt);
     return c.json({ impressao: txt, itens: itens.results.length, setor, tipo, agente: b.agente || null, jobs });
   }
 
@@ -531,7 +540,8 @@ export async function imprimirPessoaComandaHandler(c, env) {
     .filter((l) => l !== '')
     .join('\n');
 
-  return c.json({ impressao: txt, pessoa, total: valor, subtotal: sub, taxa_garcom_pct: taxa });
+  const jobs = await enfileirarConta(c, env, txt);
+  return c.json({ impressao: txt, pessoa, total: valor, subtotal: sub, taxa_garcom_pct: taxa, jobs });
 }
 
 export async function imprimirEtiquetaHandler(c, env) {

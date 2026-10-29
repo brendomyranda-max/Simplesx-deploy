@@ -15,6 +15,7 @@ enum class PrinterProtocol {
     val isReceipt: Boolean get() = this in setOf(ESC_POS, DIEBOLD, ESC_BEMA, STAR_LINE)
 }
 enum class PrinterFontSize(val scale: Double) { SMALL(0.75), NORMAL(1.0), LARGE(2.0) }
+val PRINTER_FONT_FAMILIES = listOf("monospace", "sans-serif", "serif", "Arial", "Verdana", "Courier New", "Consolas")
 enum class CutMode { FULL, PARTIAL, FEED_FULL, FEED_PARTIAL, NONE }
 enum class TsplPaperMode { CONTINUOUS, GAP, BLACK_MARK }
 
@@ -31,6 +32,10 @@ data class PrinterConfig(
     val widthMm: Int = 80,
     val dpi: Int = 203,
     val fontSize: PrinterFontSize = PrinterFontSize.NORMAL,
+    val fontSizePx: Double? = null,
+    val fontFamily: String = "monospace",
+    val fontBold: Boolean = false,
+    val printableWidthMm: Int? = null,
     val columnsNormal: Int? = null,
     val cutMode: CutMode = CutMode.FULL,
     val feedLines: Int = 3,
@@ -126,6 +131,10 @@ class AppConfig(context: Context) {
         widthMm = json.optInt("widthMm", 80),
         dpi = json.optInt("dpi", 203).coerceIn(100, 1200),
         fontSize = runCatching { PrinterFontSize.valueOf(json.optString("fontSize", "NORMAL")) }.getOrDefault(PrinterFontSize.NORMAL),
+        fontSizePx = json.optDouble("fontSizePx").takeIf { it.isFinite() && it in 6.0..96.0 },
+        fontFamily = json.optString("fontFamily", "monospace").takeIf { it in PRINTER_FONT_FAMILIES } ?: "monospace",
+        fontBold = json.optBoolean("fontBold", false),
+        printableWidthMm = json.optInt("printableWidthMm").takeIf { it in 10..320 },
         columnsNormal = json.optInt("columnsNormal", 0).takeIf { it in 8..160 },
         cutMode = runCatching { CutMode.valueOf(json.optString("cutMode", "FULL")) }.getOrDefault(CutMode.FULL),
         feedLines = json.optInt("feedLines", 3).coerceIn(0, 255),
@@ -144,6 +153,8 @@ class AppConfig(context: Context) {
         .put("bluetoothAddress", value.bluetoothAddress).put("bluetoothName", value.bluetoothName)
         .put("usbDeviceName", value.usbDeviceName).put("usbVendorId", value.usbVendorId).put("usbProductId", value.usbProductId)
         .put("widthMm", value.widthMm).put("dpi", value.dpi).put("fontSize", value.fontSize.name).put("protocol", value.protocol.name)
+        .put("fontSizePx", value.fontSizePx ?: JSONObject.NULL).put("fontFamily", value.fontFamily).put("fontBold", value.fontBold)
+        .put("printableWidthMm", value.printableWidthMm ?: JSONObject.NULL)
         .put("cutMode", value.cutMode.name).put("feedLines", value.feedLines)
         .put("columnsNormal", value.columnsNormal ?: JSONObject.NULL)
         .put("tsplPaperMode", value.tsplPaperMode.name).put("fixedHeight", value.fixedHeight).put("labelHeightMm", value.labelHeightMm).put("gapMm", value.gapMm)

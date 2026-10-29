@@ -340,3 +340,23 @@
 .online-product-unavailable .online-product-image { filter: grayscale(1); opacity: .65; }
 .online-unavailable-label { display: inline-block; margin-top: .3rem; padding: .2rem .5rem; border-radius: .4rem; background: #f1f5f9; color: #475569; font-size: .75rem; font-weight: 700; }
 .online-product-bottom button:disabled, .online-checkout-button:disabled { opacity: .45; cursor: not-allowed; }
+.online-account-trigger { display:inline-flex; align-items:center; gap:7px; background:white; border:1px solid #e2e8f0; border-radius:10px; padding:9px 12px; color:#334155; font-weight:600; cursor:pointer; }
+.online-account-trigger svg { width:18px; height:18px; flex-shrink:0; }
+.online-account-trigger:disabled { opacity:.6; }
+.online-account-overlay { z-index:150; }
+.online-account { width:min(100%,520px); }
+.online-account form { display:grid; gap:14px; }
+.online-account form > label { display:grid; gap:6px; color:#526059; font-size:12px; font-weight:700; }
+.online-account form > label input { width:100%; min-height:42px; border:1px solid #dfe2dc; border-radius:9px; padding:0 11px; color:#171717; font-size:14px; font-weight:400; }
+.online-account form > label small { font-size:12px; font-weight:400; }
+.online-account h3 { margin:22px 0 10px; }
+.online-account-switch { background:transparent; border:0; padding:12px 0; color:#b42332; text-align:left; text-decoration:underline; cursor:pointer; }
+.online-account-orders { display:grid; gap:10px; }
+.online-account-orders a { display:grid; gap:4px; padding:12px; border:1px solid #e2e8f0; border-radius:10px; color:#334155; text-decoration:none; }
+.online-account-orders span { font-size:13px; }
+.online-checkout .online-save-profile { display:flex; flex-direction:row; align-items:center; gap:9px; font-size:13px; }
+.online-checkout .online-save-profile input { width:18px; height:18px; min-height:18px; flex-shrink:0; }
+.online-topbar .online-account-trigger { flex-shrink:0; max-width:160px; }
+.online-topbar .online-account-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.online-topbar .online-brand { min-width:0; }
+.online-topbar .online-brand > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

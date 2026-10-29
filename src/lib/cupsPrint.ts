@@ -8,7 +8,7 @@ import { gestorApi } from './api'
 
 /**
  * Ponte com o "Gestor de Impressoras CUPS" (servidor HTTP local).
- * Se ele não estiver rodando, o app usa window.print() como fallback.
+ * Usada para consultar as impressoras instaladas neste computador.
  */
 export const CUPS_SERVER = 'http://127.0.0.1:8410'
 
@@ -68,8 +68,7 @@ function textoDoElemento(el: HTMLElement): string {
 /**
  * Envia a impressão pela fila do deploy (gestor local conectado via internet).
  * O app gera o conteúdo e o servidor entrega ao gestor, que imprime via CUPS.
- * Retorna false se não houver gestor configurado / falhar (quem chama cai
- * para a impressão local).
+ * Retorna false se não houver gestor configurado ou o envio falhar.
  */
 export async function enviarViaDeploy(
   el: HTMLElement | null | undefined,

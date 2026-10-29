@@ -9,6 +9,7 @@ test('salvar fonte persiste por impressora e preserva token, papel e demais fila
   let saved
   const handlers = {}
   const context = {
+    require: (file) => require(path.join(__dirname, '../src', file)),
     config: { token: 'token-de-teste', fontesImpressoras: { Bar: 'small' }, largurasImpressoras: { Bar: 80 }, alturasImpressoras: {}, dpisImpressoras: {}, protocolosImpressoras: {} },
     DEPLOY_PADRAO: 'https://doixp.com', PREFIXO_PADRAO: 'NFC:', ultimoErro: '', URL, path,
     os: { hostname: () => 'servidor' }, app: { setLoginItemSettings() {} },
@@ -38,4 +39,11 @@ test('salvar fonte persiste por impressora e preserva token, papel e demais fila
   }
   await handlers['salvar-impressora']({}, { ...body, colunasNormal: null })
   assert.equal(saved.colunasImpressoras.Caixa, undefined)
+  await handlers['salvar-impressora']({}, { ...body, tipografia: { sizePx: 15.5, family: 'Arial', bold: true, printableWidthMm: 48 } })
+  assert.deepEqual(saved.tipografiasImpressoras.Caixa, { sizePx: 15.5, family: 'Arial', bold: true, printableWidthMm: 48 })
+  assert.equal(saved.fontesImpressoras.Bar, 'small')
+  assert.equal(saved.token, 'token-de-teste')
+  await assert.rejects(handlers['salvar-impressora']({}, { ...body, tipografia: { sizePx: 100 } }), /6 e 96 px/)
+  await assert.rejects(handlers['salvar-impressora']({}, { ...body, tipografia: { printableWidthMm: 70 } }), /largura do papel/)
+  assert.equal(saved.tipografiasImpressoras.Caixa.sizePx, 15.5)
 })

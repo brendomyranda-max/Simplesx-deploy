@@ -112,8 +112,11 @@ async function sendRequest<T>(method: string, path: string, body?: unknown): Pro
       /* ignore */
     }
     const err: ApiError = { error: msg, status: res.status };
-    if (res.status === 401) {
+    if (res.status === 401 && !path.startsWith('/public/')) {
       window.dispatchEvent(new CustomEvent('simplexsa:logout'));
+    }
+    if (res.status === 401 && path.startsWith('/public/clientes/') && !path.endsWith('/login')) {
+      window.dispatchEvent(new CustomEvent('doixp:cliente-expirado'));
     }
     throw err;
   }
@@ -143,6 +146,30 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {}),
   del: <T>(path: string) => request<T>('DELETE', path),
+};
+
+export interface ClienteMarketplace {
+  id: number;
+  nome: string;
+  telefone: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+export type PerfilCliente = Omit<ClienteMarketplace, 'id' | 'telefone'>;
+export interface PedidoCliente {
+  id: number; chave: string; status: string; etapa: string; total: number;
+  criado_em: string; loja_nome: string; loja_slug: string;
+}
+export const clienteApi = {
+  me: () => api.get<ClienteMarketplace>('/public/clientes/me'),
+  login: (telefone: string, senha: string) => api.post<ClienteMarketplace>('/public/clientes/login', { telefone, senha }),
+  cadastro: (body: PerfilCliente & { telefone: string; senha: string }) => api.post<ClienteMarketplace>('/public/clientes/cadastro', body),
+  atualizar: (body: PerfilCliente) => api.put<ClienteMarketplace>('/public/clientes/me', body),
+  logout: () => api.post<{ ok: boolean }>('/public/clientes/logout'),
+  pedidos: () => api.get<PedidoCliente[]>('/public/clientes/pedidos'),
 };
 
 export interface SignupPolicy {
@@ -324,7 +351,7 @@ export const cartaoApi = {
   consultar: (b: { uid: string; payload?: string }) => api.post<{ cartao: string; atendimento: CartaoAtendimento | null }>('/cartoes/consultar', b),
   cadastrar: (b: { uid: string; payload?: string; cliente_nome: string; mesa_id: number; chave: string; garcom_nome?: string }) => api.post<CartaoAtendimento>('/cartoes/cadastrar', b),
   fechar: (id: string, b: { forma: string; total: number; taxa_garcom_pct?: number }) => api.post<{ ok: boolean; total: number; subtotal?: number; taxa_garcom_pct?: number; venda_id: number | null; sem_consumo?: boolean; repetido?: boolean }>(`/cartoes/${id}/fechar`, b),
-  conta: (id: string, b: { taxa_garcom_pct?: number } = {}) => api.post<{ impressao: string; total: number; subtotal: number; taxa_garcom_pct: number }>(`/cartoes/${id}/conta`, b),
+  conta: (id: string, b: { taxa_garcom_pct?: number } = {}) => api.post<{ impressao: string; total: number; subtotal: number; taxa_garcom_pct: number; jobs: import('./print-result').PrintJobResult[] }>(`/cartoes/${id}/conta`, b),
   usar: (b: {
     acao: 'abrir' | 'lancar' | 'fechar';
     uid: string;
@@ -585,7 +612,7 @@ export const impressoraApi = {
   imprimirComanda: (comanda_id: number, b?: { setor?: string; agente?: string; tipo?: 'cozinha' | 'conta'; itens_ids?: number[] }) =>
     api.post<{ impressao: string; itens: number; setor: string; tipo?: string; jobs?: any[]; sem_rota?: string[]; falhas?: { impressora: string; erro: string }[] }>(`/impressao/comanda?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, ...b }),
   imprimirPessoa: (comanda_id: number, pessoa_id: number) =>
-    api.post<{ impressao: string; pessoa: ComandaPessoa; total: number }>(`/impressao/pessoa?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, pessoa_id }),
+    api.post<{ impressao: string; pessoa: ComandaPessoa; total: number; jobs: import('./print-result').PrintJobResult[] }>(`/impressao/pessoa?empresa=${encodeURIComponent(localStorage.getItem('simplesx_empresa') || '')}`, { comanda_id, pessoa_id }),
   imprimirEtiqueta: (id: number) => api.post<{ impressao: string; etiqueta: any; jobs: any[] }>(`/impressao/etiqueta/${id}`),
 };
 

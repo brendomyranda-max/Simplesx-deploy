@@ -3,7 +3,7 @@ import test from 'node:test';
 import SqliteDb from '../server/sqlite-db.js';
 import { TenantDb } from '../shared/tenant-db.js';
 import { dispatchOrders } from '../shared/order-printing.js';
-import { imprimirComandaHandler, imprimirEtiquetaHandler, imprimirVendaHandler } from '../shared/handlers-cadastros.js';
+import { imprimirComandaHandler, imprimirPessoaComandaHandler, imprimirEtiquetaHandler, imprimirVendaHandler } from '../shared/handlers-cadastros.js';
 import { enviarImpressaoHandler } from '../shared/handlers-gestor.js';
 import { selectPrinter } from '../gestor-impressora/src/printer-discovery.cjs';
 
@@ -30,6 +30,8 @@ function fixture(t, platform = 'desktop', destination = null) {
   db.prepare(`INSERT INTO validade_controles (id,estabelecimento_id,produto_id,tipo,data_vencimento)
     VALUES (1,1,1,'aberto','2099-01-01')`).run();
   db.prepare("INSERT INTO vendas (id,estabelecimento_id,numero,tipo,criado_em) VALUES (1,1,'1','pdv','2026-10-07')").run();
+  db.prepare("INSERT INTO comanda_pessoas (id,estabelecimento_id,comanda_id,nome) VALUES (1,1,1,'Ana')").run();
+  db.prepare('UPDATE comanda_itens SET pessoa_id=1 WHERE id=1').run();
   const env = { DB: new TenantDb(db, 1), rawDB: db, estabelecimentoId: 1 };
   const context = (body = {}) => ({
     params: { id: '1' }, user: { id: 1 }, req: { json: async () => body, query: () => '' },
@@ -41,6 +43,7 @@ function fixture(t, platform = 'desktop', destination = null) {
 const documents = {
   pedido: (f) => dispatchOrders(f.context(), f.env, { comanda_id: 1 }),
   conta: (f) => imprimirComandaHandler(f.context({ comanda_id: 1, tipo: 'conta' }), f.env),
+  individual: (f) => imprimirPessoaComandaHandler(f.context({ comanda_id: 1, pessoa_id: 1 }), f.env),
   etiqueta: (f) => imprimirEtiquetaHandler(f.context(), f.env),
   venda: (f) => imprimirVendaHandler(f.context(), f.env),
 };
@@ -122,3 +125,20 @@ test('delivery sem impressora vinculada não imprime nem marca o item como envia
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM gestor_jobs').first().n, 0);
   assert.equal(f.db.prepare('SELECT status FROM comanda_itens WHERE id=1').first().status, 'novo');
 });
+
+for (const platform of ['desktop', 'android']) {
+  test(`reimpressão individual via ${platform} gera nova via só com o consumo da pessoa`, async t => {
+    const f = fixture(t, platform, 'Termica USB');
+    f.db.prepare("INSERT INTO comanda_pessoas (id,estabelecimento_id,comanda_id,nome) VALUES (2,1,1,'Bruno')").run();
+    f.db.prepare("INSERT INTO comanda_itens (estabelecimento_id,comanda_id,pessoa_id,produto_id,nome,quantidade,preco_unitario) VALUES (1,1,2,1,'Pedido do Bruno',3,20)").run();
+    const first = await documents.individual(f);
+    const second = await documents.individual(f);
+    assert.ok(first.data.jobs[0].ok); assert.ok(second.data.jobs[0].ok);
+    assert.equal(first.data.total,20); assert.match(first.data.impressao,/PESSOA: Ana/);
+    assert.doesNotMatch(first.data.impressao,/Bruno/);
+    const jobs = f.db.prepare(platform === 'desktop' ? 'SELECT * FROM gestor_jobs' : 'SELECT * FROM device_tasks').all().results;
+    assert.equal(jobs.length,2);
+    assert.ok(jobs.every(j=>(j.tipo || j.type)==='PRINT_RECEIPT'));
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM vendas').first().n,1,'não cria outra venda');
+  });
+}

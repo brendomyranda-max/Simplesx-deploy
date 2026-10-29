@@ -22,3 +22,7 @@ export function lerUltimoPedido() {
     return ROTA_ACOMPANHAMENTO.test(caminho) ? caminho : null;
   } catch { return null; }
 }
+
+export function limparUltimoPedido() {
+  try { window.localStorage.removeItem(ULTIMO_PEDIDO_KEY); } catch { /* Armazenamento indisponível. */ }
+}

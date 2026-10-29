@@ -80,12 +80,17 @@
       <label>Resolução da cabeça (DPI)<input id="dpi" type="number" min="100" max="1200" step="1" list="dpiComuns"><datalist id="dpiComuns"><option value="203"><option value="300"><option value="600"></datalist></label>
       <label>Largura da bobina<select id="larguraPreset"><option value="58">58 mm</option><option value="76">76 mm</option><option value="80">80 mm</option><option value="100">100 mm</option><option value="102">102 mm</option><option value="custom">Personalizado</option></select></label>
       <label id="larguraCustomLabel">Largura personalizada (mm)<input id="larguraCustom" type="number" min="20" max="320" step="0.1"></label>
-      <label>Tamanho da fonte<select id="tamanhoFonte"><option value="small">Pequena</option><option value="normal">Normal</option><option value="large">Grande</option></select></label>
-      <small>A fonte é salva para esta impressora e usada em pedidos, contas, etiquetas e testes. Fontes maiores usam mais linhas.</small>
-      <label id="colunasLabel">Caracteres por linha na fonte Normal (opcional)<input id="colunasNormal" type="number" min="8" max="160" step="1" placeholder="Vazio = automático"></label>
-      <small id="colunasAjuda">Ajuste ao limite informado no autoteste, por exemplo 32, 42 ou 48. Reduza se o texto passar da borda. Na fonte Grande, o limite cai pela metade.</small>
+      <label>Tamanho da fonte (px)<input id="tamanhoFontePx" type="number" min="6" max="96" step="0.5" required></label>
+      <label>Modelo da fonte<select id="modeloFonte"><option value="monospace">Monoespaçada (cupons alinhados)</option><option value="sans-serif">Sem serifa</option><option value="serif">Com serifa</option><option>Arial</option><option>Verdana</option><option>Courier New</option><option>Consolas</option></select></label>
+      <label class="check"><input id="fonteNegrito" type="checkbox">Negrito</label>
+      <small>Ajustes salvos por impressora para pedidos, contas, etiquetas e testes. Fontes com nome usam a alternativa do sistema quando não estão instaladas.</small>
+      <label>Largura imprimível (mm, opcional)<input id="larguraImprimivel" type="number" min="10" max="320" step="0.1" placeholder="Automática: 48 mm em bobina 58; 72 mm em 80"></label>
+      <small>Use a largura imprimível do autoteste se o texto estiver cortando na borda. Informe também o DPI real da impressora.</small>
+      <div id="previaFonte" style="overflow-wrap:anywhere;background:#fff;border:1px solid #ddd;padding:12px;white-space:pre-wrap" aria-label="Prévia da fonte">Pedido #123 · Açaí e pão
+2 × Produto de exemplo
+Total R$ 35,90</div>
       <label>Altura da etiqueta (opcional)<input id="altura" type="number" min="10" max="500" step="0.1" placeholder="Vazio = automática"></label>
-      <small id="alturaAjuda">Deixe a altura vazia para o comprimento acompanhar o conteúdo. Com altura fixa, a fonte só diminui quando o texto não couber.</small>
+      <small id="alturaAjuda">Deixe a altura vazia para acompanhar o conteúdo. Com altura fixa, textos longos continuam na próxima etiqueta, mantendo o tamanho da fonte.</small>
       <div id="acabamentoCupom">
         <label>Guilhotina<select id="cutMode"><option value="FULL">Corte total</option><option value="PARTIAL">Corte parcial</option><option value="FEED_FULL">Avançar e cortar total</option><option value="FEED_PARTIAL">Avançar e cortar parcial</option><option value="NONE">Sem guilhotina</option></select></label>
         <label>Avanço mínimo após o texto (linhas)<input id="feedLines" type="number" min="0" max="255" value="3"></label>

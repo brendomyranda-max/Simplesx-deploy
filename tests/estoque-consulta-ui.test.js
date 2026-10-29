@@ -38,10 +38,10 @@ test('estoque conserva a busca e aba atuais quando respostas chegam fora de orde
     'react-router-dom': 'export const useSearchParams=()=>[new URLSearchParams()];',
     'lucide-react': 'export const Boxes="Boxes",Plus="Plus",Search="Search",Pencil="Pencil",Trash2="Trash2",PackageMinus="PackageMinus",ChefHat="ChefHat";',
     '@/components/AnimatedPage': 'export const AnimatedPage="AnimatedPage";',
-    '@/components/ui': 'export const Badge="Badge",Button="Button",Card="Card",EmptyState="EmptyState",IconButton="IconButton",Input="Input",Modal="Modal",Field="Field",Spinner="Spinner",useConfirm=()=>()=>{},useToast=()=>__stockUi.toast;',
+    '@/components/ui': 'export const Badge="Badge",Button="Button",Card="Card",EmptyState="EmptyState",IconButton="IconButton",Input="Input",Select="Select",Modal="Modal",Field="Field",Spinner="Spinner",useConfirm=()=>()=>{},useToast=()=>__stockUi.toast;',
     '@/components/ProdutoForm': 'export const ProdutoForm="ProdutoForm";',
     '@/pages/OnlineCatalogPage': 'export const OnlineCatalogPage="OnlineCatalogPage";',
-    '@/lib/api': 'export const produtoApi={list:__stockUi.list},estoqueApi={},configApi={get:__stockUi.config};',
+    '@/lib/api': 'export const produtoApi={list:__stockUi.list},estoqueApi={},configApi={get:__stockUi.config},categoriaApi={list:async()=>[]};',
     '@/lib/format': 'export const fmtBRL=v=>String(v??0),fmtNum=v=>String(v??0);',
     '@/lib/estoqueSync': 'export const avisarEstoqueAtualizado=()=>{};',
   };

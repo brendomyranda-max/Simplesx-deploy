@@ -61,7 +61,9 @@ import br.com.simplesx.gestor.data.AppConfig
 import br.com.simplesx.gestor.data.ConnectionType
 import br.com.simplesx.gestor.data.PrinterProfiles
 import br.com.simplesx.gestor.data.CutMode
-import br.com.simplesx.gestor.data.PrinterFontSize
+import br.com.simplesx.gestor.data.PRINTER_FONT_FAMILIES
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
 import br.com.simplesx.gestor.data.PrinterConfig
 import br.com.simplesx.gestor.data.PrinterProtocol
 import br.com.simplesx.gestor.data.TsplPaperMode
@@ -113,7 +115,9 @@ private fun GestorScreen(activity: ComponentActivity) {
     var labelHeightInput by remember { mutableStateOf(printer.labelHeightMm.toString()) }
     var gapInput by remember { mutableStateOf(printer.gapMm.toString()) }
     var dpiInput by remember { mutableStateOf(printer.dpi.toString()) }
-    var columnsInput by remember(selectedPrinterIndex, printers) { mutableStateOf(printer.columnsNormal?.toString() ?: "") }
+    var fontSizeInput by remember(selectedPrinterIndex, printers) { mutableStateOf((printer.fontSizePx ?: (12 * printer.fontSize.scale)).toString()) }
+    var printableWidthInput by remember(selectedPrinterIndex, printers) { mutableStateOf(printer.printableWidthMm?.toString() ?: "") }
+    var fontMenuExpanded by remember { mutableStateOf(false) }
     var serviceEnabled by remember { mutableStateOf(config.serviceEnabled) }
     var paired by remember { mutableStateOf(config.deviceToken.isNotBlank()) }
     var disconnecting by remember { mutableStateOf(false) }
@@ -337,7 +341,7 @@ private fun GestorScreen(activity: ComponentActivity) {
                                     printer = selected
                                     widthInput = selected.widthMm.toString()
                                     dpiInput = selected.dpi.toString()
-                                    columnsInput = selected.columnsNormal?.toString() ?: ""
+                                    printableWidthInput = selected.columnsNormal?.let { (it * 12.0 / selected.dpi * 25.4).toInt().toString() } ?: ""
                                     profileNote = profile.notes
                                     message = "Perfil aplicado. Confira o protocolo no autoteste e salve a rota."
                                 }.onFailure { message = it.message ?: "Perfil indisponível" }
@@ -498,35 +502,44 @@ private fun GestorScreen(activity: ComponentActivity) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("Tamanho da fonte", fontWeight = FontWeight.Bold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrinterFontSize.entries.forEach { size ->
-                        val label = when (size) {
-                            PrinterFontSize.SMALL -> "Pequena"
-                            PrinterFontSize.NORMAL -> "Normal"
-                            PrinterFontSize.LARGE -> "Grande"
-                        }
-                        if (printer.fontSize == size) {
-                            Button(onClick = { printer = printer.copy(fontSize = size) }, modifier = Modifier.weight(1f)) { Text(label) }
-                        } else {
-                            OutlinedButton(onClick = { printer = printer.copy(fontSize = size) }, modifier = Modifier.weight(1f)) { Text(label) }
+                OutlinedTextField(
+                    value = fontSizeInput,
+                    onValueChange = { value -> if (value.length <= 6 && value.all { it.isDigit() || it == '.' || it == ',' }) fontSizeInput = value },
+                    label = { Text("Tamanho da fonte (px)") },
+                    supportingText = { Text("De 6 a 96 px. Exemplo: 12,5") },
+                    isError = fontSizeInput.replace(',', '.').toDoubleOrNull()?.let { it.isFinite() && it in 6.0..96.0 } != true,
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                Box {
+                    OutlinedButton(onClick = { fontMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text("Modelo da fonte: ${printer.fontFamily}") }
+                    DropdownMenu(expanded = fontMenuExpanded, onDismissRequest = { fontMenuExpanded = false }) {
+                        PRINTER_FONT_FAMILIES.forEach { family ->
+                            DropdownMenuItem(text = { Text(family) }, onClick = { printer = printer.copy(fontFamily = family); fontMenuExpanded = false })
                         }
                     }
                 }
-                Text("Salva por impressora. Fontes maiores usam mais linhas; em etiquetas de altura fixa, a fonte diminui se necessário.", style = MaterialTheme.typography.bodySmall)
-                if (printer.protocol.isReceipt) {
-                    OutlinedTextField(
-                        value = columnsInput,
-                        onValueChange = { value -> if (value.length <= 3 && value.all(Char::isDigit)) columnsInput = value },
-                        label = { Text("Caracteres por linha na fonte Normal") },
-                        placeholder = { Text("Automático") },
-                        supportingText = { Text("Opcional: 8 a 160. Use o limite do autoteste, como 32 ou 48. Grande usa metade; reduza se o texto passar da borda.") },
-                        isError = columnsInput.isNotBlank() && columnsInput.toIntOrNull() !in 8..160,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text("A altura do cupom acompanha o conteúdo. O DPI não altera as letras neste modo.", style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = printer.fontBold, onCheckedChange = { printer = printer.copy(fontBold = it) })
+                    Text("Negrito")
                 }
+                Text("Prévia: Pedido #123 · Açaí e pão\n2 × Produto de exemplo · R$ 35,90",
+                    fontSize = (fontSizeInput.replace(',', '.').toFloatOrNull()?.coerceIn(6f, 96f) ?: 12f).sp,
+                    fontWeight = if (printer.fontBold) FontWeight.Bold else FontWeight.Normal,
+                    fontFamily = when (printer.fontFamily) {
+                        "serif" -> FontFamily.Serif
+                        "monospace", "Consolas", "Courier New" -> FontFamily.Monospace
+                        else -> FontFamily.SansSerif
+                    })
+                Text("Ajustes salvos por impressora. Fontes com nome usam a alternativa disponível no Android. Textos longos continuam na próxima etiqueta mantendo o tamanho.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = printableWidthInput,
+                    onValueChange = { value -> if (value.length <= 3 && value.all(Char::isDigit)) printableWidthInput = value },
+                    label = { Text("Largura imprimível (mm, opcional)") },
+                    placeholder = { Text("Automática") },
+                    supportingText = { Text("Use a largura do autoteste se houver cortes nas bordas. Padrão: 48 mm em bobina 58; 72 mm em 80.") },
+                    isError = printableWidthInput.isNotBlank() && printableWidthInput.toIntOrNull() !in 10..printer.widthMm,
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
                 if (printer.protocol.isReceipt) {
                     Text("Guilhotina: ${printer.cutMode.name}", fontWeight = FontWeight.Bold)
                     val modes = if (printer.protocol == PrinterProtocol.DIEBOLD) listOf(CutMode.FULL, CutMode.FEED_PARTIAL, CutMode.NONE) else CutMode.entries.toList()
@@ -567,7 +580,7 @@ private fun GestorScreen(activity: ComponentActivity) {
                     isError = dpiInput.toIntOrNull() !in 100..1200,
                     label = { Text("DPI personalizado (100 a 1200)") },
                     supportingText = {
-                        Text(if (printer.protocol.isReceipt) "Cupons em modo texto não dependem do DPI." else "O DPI altera largura, altura, margens e espaçamento em pontos.")
+                        Text("Informe o DPI real da cabeça para manter o tamanho escolhido em px e evitar cortes nas bordas.")
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -607,12 +620,17 @@ private fun GestorScreen(activity: ComponentActivity) {
                         message = "Informe um DPI entre 100 e 1200"
                         return@Button
                     }
-                    val columns = columnsInput.toIntOrNull()
-                    if (columnsInput.isNotBlank() && columns !in 8..160) {
-                        message = "Informe de 8 a 160 caracteres por linha ou deixe vazio"
+                    val customFontSize = fontSizeInput.replace(',', '.').toDoubleOrNull()
+                    if (customFontSize == null || !customFontSize.isFinite() || customFontSize !in 6.0..96.0) {
+                        message = "Informe um tamanho de fonte entre 6 e 96 px"
                         return@Button
                     }
-                    var validatedPrinter = printer.copy(widthMm = customWidth, dpi = customDpi, columnsNormal = columns)
+                    val printableWidth = printableWidthInput.toIntOrNull()
+                    if (printableWidthInput.isNotBlank() && printableWidth !in 10..customWidth) {
+                        message = "A largura imprimível deve ficar entre 10 mm e a largura do papel"
+                        return@Button
+                    }
+                    var validatedPrinter = printer.copy(widthMm = customWidth, dpi = customDpi, fontSizePx = customFontSize, printableWidthMm = printableWidth)
                     if (!validatedPrinter.protocol.isReceipt && (validatedPrinter.tsplPaperMode != TsplPaperMode.CONTINUOUS || validatedPrinter.fixedHeight)) {
                         val customHeight = labelHeightInput.toIntOrNull()
                         val customGap = gapInput.toIntOrNull()

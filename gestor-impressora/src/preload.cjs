@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld('simplexsa', {
   listarPerfisImpressoras: () => ipcRenderer.invoke('listar-perfis-impressoras'),
   listarImpressoras: () => ipcRenderer.invoke('listar-impressoras'),
   testar: (impressora) => ipcRenderer.invoke('testar-impressora', impressora),
-  salvarImpressora: (impressora, larguraMm, alturaMm, protocolo, dpi, tamanhoFonte, colunasNormal, acabamento) => ipcRenderer.invoke('salvar-impressora', { impressora, larguraMm, alturaMm, protocolo, dpi, tamanhoFonte, colunasNormal, acabamento }),
+  salvarImpressora: (impressora, larguraMm, alturaMm, protocolo, dpi, tamanhoFonte, colunasNormal, acabamento, tipografia) => ipcRenderer.invoke('salvar-impressora', { impressora, larguraMm, alturaMm, protocolo, dpi, tamanhoFonte, colunasNormal, acabamento, tipografia }),
   abrirExternamente: (url) => ipcRenderer.invoke('abrir-externamente', url),
   lerNfc: (texto) => ipcRenderer.invoke('ler-nfc', texto),
   atualizacaoStatus: () => ipcRenderer.invoke('atualizacao-status'),

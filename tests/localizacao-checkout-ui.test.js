@@ -6,12 +6,14 @@ import ts from 'typescript';
 const PONTO_A = { latitude: -23.55052, longitude: -46.633308, endereco: 'Rua A, Centro, São Paulo', origem: 'endereco' };
 const PONTO_B = { latitude: -23.562345678901, longitude: -46.654321098765, endereco: 'Rua B, Bela Vista, São Paulo', origem: 'mapa', atualizado_em: Date.now() };
 
-async function checkout(t, guardado = PONTO_A) {
+async function checkout(t, guardado = PONTO_A, loja = {}, cliente = null) {
   const states = [], refs = [], depsAnteriores = [], cleanups = [];
-  const distancias = [], enviados = [], salvos = [];
+  const distancias = [], enviados = [], salvos = [], perfis = [];
   let stateIndex = 0, refIndex = 0, effectIndex = 0, effects = [], tree;
   let limpezas = 0;
   const h = {
+    clienteState: { cliente, carregando: false, definir: (value) => { h.clienteState.cliente = value; } },
+    atualizarCliente: async (data) => { perfis.push(data); return { ...cliente, ...data }; },
     state(initial) {
       const i = stateIndex++;
       if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;
@@ -51,12 +53,15 @@ async function checkout(t, guardado = PONTO_A) {
     qrcode: 'export const toDataURL=()=>{};',
     '@/lib/format': 'export const fmtBRL=v=>"R$ "+Number(v).toFixed(2);',
     '@/lib/delivery-cliente': 'export const gravarUltimoPedido=()=>{},lerUltimoPedido=()=>null,SUPORTE_DOIXP_URL="https://wa.me/5511939417895",whatsappDaLoja=()=>null;',
-    '@/lib/api': 'export const authApi={},onlineApi={},produtoApi={},onlinePublicApi={distance:__checkoutLocationUi.distance,locate:()=>{throw Error("O checkout não deve geocodificar endereço já confirmado");}};',
+    '@/lib/api': 'export const authApi={},clienteApi={atualizar:__checkoutLocationUi.atualizarCliente},onlineApi={},produtoApi={},onlinePublicApi={distance:__checkoutLocationUi.distance,locate:()=>{throw Error("O checkout não deve geocodificar endereço já confirmado");}};',
+    '@/lib/cliente-marketplace': 'export const useClienteMarketplace=()=>__checkoutLocationUi.clienteState,pontoDoPerfil=c=>c?.latitude!=null?{latitude:c.latitude,longitude:c.longitude,endereco:c.endereco,origem:"endereco"}:null;',
+    '@/components/ContaCliente': 'export const ContaCliente="ContaCliente",ModalContaCliente="ModalContaCliente";',
     '@/lib/localizacao-cliente': 'export const lerPontoCliente=__checkoutLocationUi.lerPonto,gravarPontoCliente=__checkoutLocationUi.gravarPonto,limparPontoCliente=__checkoutLocationUi.limparPonto,taxaDaSacola=()=>5,textoEntrega=()=>"Entrega",fmtKm=String,previaEntrega=()=>"",textoCobrancaCliente=area=>area?.taxa_cliente==null?null:"Entrega R$ "+area.taxa_cliente.toFixed(2);',
     '@/components/SeletorLocalizacao': 'export const SeletorLocalizacao="SeletorLocalizacao";',
     '@/pages/Marketplace': 'export const Marketplace="Marketplace";',
     '@/components/BrandLogo': 'export const BrandLogo="BrandLogo";',
     '@/components/FotoGaleria': 'export const FotoGaleria="FotoGaleria";',
+    '@/components/ModalidadesDelivery': 'export const ModalidadesDelivery="ModalidadesDelivery";',
     '@/components/FuncionamentoDelivery': 'export const FuncionamentoDelivery="FuncionamentoDelivery";',
     '@/components/ModoCardapioOnline': 'export const ConfiguracaoCardapioOnline="ConfiguracaoCardapioOnline";',
     '@/lib/descricao-composto': 'export const descricaoComIngredientes=()=>"";',
@@ -69,7 +74,7 @@ async function checkout(t, guardado = PONTO_A) {
   for (const [name, mock] of Object.entries(mocks)) source = source.replaceAll(`'${name}'`, JSON.stringify(module(mock)));
   const { CheckoutModal } = await import(module('const Fragment="Fragment";\n' + source + '\nexport { CheckoutModal };'));
   const props = {
-    loja: { slug: 'casa', nome: 'Casa', aceita_entrega: 1, aceita_retirada: 1, taxa_entrega: 5, valor_por_km: 2, modo_entrega: 'cliente' },
+    loja: { slug: 'casa', nome: 'Casa', aceita_entrega: 1, aceita_retirada: 1, taxa_entrega: 5, valor_por_km: 2, modo_entrega: 'cliente', ...loja },
     totalBase: 50, onClose() {}, onSubmit: async (dados) => { enviados.push(dados); },
   };
   const render = () => {
@@ -110,8 +115,34 @@ async function checkout(t, guardado = PONTO_A) {
   };
   render();
   await flush();
-  return { distancias, enviados, salvos, limpezas: () => limpezas, render, flush, find, input, change, selector, button, submit, cotar, preencherCliente, text };
+  return { distancias, enviados, salvos, perfis, limpezas: () => limpezas, render, flush, find, input, change, selector, button, submit, cotar, preencherCliente, text };
 }
+
+test('cliente conectado recupera dados e salva endereço no perfil ao finalizar', async (t) => {
+  const cliente = { id: 1, nome: 'Ana Salva', telefone: '11999990000', endereco: PONTO_A.endereco, numero: '123', complemento: 'Casa', latitude: PONTO_A.latitude, longitude: PONTO_A.longitude };
+  const f = await checkout(t, PONTO_A, {}, cliente);
+  assert.equal(f.input('Seu nome').props.value, 'Ana Salva');
+  assert.equal(f.input('WhatsApp').props.value, '11999990000');
+  assert.equal(f.input('Número').props.value, '123');
+  assert.equal(f.input('Complemento').props.value, 'Casa');
+  await f.cotar(0, 5);
+  f.input('Maquininha').props.onChange(); await f.flush();
+  await f.change('Número', '456');
+  await f.submit();
+  assert.equal(f.perfis.length, 1);
+  assert.equal(f.perfis[0].numero, '456');
+  assert.equal(f.perfis[0].latitude, PONTO_A.latitude);
+  assert.equal(f.enviados.length, 1);
+  assert.match(f.enviados[0].endereco, /número 456, Casa/);
+});
+
+test('novo destino não reaproveita número e complemento de outro endereço salvo', async (t) => {
+  const cliente = { id: 1, nome: 'Ana', telefone: '11999990000', endereco: PONTO_A.endereco, numero: '123', complemento: 'Casa', latitude: PONTO_A.latitude, longitude: PONTO_A.longitude };
+  const f = await checkout(t, PONTO_B, {}, cliente);
+  assert.equal(f.selector().props.endereco, PONTO_B.endereco);
+  assert.equal(f.input('Número').props.value, '');
+  assert.equal(f.input('Complemento').props.value, '');
+});
 
 test('checkout cota coordenadas confirmadas e resposta antiga não substitui o frete do novo ponto', async (t) => {
   const f = await checkout(t);
@@ -219,4 +250,22 @@ test('falha de cotação permite tentar novamente no mesmo ponto e libera pedido
   assert.equal(f.enviados.length, 1);
   assert.deepEqual(f.enviados[0].ponto, PONTO_A);
   assert.equal(f.enviados[0].endereco, 'Rua A, Centro, São Paulo, número 120');
+});
+
+
+test('loja somente retirada abre checkout sem frete ou endereço do cliente', async t => {
+  const f = await checkout(t, null, { aceita_entrega: 0, aceita_retirada: 1, endereco: 'Rua da Loja, 20' });
+  await f.preencherCliente();
+  assert.equal(f.distancias.length, 0);
+  assert.equal(f.input('Retirar no balcão').props.checked, true);
+  const texto = f.text(f.render());
+  assert.doesNotMatch(texto, /Entrega do estabelecimento|Endereço de entrega/);
+  assert.match(texto, /Endereço para retirada:.*Rua da Loja, 20/);
+  assert.equal(f.button().props.disabled, false);
+  await f.submit();
+  assert.equal(f.enviados.length, 1);
+  assert.equal(f.enviados[0].entrega, 'retirada');
+  assert.equal(f.enviados[0].endereco, '');
+  assert.equal(f.enviados[0].ponto, null);
+  assert.equal(f.enviados[0].plataforma, false);
 });

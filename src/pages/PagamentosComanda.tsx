@@ -11,7 +11,7 @@ import { Badge, Button, Card, EmptyState, Modal, Spinner, useConfirm, useToast }
 import { comandaApi, impressoraApi } from '@/lib/api';
 import type { Comanda, ComandaPessoa } from '@/lib/types';
 import { fmtBRL, fmtNum, formaLabel } from '@/lib/format';
-import { printReceipt } from '@/lib/print';
+import { confirmarImpressao } from '@/lib/print-result';
 
 export function PagamentosComanda() {
   const { id } = useParams();
@@ -26,9 +26,9 @@ export function PagamentosComanda() {
   const carregandoRef = useRef(0);
   const [load, setLoad] = useState(true);
   const [baixando, setBaixando] = useState<number | null>(null);
-  const [imprimir, setImprimir] = useState<{ impressao: string } | null>(null);
+  const [imprimir, setImprimir] = useState<{ impressao: string; pessoas: ComandaPessoa[]; enviada: boolean } | null>(null);
   const [imprimindoTodas, setImprimindoTodas] = useState(false);
-  const impressaoRef = useRef<HTMLDivElement>(null);
+  const impressaoEmCurso = useRef(false);
 
   const loadComanda = async (background = false) => {
     if (background && (document.hidden || carregandoRef.current)) return;
@@ -114,31 +114,31 @@ export function PagamentosComanda() {
     );
   };
 
-  const imprimirPessoa = async (pessoa: ComandaPessoa) => {
+  const imprimirPessoas = async (selecionadas: ComandaPessoa[]) => {
+    if (impressaoEmCurso.current) return;
+    impressaoEmCurso.current = true; setImprimindoTodas(true);
+    const textos: string[] = [];
+    const jobs = [];
     try {
-      const r = await impressoraApi.imprimirPessoa(comandaId, pessoa.id);
-      setImprimir(r);
+      for (const p of selecionadas) {
+        const r = await impressoraApi.imprimirPessoa(comandaId, p.id);
+        textos.push(r.impressao);
+        jobs.push(...r.jobs);
+        setImprimir({ impressao: textos.join('\n\n==========\n\n'), pessoas: selecionadas, enviada: jobs.some(job=>job.ok) });
+        confirmarImpressao(r.jobs);
+      }
+      toast('success', confirmarImpressao(jobs));
     } catch (e: any) {
-      toast('error', e?.error || 'Erro ao imprimir');
+      toast('error', e?.error || e?.message || 'Erro ao imprimir');
+    } finally {
+      impressaoEmCurso.current = false; setImprimindoTodas(false);
     }
   };
-
+  const imprimirPessoa = (pessoa: ComandaPessoa) => imprimirPessoas([pessoa]);
   const imprimirTodas = async () => {
     const pendentes = pessoas.filter((p) => p.status !== 'baixado');
     if (!pendentes.length) return toast('error', 'Nenhuma pessoa pendente');
-    setImprimindoTodas(true);
-    try {
-      const textos: string[] = [];
-      for (const p of pendentes) {
-        const r = await impressoraApi.imprimirPessoa(comandaId, p.id);
-        textos.push(r.impressao);
-      }
-      setImprimir({ impressao: textos.join('\n\n==========\n\n') });
-    } catch (e: any) {
-      toast('error', e?.error || 'Erro ao imprimir');
-    } finally {
-      setImprimindoTodas(false);
-    }
+    await imprimirPessoas(pendentes);
   };
 
   if (load) return <Spinner label="Carregando pagamentos..." />;
@@ -259,12 +259,12 @@ export function PagamentosComanda() {
       )}
 
       <Modal open={!!imprimir} onClose={() => setImprimir(null)} title="Conta individual">
-        <div ref={impressaoRef} className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4">
+        <div className="mx-auto w-64 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 font-mono text-[11px] leading-4">
           <pre className="whitespace-pre-wrap text-slate-800">{imprimir?.impressao}</pre>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setImprimir(null)}>Fechar</Button>
-          <Button icon={<Printer className="h-4 w-4" />} onClick={() => printReceipt(impressaoRef.current)}>Imprimir</Button>
+          <Button icon={<Printer className="h-4 w-4" />} loading={imprimindoTodas} onClick={() => imprimir && void imprimirPessoas(imprimir.pessoas)}>{imprimir?.enviada ? 'Reimprimir conta' : 'Tentar imprimir novamente'}</Button>
         </div>
       </Modal>
 

@@ -132,13 +132,14 @@ jobs:
           files: artefatos/*
           make_latest: false
           body: |
-            Servidor DoixP 1.5.24 para Windows, Linux e Android.
+            Servidor DoixP ${{ github.ref_name }} para Windows, Linux e Android.
 
-            - Catálogo único de perfis por fabricante e linguagem para Android e desktop.
-            - Protocolos nativos ESC/Bema (Bematech MP-4200 TH) e Star Line Mode, com fonte, alinhamento e guilhotina próprios.
-            - Perfis para Epson, Bematech, Elgin, Diebold, Gertec, Tanca, Citizen, Bixolon, Star, Zebra, TSC e emulações Brother, Honeywell e SATO.
-            - Perfis genéricos ESC/POS/TSPL e opção de driver oficial no desktop.
-            - Preserva rotas, conexões, pareamento, categorias e histórico ao aplicar um perfil ou atualizar.
+            - Tamanho da fonte de 6 a 96 pixels, incluindo valores fracionários.
+            - Escolha do modelo da fonte, negrito e prévia por impressora.
+            - Largura imprimível configurável e conversão para o DPI físico da cabeça.
+            - Renderização com acentos em Driver, ESC/POS, Diebold IM453H, ESC/Bema, Star Line, TSPL, ZPL, CPCL e EPL2.
+            - Etiquetas de altura fixa continuam em novas etiquetas sem reduzir a fonte escolhida.
+            - Preserva rotas, conexões, pareamento, categorias e ajustes antigos ao atualizar. Abra Configurar e salve os novos controles para ativar a fonte em pixels.
 
             Escolha o perfil correspondente à linguagem ativa no autoteste. Os perfis são documentais e não representam homologação física de todos os modelos. BLE, USB serial, protocolos fiscais e linguagens proprietárias podem exigir SDK/driver específico. Consulte docs/IMPRESSORAS_COMPATIBILIDADE.md.
 

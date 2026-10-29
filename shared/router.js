@@ -17,6 +17,7 @@ import { cancelarComandaHandler } from './restaurant-cancel.js';
 import { addOrderItemsHandler } from './restaurant-orders.js';
 import * as fiscal from './handlers-fiscal.js';
 import * as online from './handlers-online.js';
+import * as clientes from './handlers-clientes.js';
 import * as pix from './pix-config.js';
 import * as entregas from './handlers-entregas.js';
 import { TenantDb } from './tenant-db.js';
@@ -35,6 +36,12 @@ const routes = [
   { m: 'POST', p: '/api/auth/logout', h: cad.logoutHandler, pub: true },
 
   // cardápio e pedidos online públicos (sem sessão do Gestor)
+  { m: 'POST', p: '/api/public/clientes/cadastro', h: clientes.cadastrarClienteHandler, pub: true },
+  { m: 'POST', p: '/api/public/clientes/login', h: clientes.loginClienteHandler, pub: true },
+  { m: 'GET', p: '/api/public/clientes/me', h: clientes.perfilClienteHandler, pub: true },
+  { m: 'PUT', p: '/api/public/clientes/me', h: clientes.atualizarClienteHandler, pub: true },
+  { m: 'POST', p: '/api/public/clientes/logout', h: clientes.logoutClienteHandler, pub: true },
+  { m: 'GET', p: '/api/public/clientes/pedidos', h: clientes.pedidosClienteHandler, pub: true },
   { m: 'GET', p: '/api/public/localizar', h: online.localizarHandler, pub: true },
   { m: 'GET', p: '/api/public/lojas', h: online.listPublicStoresHandler, pub: true },
   { m: 'GET', p: '/api/public/lojas/:slug/distancia', h: online.distanciaLojaHandler, pub: true },

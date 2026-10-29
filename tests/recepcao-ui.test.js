@@ -13,6 +13,8 @@ async function screen(t) {
   db.prepare("INSERT INTO sessoes (estabelecimento_id,funcionario_id,token_hash,expira_em) VALUES (1,1,?,'2099-01-01')").bind(await sha256('ui-test')).run();
   db.prepare("INSERT INTO mesas (id,estabelecimento_id,numero,nome,tipo) VALUES (1,1,1,'Mesa 1','normal')").run();
   db.prepare("INSERT INTO produtos (id,estabelecimento_id,nome,preco,estoque_atual) VALUES (1,1,'Prato',20,100)").run();
+  db.prepare("INSERT INTO gestores (id,estabelecimento_id,token) VALUES (1,1,'servidor-contas')").run();
+  db.prepare("INSERT INTO impressora_agentes (estabelecimento_id,nome,ip,imprime_conta,servidor_tipo,servidor_id,impressora_destino) VALUES (1,'Caixa','',1,'desktop','1','Termica')").run();
   const requests=new Set();
   const call=(path,body,method='POST')=>{
     const promise=(async()=>{
@@ -31,7 +33,6 @@ async function screen(t) {
     navigate:to=>navigation.push(to),params:new URLSearchParams(),setParams(){},toast:(...args)=>notifications.push(args),
     web:{scan:null,begin(){events.push('scan');return{};},stop(){events.push('stop');}},bridge(){},
     cartaoApi:{list:()=>call('/api/cartoes',null,'GET'),consultar:b=>call('/api/cartoes/consultar',b),cadastrar:b=>call('/api/cartoes/cadastrar',b),fechar:(id,b)=>call(`/api/cartoes/${id}/fechar`,b),conta:(id,b)=>call(`/api/cartoes/${id}/conta`,b)},
-    printReceipt:async node=>events.push({print:node}),
     mesaApi:{list:()=>call('/api/mesas',null,'GET')},
   };
   const globals={__receptionTest:h,React:{createElement:h.node},document:{hidden:false},localStorage:{getItem:()=>null},setInterval:()=>0,clearInterval:()=>{}};
@@ -52,7 +53,7 @@ async function screen(t) {
     '@/lib/useNfcBridge':'export const useNfcLeitura=(active,cb)=>{globalThis.__receptionTest.bridge={active,cb};};',
     '@/lib/useWebNfc':'export const useWebNfc=()=>globalThis.__receptionTest.web;',
     '@/lib/format':"export const fmtBRL=n=>'R$ '+Number(n).toFixed(2);export const FORMAS_PAGAMENTO=[{valor:'pix',label:'Pix'},{valor:'dinheiro',label:'Dinheiro'}];",
-    '@/lib/print':'export const printReceipt=globalThis.__receptionTest.printReceipt;',
+    '@/lib/print-result':readFileSync('src/lib/print-result.ts','utf8'),
   };
   let source=readFileSync('src/pages/RecepcaoPage.tsx','utf8');
   for(const[name,mock]of Object.entries(mocks))source=source.replaceAll(`'${name}'`,JSON.stringify(module(mock)));
@@ -116,14 +117,18 @@ test('fechamento NFC ajusta taxa, imprime antes e após pagar, preservando a con
   for(const invalid of ['', '-1', '101']) {
     change(invalid);
     assert.equal(f.find('Button','Confirmar pagamento').props.disabled,true);
-    assert.equal(f.find('Button','Imprimir conta').props.disabled,true);
+    assert.equal(f.find('Button','Imprimir pré-conta').props.disabled,true);
   }
   change('5.5');
   assert.ok(f.text(f.find('Modal','Fechar comanda individual')).includes('Total: R$ 42.20'));
-  await f.click('Imprimir conta');
+  await f.click('Imprimir pré-conta');
   let preview=f.find('Modal','Conta individual para impressão');assert.equal(preview.props.open,true);
   assert.match(f.text(preview),/GARÇOM \(5.5%\)/);assert.match(f.text(preview),/STATUS: PENDENTE/);
-  await f.click('Imprimir');assert.match(f.text(f.events.find(e=>e.print).print),/PESSOA: Ana/);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM gestor_jobs').first().n,1);
+  const reimprimir=f.find('Button','Reimprimir pré-conta');
+  reimprimir.props.onClick();reimprimir.props.onClick();await f.flush();
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM gestor_jobs').first().n,2,'duplo clique só cria uma nova via');
+  assert.match(f.db.prepare('SELECT conteudo FROM gestor_jobs ORDER BY id DESC LIMIT 1').first().conteudo,/PESSOA: Ana/);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM vendas').first().n,0,'imprimir não fecha a conta');
   await f.click('Voltar');
   assert.equal(f.find('Field','Porcentagem do garçom').props.children[0].props.value,'5.5');
@@ -136,7 +141,32 @@ test('fechamento NFC ajusta taxa, imprime antes e após pagar, preservando a con
   await f.click('Imprimir conta');preview=f.find('Modal','Conta individual para impressão');
   assert.match(f.text(preview),/PESSOA: Ana/);assert.doesNotMatch(f.text(preview),/Bruno/);
   assert.match(f.text(preview),/GARÇOM \(0%\)/);assert.match(f.text(preview),/STATUS: PAGO/);
-  await f.click('Imprimir');assert.equal(f.events.filter(e=>e.print).length,2);
+  await f.click('Reimprimir conta');
+  const jobs=f.db.prepare('SELECT * FROM gestor_jobs ORDER BY id').all().results;
+  assert.equal(jobs.length,4);
+  assert.ok(jobs.every(j=>j.gestor_token==='servidor-contas' && j.impressora==='Termica'));
+  assert.match(jobs[3].conteudo,/STATUS: PAGO/);assert.doesNotMatch(jobs[3].conteudo,/Bruno/);
   await f.click('Voltar');await f.click('Concluir');
   assert.equal(f.find('Modal','Comanda encerrada').props.open,false);
 });
+
+for (const falha of ['sem rota', 'servidor inativo']) {
+  test(`pré-conta informa ${falha} e permite tentar novamente sem fechar a conta`,async t=>{
+    const f=await screen(t),uid='04A224B1C2D380';
+    await f.call('/api/cartoes/cadastrar',{uid,cliente_nome:'Ana',mesa_id:1,chave:crypto.randomUUID()});
+    if(falha==='sem rota') f.db.prepare('UPDATE impressora_agentes SET imprime_conta=0').run();
+    else f.db.prepare('UPDATE gestores SET ativo=0').run();
+    await f.click('Cadastrar ou consultar cartão');f.find('NfcScanButton').props.onRead({uid,payload:''});await f.flush();
+    await f.click('Imprimir pré-conta');
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM gestor_jobs').first().n,0);
+    assert.equal(f.notifications.at(-1)[0],'error');
+    assert.match(f.notifications.at(-1)[1],falha==='sem rota'?/Configure uma rota/:/Falha ao enviar/);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM vendas').first().n,0);
+    f.db.prepare('UPDATE impressora_agentes SET imprime_conta=1').run();
+    f.db.prepare('UPDATE gestores SET ativo=1').run();
+    await f.click('Tentar imprimir novamente');
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM gestor_jobs').first().n,1);
+    assert.equal(f.notifications.at(-1)[0],'success');
+    assert.ok(f.find('Button','Reimprimir pré-conta'));
+  });
+}

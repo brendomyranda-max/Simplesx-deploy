@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Tabs, Tex
 import { onlineApi, produtoApi } from '@/lib/api';
 import { FotoGaleria } from '@/components/FotoGaleria';
 import { SeletorLocalizacao } from '@/components/SeletorLocalizacao';
+import { ModalidadesDelivery } from '@/components/ModalidadesDelivery';
 import { FuncionamentoDelivery } from '@/components/FuncionamentoDelivery';
 import { ConfiguracaoCardapioOnline } from '@/components/ModoCardapioOnline';
 import { AcrescimoCadastro, lerAcrescimos, type LinhaAcrescimo } from '@/components/AcrescimoCadastro';
@@ -347,9 +348,9 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
     const max = form.max ? numberInput(form.max) : null;
     const raioTexto = form.raio.trim();
     const raio = raioTexto ? numberInput(raioTexto) : null;
-    if (!form.nome.trim() || (!valorTexto && (!Number.isFinite(taxa) || taxa < 0)) || (min !== null && !Number.isFinite(min)) || (max !== null && !Number.isFinite(max))) return toast('error', 'Revise os dados da loja');
-    if (valorTexto && (valorKm == null || !Number.isFinite(valorKm) || valorKm < 0 || valorKm > 1000)) return toast('error', 'O valor por km fica entre 0 e 1000');
-    if (raioTexto && (raio == null || !Number.isFinite(raio) || raio < 0.1 || raio > 100)) return toast('error', 'O limite de entrega fica entre 0,1 e 100 km');
+    if (!form.nome.trim() || (form.entrega && !valorTexto && (!Number.isFinite(taxa) || taxa < 0)) || (min !== null && !Number.isFinite(min)) || (max !== null && !Number.isFinite(max))) return toast('error', 'Revise os dados da loja');
+    if (form.entrega && valorTexto && (valorKm == null || !Number.isFinite(valorKm) || valorKm < 0 || valorKm > 1000)) return toast('error', 'O valor por km fica entre 0 e 1000');
+    if (form.entrega && raioTexto && (raio == null || !Number.isFinite(raio) || raio < 0.1 || raio > 100)) return toast('error', 'O limite de entrega fica entre 0,1 e 100 km');
     if (!somenteConsulta && form.endereco.trim() && !pontoLoja) return toast('error', 'Busque o endereço e escolha o ponto da loja no mapa antes de salvar');
     setSaving(true);
     try {
@@ -358,9 +359,7 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
         logo_url: form.foto || null,
         descricao: form.descricao,
         whatsapp_suporte: form.whatsapp.trim() || null,
-        taxa_entrega: valorTexto ? 0 : taxa,
-        valor_por_km: valorTexto ? valorKm : null,
-        modo_entrega: form.modo,
+        ...(form.entrega ? { taxa_entrega: valorTexto ? 0 : taxa, valor_por_km: valorTexto ? valorKm : null, modo_entrega: form.modo, raio_entrega_km: raio } : {}),
         modo_publicacao: form.publicacao,
         tempo_min_entrega: min,
         tempo_max_entrega: max,
@@ -370,7 +369,6 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
         endereco: form.endereco,
         latitude: form.latitude,
         longitude: form.longitude,
-        raio_entrega_km: raio,
       });
       onSaved(next);
       toast('success', form.published ? 'Loja publicada' : 'Rascunho salvo');
@@ -401,7 +399,8 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
         </Card>
         <Card className="space-y-5 p-5">
           {!somenteConsulta && <>
-          <div><h2 className="font-bold text-slate-800">Entrega e retirada</h2><p className="mt-1 text-sm text-slate-500">O limite é o máximo que esta loja entrega, como 3,5 km ou 10 km.</p></div>
+          <div><h2 className="font-bold text-slate-800">Entrega e retirada</h2><p className="mt-1 text-sm text-slate-500">Escolha as formas de recebimento disponíveis para os clientes.</p></div>
+          <ModalidadesDelivery entrega={form.entrega} retirada={form.retirada} disabled={saving} onChange={(modalidades) => setForm((atual) => ({ ...atual, ...modalidades }))} />
           <SeletorLocalizacao
             label="Localização da loja"
             endereco={form.endereco}
@@ -413,6 +412,7 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
             }}
             disabled={saving}
           />
+          {form.entrega && <>
           <div className="flex flex-wrap gap-2">
             {[3.5, 5, 10].map((km) => <button key={km} type="button" onClick={() => setForm({ ...form, raio: String(km).replace('.', ',') })} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700">{km.toLocaleString('pt-BR')} km</button>)}
           </div>
@@ -428,8 +428,8 @@ function StoreSettings({ store, onSaved }: { store: OnlineStore | null; onSaved:
           <p className="text-xs text-slate-500">Exemplo: 7 km × R$ 2,00 = R$ 14,00. Dividido, o cliente paga R$ 7,00. Um produto de R$ 50,00 fica R$ 57,00.</p>
           {Number.isFinite(numberInput(form.valorKm)) && form.valorKm.trim() && <p className="text-xs text-slate-500">{previaEntrega(numberInput(form.valorKm), form.modo)}</p>}
           {!form.valorKm.trim() && Number.isFinite(numberInput(form.taxa)) && numberInput(form.taxa) > 0 && <p className="text-xs text-slate-500">Taxa fixa atual {fmtBRL(numberInput(form.taxa))}. Informe o valor por km para cobrar pela distância.</p>}
+          </>}
           <div className="grid grid-cols-2 gap-3"><Field label="Tempo mínimo (min)"><Input value={form.min} onChange={(event) => setForm({ ...form, min: event.target.value })} inputMode="numeric" /></Field><Field label="Tempo máximo (min)"><Input value={form.max} onChange={(event) => setForm({ ...form, max: event.target.value })} inputMode="numeric" /></Field></div>
-          <div className="space-y-3 rounded-xl bg-slate-50 p-3"><Toggle checked={form.entrega} onChange={(entrega) => setForm({ ...form, entrega })} label="Aceitar entrega" /><Toggle checked={form.retirada} onChange={(retirada) => setForm({ ...form, retirada })} label="Aceitar retirada no balcão" /></div>
           </>}
           {somenteConsulta && <div><h2 className="font-bold text-slate-800">Publicação do cardápio</h2><p className="mt-1 text-sm text-slate-500">Libere o link para seus clientes consultarem os produtos e preços.</p></div>}
           <Toggle checked={form.published} onChange={(published) => setForm({ ...form, published })} label={somenteConsulta ? 'Publicar o cardápio para clientes' : 'Publicar a loja para clientes'} />
